@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>HKSK</PackageId>
+    <Authors>Aerisarn</Authors>
+    <Description>Reads and edits Skyrim Havok animation projects as one thing. A project's definition is spread over Havok packfiles and plain-text caches that restate each other -- the project, character and behaviour .hkx, the animation data, the root motion, and the animation set data -- and this keeps them consistent across an edit. Uses HKX2 for the Havok side.</Description>
+    <PackageTags>havok;hkx;skyrim;animation;behavior;cache;animationdata;modding</PackageTags>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/aerisarn-two/HKSK</RepositoryUrl>
+
+    <!-- Overridden by the release workflow from the tag. -->
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HKX2" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HKSK.Tests" />
+  </ItemGroup>
+
+</Project>

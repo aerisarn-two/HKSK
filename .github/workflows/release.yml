@@ -1,0 +1,169 @@
+#
+# Builds HKSK, runs the tests, and publishes it as a NuGet package on GitHub
+# Packages plus a GitHub release carrying the assembly.
+#
+# Tagging is the trigger, and the tests gate the release: nothing is packed or
+# pushed until the suite has passed, in this same workflow and off this same
+# commit.
+#
+# The corpus tests need extracted game data, which cannot reach a runner, so they
+# skip here and the rest of the suite still runs. They are what actually proves
+# the byte-exact round trip, so run them locally before tagging:
+#
+#     HKSK_CORPUS=~/path/to/extracted/meshes dotnet test
+#
+# Use workflow_dispatch to build, test and pack without publishing anything.
+#
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # HKX2 comes from GitHub Packages, and restoring it needs the token to carry
+    # a packages scope. Read is enough here: only the release job pushes.
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --verbosity normal
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # to create the release
+      packages: write   # to publish to GitHub Packages
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+
+            # Reject a malformed tag here rather than after a full build, which
+            # is where dotnet pack would otherwise notice.
+            semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+            if [[ ! "$version" =~ $semver ]]; then
+              echo "tag '${GITHUB_REF#refs/tags/}' is not a version." \
+                   "Expected vMAJOR.MINOR.PATCH, optionally with a prerelease" \
+                   "suffix, e.g. v1.2.3 or v1.2.3-rc.1" >&2
+              exit 1
+            fi
+
+            publish=true
+          else
+            # Not a release: still pack, so packaging breakage shows up here
+            # rather than on the tag, but do not push it anywhere.
+            version="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+            publish=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version $version, publish $publish"
+
+      - name: Restore
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet restore
+
+      - name: Build
+        run: >
+          dotnet build --no-restore -c Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:RepositoryUrl=https://github.com/${{ github.repository }}
+
+      - name: Pack
+        run: >
+          dotnet pack src/HKSK/HKSK.csproj --no-build -c Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:RepositoryUrl=https://github.com/${{ github.repository }}
+          -o artifacts
+
+      # Fail here rather than at the release step, where an empty upload would be
+      # reported as an unmatched glob and take longer to read.
+      - name: Check the artifacts
+        run: |
+          set -euo pipefail
+          ls -l src/HKSK/bin/Release/net9.0/HKSK.dll
+          ls -l artifacts/*.nupkg
+          test "$(ls artifacts/*.nupkg | wc -l)" -eq 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HKSK-${{ steps.version.outputs.version }}
+          path: |
+            src/HKSK/bin/Release/net9.0/HKSK.dll
+            artifacts/*.nupkg
+          if-no-files-found: error
+
+      #
+      # GITHUB_TOKEN is enough for GitHub Packages, so there is no secret to
+      # configure. Consumers need a nuget.config pointing at this feed and a PAT
+      # with read:packages -- see README.md.
+      #
+      - name: Publish to GitHub Packages
+        if: steps.version.outputs.publish == 'true'
+        run: >
+          dotnet nuget push artifacts/*.nupkg
+          --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          --api-key ${{ secrets.GITHUB_TOKEN }}
+          --skip-duplicate
+
+      #
+      # Created after the package push, so a failed push never leaves a release
+      # advertising a version that is not on the feed.
+      #
+      - name: Create the GitHub release
+        if: steps.version.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: HKSK ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            src/HKSK/bin/Release/net9.0/HKSK.dll
+            artifacts/*.nupkg

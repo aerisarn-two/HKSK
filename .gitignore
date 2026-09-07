@@ -1,0 +1,13 @@
+bin/
+obj/
+artifacts/
+TestResults/
+*.nupkg
+.vs/
+.vscode/
+.idea/
+*.user
+.DS_Store
+
+# Working notes, not part of the project.
+CLAUDE.md
