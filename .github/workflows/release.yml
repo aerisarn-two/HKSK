@@ -6,9 +6,18 @@
 # pushed until the suite has passed, in this same workflow and off this same
 # commit.
 #
+# Tests run on Windows as well as Linux because of mopper. Converting an
+# animation means running Havok's spline encoder, which is proprietary and ships
+# only as mopper.exe, a 32-bit Windows binary. Windows runs it directly through
+# WOW64, so the codec is actually exercised there; a Linux runner has no Wine to
+# put it through and skips it. Linux is kept because it is where this is
+# developed and the only place case-sensitive path resolution is tested -- most
+# of a project's paths are stored Windows-cased and resolve on Windows whatever
+# HavokPath does.
+#
 # The corpus tests need extracted game data, which cannot reach a runner, so they
-# skip here and the rest of the suite still runs. They are what actually proves
-# the byte-exact round trip, so run them locally before tagging:
+# skip on both. They are what actually proves the byte-exact round trip, so run
+# them locally before tagging:
 #
 #     HKSK_CORPUS=~/path/to/extracted/meshes dotnet test
 #
@@ -31,10 +40,19 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # fail-fast is off so a platform-specific failure is not hidden by the other
+    # platform failing first: knowing it broke on one and not the other is most
+    # of the diagnosis.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
 
-    # HKX2 comes from GitHub Packages, and restoring it needs the token to carry
-    # a packages scope. Read is enough here: only the release job pushes.
+    runs-on: ${{ matrix.os }}
+
+    # HKX2, HKFBX and LeanMeshIO come from GitHub Packages, and restoring them
+    # needs the token to carry a packages scope. Read is enough here: only the
+    # release job pushes.
     permissions:
       contents: read
       packages: read
@@ -55,6 +73,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release
 
+      # A difference in the skip count between the two jobs is the codec being
+      # exercised: on Windows the spline round trip runs, on Linux it skips.
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
 
