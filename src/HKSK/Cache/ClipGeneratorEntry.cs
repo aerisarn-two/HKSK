@@ -1,6 +1,18 @@
 namespace HKSK.Cache;
 
-/// <summary>An event the clip announces, and when.</summary>
+/// <summary>
+/// An event the clip announces, and when.
+/// </summary>
+/// <remarks>
+/// Written as <c>name:time</c>. The name never contains a colon -- none of the
+/// 36,584 events in the shipped game does -- so the separator is unambiguous,
+/// though 3,941 names carry a dot, which is the payload separator the behaviour
+/// uses (<c>SoundPlay.NPCChickenScratch</c>).
+///
+/// The time is in clip seconds, and the list merges two sources: the animation's
+/// own annotation track and the behaviour's clip triggers. See
+/// <c>HKSK.Fbx.AnimationExchange</c>.
+/// </remarks>
 public sealed record ClipEvent(string Name, float Time);
 
 /// <summary>
@@ -23,8 +35,20 @@ public sealed class ClipGeneratorEntry
     /// <summary>Position of this clip's animation in the character's animation list.</summary>
     public int CacheIndex { get; set; }
 
+    /// <summary>
+    /// How fast the clip plays the animation, copied from the generator.
+    /// </summary>
+    /// <remarks>
+    /// Verbatim: all 10,556 clips in the shipped game that have a generator
+    /// agree with it exactly, so any difference is an edit that never reached
+    /// the cache.
+    /// </remarks>
     public float PlaybackSpeed { get; set; } = 1f;
+
+    /// <summary>Seconds trimmed from the start, copied from the generator.</summary>
     public float CropStartTime { get; set; }
+
+    /// <summary>Seconds trimmed from the end, copied from the generator.</summary>
     public float CropEndTime { get; set; }
 
     public List<ClipEvent> Events { get; set; } = [];

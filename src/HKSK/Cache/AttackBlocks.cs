@@ -1,16 +1,29 @@
 namespace HKSK.Cache;
 
-/// <summary>A variable the equipped weapon drives, and the range it may take.</summary>
+/// <summary>
+/// A behaviour variable the set is conditional on, and the values it may hold.
+/// </summary>
+/// <remarks>
+/// <paramref name="Min"/> and <paramref name="Max"/> are inclusive and usually
+/// equal, naming one value; a range picks a family, as
+/// <c>iRightHandType 1..4</c> does for the one-handed weapons.
+/// </remarks>
 public sealed record HandVariable(string Name, int Min, int Max);
 
 /// <summary>
-/// The variables that say what the character is holding.
+/// The variables that decide when a set applies.
 /// </summary>
 /// <remarks>
-/// The ranges index Skyrim's equipped-type enum: 0 hand-to-hand, 1 sword,
-/// 2 dagger, 3 axe, 4 mace, 5 two-handed sword, 6 two-handed axe, 7 bow,
-/// 8 staff, 9 spell, 10 shield, 11 crossbow. A set with no hand variables is an
-/// idle set rather than an attack set.
+/// Named for what it mostly holds -- <c>iRightHandType</c> and
+/// <c>iLeftHandType</c> are 297 of the 386 in the shipped game -- but it is not
+/// limited to hands: <c>iWantMountedWeaponAnims</c> and
+/// <c>bWantMountedWeaponAnims</c> also appear, with their own ranges. It is a
+/// list of behaviour variables and the values they must hold, whatever those
+/// variables are.
+///
+/// The hand types run 0 to 12 in the shipped data. Naming them here would be
+/// guesswork past what the files show -- ck-cmd's enum stops at 11, and the game
+/// uses 12 -- so the values are left as values.
 /// </remarks>
 public sealed class HandVariableData
 {
@@ -37,11 +50,20 @@ public sealed class HandVariableData
 /// <summary>One attack: the event that starts it and the clips it may pick.</summary>
 public sealed class AttackData
 {
+    /// <summary>The behaviour event that triggers the attack, e.g. <c>attackStart</c>.</summary>
     public string EventName { get; set; } = "";
 
-    /// <summary>Non-zero when the attack also exists mirrored.</summary>
+    /// <summary>
+    /// Whether the attack also exists mirrored. Only 0 and 1 occur in the
+    /// shipped game, so it is a flag written as an integer.
+    /// </summary>
     public int Mirrored { get; set; }
 
+    /// <summary>
+    /// The clips the attack may play, chosen between at runtime. Almost always
+    /// exactly one: of 737 attacks in the shipped game, 685 name a single clip,
+    /// 50 name several and 2 name none.
+    /// </summary>
     public List<string> Clips { get; set; } = [];
 
     public bool IsMirrored => Mirrored > 0;
@@ -99,6 +121,9 @@ public sealed class ClipAttackBlock
 /// Stored as a count of animations followed by three lines each -- folder
 /// checksum, name checksum, and the constant extension code. The count is of
 /// triples, not of lines. See <see cref="HavokCrc"/>.
+///
+/// An empty block is normal rather than a fault: 77 of the 990 sets in the
+/// shipped game name no animations.
 /// </remarks>
 public sealed class ClipFilesCrcBlock
 {

@@ -10,18 +10,50 @@ namespace HKSK.Cache;
 /// </remarks>
 public sealed class ProjectAttackBlock
 {
-    /// <summary>The format version, always <c>V3</c> in Skyrim.</summary>
+    /// <summary>
+    /// The format version. Every one of the 990 sets in the shipped game says
+    /// <c>V3</c>, so nothing else has been seen and nothing else is written.
+    /// </summary>
     public string Version { get; set; } = "V3";
 
-    /// <summary>Events that swap the animation set in.</summary>
+    /// <summary>
+    /// The events that bring this set in, e.g. <c>WeapEquip</c>,
+    /// <c>MagicForceEquip</c>, <c>swimForceEquip</c>.
+    /// </summary>
+    /// <remarks>
+    /// The commonest thing in the set data by far -- 1,921 entries over 615
+    /// distinct names -- and the only part most sets have: 791 of 990 carry swap
+    /// events and nothing else.
+    /// </remarks>
     public List<string> SwapEvents { get; set; } = [];
 
     public HandVariableData HandVariables { get; set; } = new();
     public ClipAttackBlock Attacks { get; set; } = new();
     public ClipFilesCrcBlock Checksums { get; set; } = new();
 
-    /// <summary>An idle set carries no hand variables; an attack set does.</summary>
-    public bool IsAttackSet => HandVariables.Variables.Count > 0;
+    /// <summary>
+    /// Whether the set applies only for particular equipment.
+    /// </summary>
+    /// <remarks>
+    /// This is <em>not</em> a way to tell an attack set from an idle one, which
+    /// is what the presence of hand variables looks like it should mean and what
+    /// an earlier version of this claimed. The shipped data says otherwise: 40
+    /// sets carry attacks with no hand variables at all, and 68 carry hand
+    /// variables with no attacks. The two are independent -- the variables say
+    /// when the set applies, <see cref="Attacks"/> says what it can attack with.
+    /// Ask <c>Attacks.Attacks.Count</c> for the other question.
+    /// </remarks>
+    public bool IsConditional => HandVariables.Variables.Count > 0;
+
+    /// <summary>The old name for <see cref="IsConditional"/>, which described it wrongly.</summary>
+    /// <remarks>
+    /// Same value -- it always meant "has hand variables" -- but the name said
+    /// it distinguished attack sets from idle ones, which the shipped data
+    /// contradicts. Kept so 1.0.x callers still compile.
+    /// </remarks>
+    [Obsolete("Renamed to IsConditional: hand variables say when a set applies, not whether it attacks. " +
+              "For attacks, ask Attacks.Attacks.Count.")]
+    public bool IsAttackSet => IsConditional;
 
     public static ProjectAttackBlock Read(LineCursor c)
     {

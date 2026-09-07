@@ -24,9 +24,33 @@ public sealed record RotationKey(float Time, Quaternion Value);
 /// </remarks>
 public sealed class ClipMovement
 {
+    /// <summary>The animation slot this motion belongs to.</summary>
     public int CacheIndex { get; set; }
+
+    /// <summary>
+    /// The span the curve covers, which is the time of its last key.
+    /// </summary>
+    /// <remarks>
+    /// True of every one of the 6,674 motion blocks in the shipped game whose
+    /// animation could be read. It also equals the animation's own duration in
+    /// 98.5% of them, so the two are usually the same number -- but it is the
+    /// keys that define it, not the animation.
+    /// </remarks>
     public float Duration { get; set; }
+
+    /// <summary>
+    /// Where the root has travelled to, as a displacement from where the
+    /// animation started.
+    /// </summary>
+    /// <remarks>
+    /// Implicitly zero at time zero: no block in the shipped game carries a key
+    /// at t=0, and 5,769 of the 6,725 carry a single key at the end holding the
+    /// whole displacement.
+    /// </remarks>
     public List<TranslationKey> Translations { get; set; } = [];
+
+    /// <summary>How the root has turned, on the same terms as the translations.</summary>
+    /// <remarks>Identity at time zero, and 6,428 of the 6,725 blocks carry one key.</remarks>
     public List<RotationKey> Rotations { get; set; } = [];
 
     /// <summary>Whether the root goes anywhere at all.</summary>
