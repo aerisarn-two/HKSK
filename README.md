@@ -188,7 +188,25 @@ files still import seventy-seven and name the three. `StoredName` and `ClipName`
 describe one animation, so passing them to a batch is refused rather than applied
 to an arbitrary member of it — use the overload that takes a function.
 
-Two things worth knowing:
+### Where root motion lives
+
+**In an animation, the root bone does not move.** Of 1,200 animations sampled
+from the game, 1,196 carry no extracted motion at all, and the root track of a
+run that travels 251 units sits at the origin for every frame. The travel is in
+the cache, and the game applies it.
+
+FBX has nowhere to put that, so exporting drives the root bone with the cache's
+motion — an animator has to see the travel. Importing therefore finds it twice,
+once as the root's animation and once as root motion, so the exchange takes it
+back off the root before compressing. The imported animation looks like a
+Skyrim one: root at the origin, travel in the cache, counted once.
+
+`ImportRootMotion` controls whether the **cache** is updated. It does not decide
+whether the animation is left carrying motion it should not have — that is
+always removed. A reference frame inherited from the template animation is
+dropped for the same reason.
+
+Two more things worth knowing:
 
 - **Events default to the animation's own annotation track**, which is what
   round trips. `EventSource.CachedClip` exports what the game actually fires —

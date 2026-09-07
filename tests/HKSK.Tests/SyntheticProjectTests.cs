@@ -181,6 +181,96 @@ public class SyntheticProjectTests
     }
 
     /// <summary>
+    /// The travel stays in the cache and out of the animation.
+    /// </summary>
+    /// <remarks>
+    /// In Skyrim an animation's root bone does not move -- the cache says how
+    /// far the clip carries the actor and the game applies it. FBX has nowhere
+    /// to put that, so exporting drives the root bone with it, which means
+    /// importing finds the travel twice: once as the root's animation and once
+    /// as root motion. Left alone the actor moves twice as far.
+    ///
+    /// So the root has to come back to the origin, and the cache has to keep
+    /// exactly what it had.
+    /// </remarks>
+    [MopperFact]
+    public void ImportingTakesTheTravelOutOfTheAnimationAndLeavesItInTheCache()
+    {
+        using var fixture = SyntheticProject.Build();
+        HavokProject project = fixture.Open();
+
+        AnimationSlot run = project.Animation("Run")!;
+        Assert.Equal(120f, run.Motion!.Travel, 2);
+
+        // As shipped: the root never leaves the origin.
+        Assert.Equal(0f, RootExcursion(project, run), 2);
+
+        var exchange = new AnimationExchange();
+        string fbx = Path.Combine(fixture.Folder, "run.fbx");
+
+        Assert.True(exchange.Export(project, run, fbx).Succeeded);
+        Assert.True(exchange.Import(project, fbx, new ImportOptions { StoredName = run.StoredName }).Succeeded);
+
+        // Still at the origin, and the cache still records the travel once.
+        Assert.Equal(0f, RootExcursion(project, project.Animation("Run")!), 1);
+        Assert.Equal(120f, project.Animation("Run")!.Motion!.Travel, 1);
+    }
+
+    /// <summary>
+    /// The exported curve ramps from the origin rather than starting at the
+    /// destination.
+    /// </summary>
+    /// <remarks>
+    /// The cache stores a displacement that is implicitly zero at t=0 and
+    /// usually holds a single key at the end carrying the whole of it. Sampled
+    /// as written that is a constant, so the animation would begin at its final
+    /// offset and stay there -- a chicken standing 251 units from where it
+    /// should be instead of running there.
+    /// </remarks>
+    [MopperFact]
+    public void TheExportedRootMotionRampsFromTheOrigin()
+    {
+        using var fixture = SyntheticProject.Build();
+        HavokProject project = fixture.Open();
+
+        AnimationSlot run = project.Animation("Run")!;
+        Assert.Single(run.Motion!.Translations);          // one key, at the end
+
+        var exchange = new AnimationExchange();
+        string fbx = Path.Combine(fixture.Folder, "run.fbx");
+        Assert.True(exchange.Export(project, run, fbx).Succeeded);
+
+        LeanMeshIO.FbxDocument document;
+        using (FileStream stream = File.OpenRead(fbx)) document = LeanMeshIO.FbxDocument.Load(stream);
+
+        HKFBX.Model.Skeleton skeleton = HKFBX.Fbx.FbxAnimationReader.ReadSkeleton(document);
+        HKFBX.Model.RootMotion motion = HKFBX.Fbx.FbxAnimationReader.ReadRootMotion(document, skeleton);
+
+        Assert.True(motion.Translations.Count > 2, "the motion should be sampled across the clip");
+        Assert.Equal(0f, motion.Translations[0].Value.Length(), 2);
+        Assert.Equal(120f, motion.Translations[^1].Value.Length(), 1);
+
+        // And it is monotonic, not a step at the end.
+        float half = motion.TranslationAt(run.Motion.Duration / 2f).Length();
+        Assert.InRange(half, 40f, 80f);
+    }
+
+    /// <summary>How far the root bone strays from the origin, over the whole clip.</summary>
+    private static float RootExcursion(HavokProject project, AnimationSlot slot)
+    {
+        (HKFBX.Codec.SplineAnimationData spline, _, _) =
+            HKFBX.Hkx.HkxAnimationFile.ReadAnimation(project.AnimationPath(slot)!);
+
+        HKFBX.Model.SampledAnimation sampled = new HKFBX.Codec.MopperAnimationCodec().Decompress(spline);
+
+        float worst = 0f;
+        for (int frame = 0; frame < sampled.FrameCount; frame++)
+            worst = Math.Max(worst, sampled[frame, 0].Translation.Length());
+
+        return worst;
+    }
+
+    /// <summary>
     /// A batch of FBX files becomes new animations, appended, leaving the
     /// existing numbering alone -- and the whole thing survives being saved and
     /// read back.

@@ -1,3 +1,4 @@
+using System.Numerics;
 using HKFBX.Codec;
 using HKFBX.Fbx;
 using HKFBX.Hkx;
@@ -227,13 +228,19 @@ public sealed class AnimationExchange
 
             HkFbx.Skeleton skeleton = FbxAnimationReader.ReadSkeleton(document);
             HkFbx.SampledAnimation animation = FbxAnimationReader.ReadAnimation(document, skeleton);
+            HkFbx.RootMotion motion = FbxAnimationReader.ReadRootMotion(document, skeleton);
 
-            SplineAnimationData spline = _codec.Compress(animation);
+            // The travel belongs to the cache, not to the animation, so it comes
+            // off the root bone before the animation is compressed. Always --
+            // ImportRootMotion decides whether the cache is updated, not whether
+            // the animation is left carrying motion it should not have.
+            SplineAnimationData spline = _codec.Compress(WithoutRootMotion(animation, skeleton, motion));
 
             string? folder = Path.GetDirectoryName(target);
             if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
 
             HkxAnimationFile.WriteAnimation(template, spline, target);
+            ClearExtractedMotion(target);
 
             if (options.ImportEvents)
             {
@@ -244,11 +251,8 @@ public sealed class AnimationExchange
                 if (events.Count > 0) HkxAnimationFile.WriteAnnotations(target, events, target);
             }
 
-            if (options.ImportRootMotion)
-            {
-                HkFbx.RootMotion motion = FbxAnimationReader.ReadRootMotion(document, skeleton);
-                if (!motion.IsEmpty) project.SetRootMotion(slot, motion.ToCache());
-            }
+            if (options.ImportRootMotion && !motion.IsEmpty)
+                project.SetRootMotion(slot, motion.ToCache());
 
             if (options.ClipName is { Length: > 0 } clipName && project.Clip(clipName) is null)
                 project.AddClip(clipName, slot);
@@ -323,6 +327,89 @@ public sealed class AnimationExchange
         foreach (string path in fbxPaths) results.Add(Import(project, path, options(path)));
 
         return results;
+    }
+
+    /// <summary>
+    /// Drops any reference frame the template brought with it.
+    /// </summary>
+    /// <remarks>
+    /// A new animation is built from an existing one, which carries more than
+    /// curves. Almost no Skyrim animation has an extracted motion -- 1,196 of
+    /// 1,200 sampled from the game have none, because the travel is in the cache
+    /// -- but if the template is one of the few that does, the imported
+    /// animation would inherit a reference frame belonging to a different
+    /// animation and move by it.
+    /// </remarks>
+    private static void ClearExtractedMotion(string path)
+    {
+        if (HKX2.Util.ReadHKX(path) is not HKX2.hkRootLevelContainer root) return;
+
+        HKX2.hkaAnimation? animation = root.m_namedVariants
+            .Select(v => v?.m_variant)
+            .OfType<HKX2.hkaAnimationContainer>()
+            .SelectMany(c => c.m_animations)
+            .FirstOrDefault();
+
+        if (animation?.m_extractedMotion is null) return;
+
+        animation.m_extractedMotion = null;
+
+        using FileStream stream = File.Create(path);
+        HKX2.Util.WriteHKX(root, HKX2.HKXHeader.SkyrimSE(), stream);
+    }
+
+    /// <summary>
+    /// Takes the root motion back out of the root bone's track.
+    /// </summary>
+    /// <remarks>
+    /// In Skyrim an animation's root bone does not move: of 1,200 animations
+    /// sampled from the game, 1,196 carry no extracted motion at all, and the
+    /// root track of a run that travels 251 units sits at the origin for every
+    /// frame. The travel lives in the cache, and the game applies it.
+    ///
+    /// FBX has nowhere to put that, so the exporter drives the root bone with it
+    /// -- an animator needs to see the travel. Reading it back therefore finds it
+    /// twice: once as the root bone's animation and once as root motion. Left
+    /// alone, the imported animation carries the travel <em>and</em> the cache
+    /// records it, and the actor moves twice as far.
+    ///
+    /// So it is subtracted here, which returns the root to where Skyrim keeps
+    /// it. For an animation that came from the game this yields exactly the
+    /// original static root; for one an animator moved by hand it moves all the
+    /// travel into the root motion, which is where it belongs.
+    /// </remarks>
+    private static HkFbx.SampledAnimation WithoutRootMotion(
+        HkFbx.SampledAnimation animation, HkFbx.Skeleton skeleton, HkFbx.RootMotion motion)
+    {
+        if (motion.IsEmpty) return animation;
+
+        int root = skeleton.Roots().FirstOrDefault(-1);
+        if (root < 0) return animation;
+
+        // The animation is indexed by track; the root is a bone.
+        int track = -1;
+        for (int i = 0; i < animation.TrackCount; i++)
+            if (animation.BoneForTrack(i) == root) { track = i; break; }
+
+        if (track < 0) return animation;
+
+        var transforms = (HkFbx.BoneTransform[])animation.Transforms.Clone();
+
+        for (int frame = 0; frame < animation.FrameCount; frame++)
+        {
+            int at = frame * animation.TrackCount + track;
+            float time = animation.TimeOf(frame);
+
+            HkFbx.BoneTransform current = transforms[at];
+
+            transforms[at] = new HkFbx.BoneTransform(
+                current.Translation - motion.TranslationAt(time),
+                Quaternion.Normalize(
+                    Quaternion.Inverse(motion.RotationAt(time)) * current.Rotation),
+                current.Scale);
+        }
+
+        return animation with { Transforms = transforms };
     }
 
     // An existing animation of the same project shares its skeleton and binding,

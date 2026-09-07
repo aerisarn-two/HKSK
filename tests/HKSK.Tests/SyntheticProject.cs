@@ -120,16 +120,19 @@ internal sealed class SyntheticProject : IDisposable
     {
         var codec = new MopperAnimationCodec();
 
-        // Walk travels and turns; Run travels further; Unused does neither, so a
-        // test can tell them apart by their motion alone.
-        Write(codec, "Walk.hkx", travel: 40f, turn: MathF.PI / 2f,
-              events: [(0.2f, "FootLeft"), (0.5f, "FootRight")]);
-        Write(codec, "Run.hkx", travel: 120f, turn: 0f, events: [(0.25f, "FootLeft")]);
-        Write(codec, "Unused.hkx", travel: 0f, turn: 0f, events: []);
+        // Walk travels and turns, Run travels further and Unused does neither --
+        // all of which the cache says, not the bones.
+        Write(codec, "Walk.hkx", [(0.2f, "FootLeft"), (0.5f, "FootRight")]);
+        Write(codec, "Run.hkx", [(0.25f, "FootLeft")]);
+        Write(codec, "Unused.hkx", []);
     }
 
-    private void Write(
-        IAnimationCodec codec, string file, float travel, float turn, (float Time, string Text)[] events)
+    /// <remarks>
+    /// How far the animation travels is not expressed here at all: the root stays
+    /// put, as it does in the game, and the travel is what the cache records for
+    /// it -- see <see cref="WriteCache"/>.
+    /// </remarks>
+    private void Write(IAnimationCodec codec, string file, (float Time, string Text)[] events)
     {
         const int frames = 24;
         const float frameDuration = 1f / 30f;
@@ -139,19 +142,21 @@ internal sealed class SyntheticProject : IDisposable
         for (int frame = 0; frame < frames; frame++)
         {
             float time = frame * frameDuration;
-            float progress = frame / (float)(frames - 1);
 
             for (int bone = 0; bone < Bones.Length; bone++)
             {
-                // The root carries the motion; the others just wave, so the
-                // animation is smooth enough for curve fitting to be accurate.
+                // The root stays at the origin, as Skyrim's do: the travel is
+                // the cache's business and the game applies it. Of 1,200
+                // animations sampled from the game, 1,196 carry no extracted
+                // motion and their root track never leaves the origin.
                 bool root = bone == 0;
 
-                transforms[frame * Bones.Length + bone] = new HkFbx.BoneTransform(
-                    new Vector3(root ? progress * travel : 0f, MathF.Sin(time * MathF.Tau) * 2f, bone * 10f),
-                    Quaternion.CreateFromAxisAngle(
-                        Vector3.UnitZ, root ? progress * turn : MathF.Sin(time * MathF.Tau) * 0.2f),
-                    Vector3.One);
+                transforms[frame * Bones.Length + bone] = root
+                    ? HkFbx.BoneTransform.Identity
+                    : new HkFbx.BoneTransform(
+                        new Vector3(0f, MathF.Sin(time * MathF.Tau) * 2f, bone * 10f),
+                        Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.Sin(time * MathF.Tau) * 0.2f),
+                        Vector3.One);
             }
         }
 

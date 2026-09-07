@@ -19,15 +19,37 @@ namespace HKSK.Fbx;
 public static class Conversions
 {
     /// <summary>The cache's root motion as HKFBX wants it.</summary>
-    public static HkFbx.RootMotion ToFbx(this ClipMovement? movement) =>
-        movement is null
-            ? HkFbx.RootMotion.None
-            : new HkFbx.RootMotion
-            {
-                Duration = movement.Duration,
-                Translations = [.. movement.Translations.Select(t => new HkFbx.TranslationKey(t.Time, t.Value))],
-                Rotations = [.. movement.Rotations.Select(r => new HkFbx.RotationKey(r.Time, r.Value))],
-            };
+    /// <remarks>
+    /// The curve is a displacement from where the animation starts, and it is
+    /// implicitly zero at time zero -- no movement block in the shipped game
+    /// carries a key at t=0, and most carry a single key at the end holding the
+    /// whole displacement. Sampling that as written would put the animation at
+    /// its final offset from the first frame and leave it there, so the implicit
+    /// origin is made explicit here.
+    /// </remarks>
+    public static HkFbx.RootMotion ToFbx(this ClipMovement? movement)
+    {
+        if (movement is null) return HkFbx.RootMotion.None;
+
+        var translations = new List<HkFbx.TranslationKey>();
+        if (movement.Translations.Count > 0 && movement.Translations[0].Time > 0f)
+            translations.Add(new HkFbx.TranslationKey(0f, Vector3.Zero));
+
+        translations.AddRange(movement.Translations.Select(t => new HkFbx.TranslationKey(t.Time, t.Value)));
+
+        var rotations = new List<HkFbx.RotationKey>();
+        if (movement.Rotations.Count > 0 && movement.Rotations[0].Time > 0f)
+            rotations.Add(new HkFbx.RotationKey(0f, Quaternion.Identity));
+
+        rotations.AddRange(movement.Rotations.Select(r => new HkFbx.RotationKey(r.Time, r.Value)));
+
+        return new HkFbx.RootMotion
+        {
+            Duration = movement.Duration,
+            Translations = translations,
+            Rotations = rotations,
+        };
+    }
 
     /// <summary>HKFBX's root motion as a cache movement block.</summary>
     /// <remarks>
@@ -37,8 +59,18 @@ public static class Conversions
     public static ClipMovement ToCache(this HkFbx.RootMotion motion) => new()
     {
         Duration = motion.Duration,
-        Translations = [.. motion.Translations.Select(t => new TranslationKey(t.Time, t.Value))],
-        Rotations = [.. motion.Rotations.Select(r => new RotationKey(r.Time, r.Value))],
+
+        // The implicit origin key is dropped again: the cache does not store one,
+        // and writing it back would change the file's shape for no gain.
+        Translations =
+            [.. motion.Translations
+                .Where((t, i) => i > 0 || t.Time > 0f || t.Value != Vector3.Zero)
+                .Select(t => new TranslationKey(t.Time, t.Value))],
+
+        Rotations =
+            [.. motion.Rotations
+                .Where((r, i) => i > 0 || r.Time > 0f || r.Value != Quaternion.Identity)
+                .Select(r => new RotationKey(r.Time, r.Value))],
     };
 
     /// <summary>
