@@ -56,7 +56,8 @@ public sealed record SplitIssue(string Kind, string Message)
 /// So the merged file is the source of truth for reading. This type exists for
 /// the other direction: to write the split form out, edit it, and rebuild the
 /// merged file from it once it has been brought up to date.
-/// <see cref="ToMerged"/> reports what it could not account for rather than
+/// <see cref="ToMerged(out IReadOnlyList{SplitIssue})"/> reports what it could not
+/// account for rather than
 /// quietly dropping it.
 /// </remarks>
 public sealed class SplitCache
@@ -84,7 +85,7 @@ public sealed class SplitCache
     /// else records it -- a directory listing is not an order. Project files
     /// present but unlisted are still read, and appended after the listed ones
     /// in name order, so a project added without updating the listing is not
-    /// silently lost. <see cref="ToMerged"/> reports them.
+    /// silently lost. <see cref="ToMerged(out IReadOnlyList{SplitIssue})"/> reports them.
     /// </remarks>
     public static SplitCache Load(string folder)
     {
@@ -180,7 +181,7 @@ public sealed class SplitCache
     /// Rebuilds the merged files from the split ones.
     /// </summary>
     /// <remarks>
-    /// The inverse of <see cref="FromMerged"/>. Order follows the two listings,
+    /// The inverse of <see cref="FromMerged(SkyrimCache)"/>. Order follows the two listings,
     /// which is what makes the result reproducible rather than dependent on how
     /// the filesystem happens to enumerate.
     ///
