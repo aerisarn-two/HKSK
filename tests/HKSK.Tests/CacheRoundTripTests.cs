@@ -116,6 +116,42 @@ public class CacheRoundTripTests
         }
     }
 
+    /// <summary>
+    /// A cache whose last project has an animation cache survives, blank line
+    /// and all.
+    /// </summary>
+    /// <remarks>
+    /// A movement block ends with a blank line, so such a file ends with one
+    /// too -- and a reader that trims trailing blank lines eats it and leaves
+    /// the block one line short of the count written in front of it. Skyrim's
+    /// own merged file ends on WoodenBow.txt, which has no cache, so the corpus
+    /// never exercises this; a cache written by this library after an edit
+    /// easily could.
+    /// </remarks>
+    [Fact]
+    public void ACacheEndingInACachedProjectSurvives()
+    {
+        var file = new AnimationDataFile();
+        file.Projects.Add(Fake.Data());
+
+        string written = file.Write();
+        Assert.EndsWith("\r\n\r\n", written);
+
+        // Through text, and through a file, which split lines differently.
+        AssertIdentical(written, AnimationDataFile.Parse(written).Write());
+
+        string path = Path.Combine(Path.GetTempPath(), $"hksk-{Guid.NewGuid():N}.txt");
+        try
+        {
+            File.WriteAllText(path, written);
+            AssertIdentical(written, AnimationDataFile.Load(path).Write());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static LineCursor Cursor(string text)
     {
         var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();

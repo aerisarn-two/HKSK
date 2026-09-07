@@ -132,14 +132,10 @@ public sealed class AnimationSetDataFile
 
     public static AnimationSetDataFile Load(string path) => Parse(File.ReadAllLines(path));
 
-    public static AnimationSetDataFile Parse(string text) =>
-        Parse(text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray());
+    public static AnimationSetDataFile Parse(string text) => Parse(Split(text));
 
     public static AnimationSetDataFile Parse(IReadOnlyList<string> lines)
     {
-        if (lines.Count > 0 && lines[^1].Length == 0)
-            lines = lines.Take(lines.Count - 1).ToList();
-
         var c = new LineCursor(lines);
         var file = new AnimationSetDataFile();
 
@@ -173,5 +169,26 @@ public sealed class AnimationSetDataFile
         string stem = Path.GetFileNameWithoutExtension(name.Replace('\\', '/'));
         return Projects.FirstOrDefault(p =>
             string.Equals(p.Stem, stem, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Splits file text into lines the way <see cref="File.ReadAllLines(string)"/> does.
+    /// </summary>
+    /// <remarks>
+    /// Every line is CRLF-terminated including the last, so splitting on the
+    /// newline leaves one empty element past the end that is not a line. Only
+    /// that one is dropped: a cached project's movement block genuinely ends
+    /// with a blank line, and trimming blank lines in general would eat it and
+    /// leave the block a line short of the count in front of it.
+    /// </remarks>
+    private static string[] Split(string text)
+    {
+        string[] parts = text.Split('\n');
+        int count = parts.Length > 0 && parts[^1].Length == 0 ? parts.Length - 1 : parts.Length;
+
+        var lines = new string[count];
+        for (int i = 0; i < count; i++) lines[i] = parts[i].TrimEnd('\r');
+
+        return lines;
     }
 }
