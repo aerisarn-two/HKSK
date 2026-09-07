@@ -1,3 +1,4 @@
+using System.Numerics;
 using HKSK.Fbx;
 using HKSK.Model;
 using HKSK.Validation;
@@ -253,6 +254,97 @@ public class SyntheticProjectTests
         // And it is monotonic, not a step at the end.
         float half = motion.TranslationAt(run.Motion.Duration / 2f).Length();
         Assert.InRange(half, 40f, 80f);
+    }
+
+    /// <summary>
+    /// An FBX that never came from here: an animator moved the root bone, and
+    /// the travel has to end up in the cache.
+    /// </summary>
+    /// <remarks>
+    /// The other exchange tests are a closed loop -- exported from a project and
+    /// imported straight back -- so the FBX already carries the motion where the
+    /// exporter put it. That proves the round trip and not much else. This is
+    /// the case the exchange actually exists for: a take authored elsewhere,
+    /// with the travel on the root bone and no root motion declared anywhere,
+    /// which is what any animation package produces.
+    /// </remarks>
+    [MopperFact]
+    public void AnFbxAuthoredElsewhereHasItsTravelExtractedIntoTheCache()
+    {
+        using var fixture = SyntheticProject.Build();
+        HavokProject project = fixture.Open();
+
+        const float travel = 200f;
+        const float turn = MathF.PI / 2f;
+
+        HKFBX.Model.Skeleton skeleton = HKFBX.Hkx.HkxAnimationFile.ReadSkeleton(project.SkeletonPath!);
+        string fbx = Path.Combine(fixture.Folder, "authored.fbx");
+        WriteAuthoredTake(skeleton, fbx, travel, turn);
+
+        var exchange = new AnimationExchange();
+        ExchangeResult result = exchange.Import(project, fbx, new ImportOptions
+        {
+            StoredName = @"Animations\Authored.hkx",
+            ClipName = "AuthoredClip",
+        });
+
+        Assert.True(result.Succeeded, result.Problem);
+
+        // The travel was taken off the root and written to the cache.
+        AnimationSlot slot = project.Animation("Authored")!;
+        Assert.NotNull(slot.Motion);
+        Assert.Equal(travel, slot.Motion!.Travel, 1);
+        Assert.Equal(turn, slot.Motion.Turn, 2);
+
+        // And the animation itself keeps its root at the origin, as Skyrim's do.
+        Assert.Equal(0f, RootExcursion(project, slot), 1);
+
+        Assert.Equal(3, result.CacheIndex);
+        Assert.NotNull(project.Clip("AuthoredClip"));
+    }
+
+    /// <summary>
+    /// A take as an animation package writes one: the travel is the root bone's
+    /// own animation, and nothing declares it as root motion.
+    /// </summary>
+    private static void WriteAuthoredTake(
+        HKFBX.Model.Skeleton skeleton, string path, float travel, float turn)
+    {
+        const int frames = 31;
+        const float frameDuration = 1f / 30f;
+
+        var transforms = new HKFBX.Model.BoneTransform[frames * skeleton.Count];
+
+        for (int frame = 0; frame < frames; frame++)
+        {
+            float progress = frame / (float)(frames - 1);
+
+            for (int bone = 0; bone < skeleton.Count; bone++)
+                transforms[frame * skeleton.Count + bone] = bone == 0
+                    ? new HKFBX.Model.BoneTransform(
+                        new Vector3(0f, progress * travel, 0f),
+                        Quaternion.CreateFromAxisAngle(Vector3.UnitZ, progress * turn),
+                        Vector3.One)
+                    : new HKFBX.Model.BoneTransform(
+                        new Vector3(0f, MathF.Sin(frame * frameDuration * MathF.Tau) * 1.5f, 0f),
+                        Quaternion.Identity,
+                        Vector3.One);
+        }
+
+        var animation = new HKFBX.Model.SampledAnimation
+        {
+            FrameCount = frames,
+            TrackCount = skeleton.Count,
+            Duration = (frames - 1) * frameDuration,
+            FrameDuration = frameDuration,
+            Transforms = transforms,
+
+            // Nothing declares root motion: it is simply how the root is animated.
+            RootMotion = HKFBX.Model.RootMotion.None,
+        };
+
+        using FileStream stream = File.Create(path);
+        HKFBX.Fbx.FbxAnimationWriter.Build(skeleton, animation, "authored").Save(stream);
     }
 
     /// <summary>How far the root bone strays from the origin, over the whole clip.</summary>
