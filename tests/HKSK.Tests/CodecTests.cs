@@ -17,7 +17,7 @@ public sealed class MopperFactAttribute : FactAttribute
 {
     public MopperFactAttribute()
     {
-        if (!Mopper.Available) Skip = "mopper.exe was not found beside the tests or on PATH";
+        if (!Mopper.Available) Skip = "mopper.exe cannot be run here (not found, or no Wine off Windows)";
     }
 }
 

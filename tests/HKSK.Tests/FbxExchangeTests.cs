@@ -20,14 +20,21 @@ public sealed class FbxFactAttribute : FactAttribute
     public FbxFactAttribute()
     {
         if (!Corpus.Available) Skip = $"set {Corpus.EnvVar} to an extracted meshes directory to run this";
-        else if (!Mopper.Available) Skip = "mopper.exe was not found beside the tests or on PATH";
+        else if (!Mopper.Available) Skip = "mopper.exe cannot be run here (not found, or no Wine off Windows)";
     }
 }
 
-/// <summary>Finds Havok's spline codec the way HKFBX does.</summary>
+/// <summary>Whether Havok's spline codec can actually be run here.</summary>
+/// <remarks>
+/// Finding mopper.exe is not enough. The Mopper.Native package copies it to the
+/// output directory on every platform, including ones that cannot execute it, so
+/// the file being present says nothing. Off Windows it is run through Wine, and
+/// a stock Linux runner has no Wine -- which showed up as a failing CI job
+/// rather than a skipped test until this checked for it.
+/// </remarks>
 internal static class Mopper
 {
-    public static bool Available { get; } = Find() is not null;
+    public static bool Available { get; } = Find() is not null && CanExecute();
 
     private static string? Find()
     {
@@ -39,6 +46,13 @@ internal static class Mopper
             .Select(d => Path.Combine(d, "mopper.exe"))
             .FirstOrDefault(File.Exists);
     }
+
+    // Windows runs the 32-bit binary through WOW64; everything else needs Wine.
+    private static bool CanExecute() =>
+        OperatingSystem.IsWindows() ||
+        (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator)
+            .Any(d => File.Exists(Path.Combine(d, "wine")));
 }
 
 /// <summary>
