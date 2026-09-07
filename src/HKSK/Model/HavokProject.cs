@@ -82,6 +82,37 @@ public sealed partial class HavokProject
     public bool HasHavok => Character is not null;
 
     /// <summary>
+    /// Whether the animation list has been changed since it was read.
+    /// </summary>
+    /// <remarks>
+    /// The list lives in the character packfile, not in the cache, so saving the
+    /// cache alone does not persist it -- and a cache referring to slots the
+    /// character file does not have is exactly the drift this library exists to
+    /// prevent. <see cref="SaveCharacter"/> writes it back.
+    /// </remarks>
+    public bool CharacterModified { get; internal set; }
+
+    /// <summary>
+    /// Writes the character packfile back, persisting the animation list.
+    /// </summary>
+    /// <remarks>
+    /// Separate from saving the cache because the two are different files and a
+    /// caller may want to write them to different places. Both have to happen
+    /// for an added or removed animation to be real.
+    /// </remarks>
+    /// <param name="path">Where to write. Defaults to where it was read from.</param>
+    public void SaveCharacter(string? path = null)
+    {
+        if (Character?.File is null)
+            throw new InvalidOperationException(
+                $"'{Name}' has no character packfile to write: it was opened from the cache alone, " +
+                "or built in memory.");
+
+        Character.File.Save(path ?? Character.File.Path);
+        CharacterModified = false;
+    }
+
+    /// <summary>
     /// Builds the unified view of one project.
     /// </summary>
     /// <param name="data">The project's animation data entry.</param>
@@ -232,6 +263,53 @@ public sealed partial class HavokProject
         foreach (ClipMovement m in Data.Movements?.Movements ?? []) highest = Math.Max(highest, m.CacheIndex);
         return highest;
     }
+
+    /// <summary>
+    /// The folder the project's relative paths resolve against, when the Havok
+    /// files were loaded.
+    /// </summary>
+    public string? Folder => ProjectFile?.Folder;
+
+    /// <summary>
+    /// The skeleton packfile the character is rigged to, resolved.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the character file's rig name, falling back to the cache's
+    /// file list. Needed by anything that has to make sense of an animation's
+    /// tracks, since an animation carries only transforms and the bones they
+    /// drive live here.
+    /// </remarks>
+    public string? SkeletonPath
+    {
+        get
+        {
+            if (Folder is null) return null;
+
+            if (Character is not null && Character.RigName.Length > 0 &&
+                HavokPath.Resolve(Folder, Character.RigName) is { } rig)
+                return rig;
+
+            return Data.Block.Files
+                .Where(f => Segment(f).StartsWith("character assets", StringComparison.OrdinalIgnoreCase))
+                .Select(f => HavokPath.Resolve(Folder, f))
+                .FirstOrDefault(p => p is not null);
+        }
+    }
+
+    /// <summary>The animation packfile a slot names, resolved, or null if absent.</summary>
+    public string? AnimationPath(AnimationSlot slot) =>
+        Folder is null || slot.StoredName.Length == 0
+            ? null
+            : HavokPath.Resolve(Folder, slot.StoredName);
+
+    /// <summary>
+    /// Where a slot's animation packfile should be written, whether or not it
+    /// exists yet.
+    /// </summary>
+    public string? AnimationTarget(AnimationSlot slot) =>
+        Folder is null || slot.StoredName.Length == 0
+            ? null
+            : AnimationPath(slot) ?? Path.Combine(Folder, HavokPath.Normalise(slot.StoredName));
 
     /// <summary>Finds a clip by name, as the game matches them.</summary>
     public Clip? Clip(string name) =>

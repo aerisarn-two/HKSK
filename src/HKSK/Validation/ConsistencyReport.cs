@@ -55,6 +55,14 @@ public static class ConsistencyReport
             findings.Add(new Finding(Severity.Error, "missing-movements",
                 $"'{project.Name}' declares an animation cache but carries no root motion block"));
 
+        // Saving the cache does not save the animation list: it lives in the
+        // character packfile. A cache written without it refers to slots the
+        // character does not have.
+        if (project.CharacterModified)
+            findings.Add(new Finding(Severity.Error, "unsaved-animation-list",
+                $"'{project.Name}' has animations added or removed that are still only in memory; " +
+                "call SaveCharacter() as well as saving the cache"));
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (ClipGeneratorEntry clip in project.Data.Block.Clips)
             if (!seen.Add(clip.Name))

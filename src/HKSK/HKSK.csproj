@@ -30,6 +30,14 @@
 
   <ItemGroup>
     <PackageReference Include="HKX2" Version="1.0.0" />
+    <!--
+      The hkx/FBX conversion. HKFBX converts one animation and knows nothing
+      about projects; this supplies the root motion and events it asks the
+      caller for, because the cache is where they are kept.
+    -->
+    <PackageReference Include="HKFBX" Version="1.1.0" />
+    <!-- FbxDocument is used directly, so it is named rather than left transitive. -->
+    <PackageReference Include="LeanMeshIO" Version="1.0.2" />
   </ItemGroup>
 
   <ItemGroup>

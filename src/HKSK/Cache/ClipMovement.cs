@@ -34,11 +34,30 @@ public sealed class ClipMovement
         Translations.Any(t => t.Value != Vector3.Zero) ||
         Rotations.Any(r => r.Value != Quaternion.Identity);
 
-    /// <summary>How far the root travels from first key to last.</summary>
-    public float Travel =>
-        Translations.Count < 2
-            ? 0f
-            : Vector3.Distance(Translations[0].Value, Translations[^1].Value);
+    /// <summary>
+    /// How far the root ends up from where it started.
+    /// </summary>
+    /// <remarks>
+    /// The curve is a displacement from the start of the animation, and it is
+    /// implicitly zero at time zero: no block in the shipped game carries a key
+    /// at t=0, and 5,769 of the 6,725 carry a single key at the end holding the
+    /// whole displacement. So this is the magnitude of the last value, not the
+    /// distance between the first key and the last -- which would be zero for
+    /// most of the game.
+    /// </remarks>
+    public float Travel => Translations.Count == 0 ? 0f : Translations[^1].Value.Length();
+
+    /// <summary>How far the root turns over the animation, in radians.</summary>
+    public float Turn
+    {
+        get
+        {
+            if (Rotations.Count == 0) return 0f;
+
+            Quaternion last = Rotations[^1].Value;
+            return 2f * MathF.Acos(Math.Clamp(MathF.Abs(last.W), -1f, 1f));
+        }
+    }
 
     public static ClipMovement Read(LineCursor c)
     {

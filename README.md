@@ -147,6 +147,63 @@ Order follows the two `dirlist.txt` files, which is the only record of it, and
 Splitting the shipped cache and rebuilding it reproduces both merged files
 byte-for-byte.
 
+## FBX, with events and root motion
+
+[HKFBX](https://github.com/aerisarn-two/HKFBX) converts a single animation
+between hkx and FBX. It deliberately does not know where root motion comes from —
+Havok keeps it apart from the skeleton, and `SampledAnimation.RootMotion` is
+supplied by the caller. In Skyrim it comes from the cache, which is what this
+library knows, so the two halves fit:
+
+```csharp
+var exchange = new AnimationExchange();
+
+// Out, carrying the cache's root motion and the animation's events.
+exchange.ExportAll(chicken, @"out\chicken");
+
+// ...and back, as new animations with clips over them.
+var results = exchange.ImportAll(chicken, Directory.GetFiles(@"out\chicken", "*.fbx"),
+    path => new ImportOptions
+    {
+        StoredName = $@"Animations\{Path.GetFileNameWithoutExtension(path)}.hkx",
+        ClipName   = Path.GetFileNameWithoutExtension(path),
+    });
+
+chicken.SaveCharacter();   // the animation list lives in the character .hkx
+cache.Save();              // the clips and root motion live in the cache
+```
+
+Both saves are needed, and they are separate files. `AddAnimation` changes the
+character packfile's animation list; the clips and motion blocks are in the
+cache. Saving one without the other leaves the cache pointing at slots the
+character file does not have, so `ConsistencyReport` reports an
+`unsaved-animation-list` error while that is true.
+
+Importing **replaces** when the stored name matches an existing animation, which
+keeps the slot and therefore every clip and motion block already pointing at it.
+Otherwise it **appends**, for the same reason `AddAnimation` does.
+
+Batches report per file rather than throwing, so eighty imports with three bad
+files still import seventy-seven and name the three. `StoredName` and `ClipName`
+describe one animation, so passing them to a batch is refused rather than applied
+to an arbitrary member of it — use the overload that takes a function.
+
+Two things worth knowing:
+
+- **Events default to the animation's own annotation track**, which is what
+  round trips. `EventSource.CachedClip` exports what the game actually fires —
+  annotations *merged with the behaviour's triggers* — which is useful to look
+  at but must not be imported back, or the triggers become annotations and fire
+  twice.
+- **Re-importing densifies root motion.** FBX stores per-frame curves, so a
+  motion block that went out as one endpoint key comes back with one key per
+  frame. The displacement is unchanged — a chicken turn of exactly π/2 comes back
+  as π/2 — but the file grows.
+
+Conversion needs `mopper.exe`, because Havok's spline *encoder* is proprietary
+and this is the only credible implementation of it. It is a Win32 binary and runs
+under Wine off Windows.
+
 ## Fidelity
 
 Reading and writing are byte-exact: loading and saving with no edits reproduces

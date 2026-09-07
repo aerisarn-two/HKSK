@@ -18,4 +18,12 @@
     <ProjectReference Include="../../src/HKSK/HKSK.csproj" />
   </ItemGroup>
 
+  <!--
+    Ships mopper.exe and copies it beside the test output, so the FBX tests can
+    find Havok's spline codec without configuration.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Mopper.Native" Version="2.1.0" />
+  </ItemGroup>
+
 </Project>

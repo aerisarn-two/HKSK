@@ -40,6 +40,7 @@ public sealed partial class HavokProject
         if (existing is not null) return existing;
 
         Character.AnimationNames.Add(storedName);
+        CharacterModified = true;
 
         if (dataRelativeFolder is not null)
         {
@@ -96,6 +97,7 @@ public sealed partial class HavokProject
         }
 
         Character.AnimationNames.RemoveAt(removed);
+        CharacterModified = true;
 
         Rebuild();
         return orphaned;
