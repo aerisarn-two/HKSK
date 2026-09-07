@@ -120,10 +120,46 @@ public static class ConsistencyReport
                     $"{expected}, but the cache says {clip.CacheIndex}"));
         }
 
+        // The cache restates the generator's speed and crop times. Unlike the
+        // event list, these are copied verbatim: across the shipped game all
+        // 10,556 clips that have a generator agree on both, so any difference
+        // here is a real edit that did not reach the cache.
+        foreach (Clip clip in project.Clips)
+        {
+            if (clip.Generator is null) continue;
+
+            if (!Near(clip.Generator.m_playbackSpeed, clip.Entry.PlaybackSpeed))
+                findings.Add(new Finding(Severity.Drift, "speed-mismatch",
+                    $"clip '{clip.Name}' plays at {clip.Generator.m_playbackSpeed} in the behaviour " +
+                    $"but {clip.Entry.PlaybackSpeed} in the cache"));
+
+            if (!Near(clip.Generator.m_cropStartAmountLocalTime, clip.Entry.CropStartTime) ||
+                !Near(clip.Generator.m_cropEndAmountLocalTime, clip.Entry.CropEndTime))
+                findings.Add(new Finding(Severity.Drift, "crop-mismatch",
+                    $"clip '{clip.Name}' is cropped " +
+                    $"{clip.Generator.m_cropStartAmountLocalTime}/{clip.Generator.m_cropEndAmountLocalTime} " +
+                    $"in the behaviour but " +
+                    $"{clip.Entry.CropStartTime}/{clip.Entry.CropEndTime} in the cache"));
+        }
+
+        // Every generator the behaviours define should be in the cache -- across
+        // the shipped game, every one of the 10,550 is. A generator the cache
+        // does not list is a clip the game cannot play.
+        var cached = new HashSet<string>(
+            project.Data.Block.Clips.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+
+        foreach (Havok.BehaviorFile behavior in project.Behaviors)
+            foreach (HKX2.hkbClipGenerator generator in behavior.Clips)
+                if (!cached.Contains(generator.m_name))
+                    findings.Add(new Finding(Severity.Drift, "generator-not-cached",
+                        $"the behaviour defines '{generator.m_name}', which the cache does not list"));
+
         foreach (string missing in project.MissingBehaviors)
             findings.Add(new Finding(Severity.Drift, "behavior-not-found",
                 $"'{project.Name}' lists the behaviour '{missing}', which was not found"));
     }
+
+    private static bool Near(float a, float b) => Math.Abs(a - b) < 1e-6f;
 
     private static int IndexOf(IList<string> names, string name)
     {

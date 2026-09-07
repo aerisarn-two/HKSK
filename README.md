@@ -76,6 +76,49 @@ carry, at a constant offset — which is why `ConsistencyReport` separates
 `Drift` from `Error`, and why the numbering is preserved rather than
 recomputed. Recomputing it would "fix" those five into disagreeing with the game.
 
+## Checked against the behaviour graphs too
+
+The character file and the behaviour files are independent witnesses, so the
+cache is checked against both. Against the behaviours, across all 10,556 clips
+that have a generator:
+
+| What the cache restates | Agreement |
+| --- | --- |
+| playback speed | 10,556 / 10,556 |
+| crop start and end | 10,556 / 10,556 |
+| every generator is cached | 10,550 / 10,550 |
+| event list | ~92% reproduce exactly |
+
+Speed and crop are copied verbatim, so `ConsistencyReport` treats any difference
+as drift worth reporting. Nothing goes missing in the direction that would
+matter — every generator the behaviours define is in the cache. The 41 cached
+clips with no generator are clips from graphs shared with other projects.
+
+`m_animationBindingIndex` is `-1` on every generator in the game, which rules out
+the obvious alternative explanation for where the cache index comes from.
+
+### The event list is derived, not copied
+
+A clip's events come from two places at once — the animation's annotation track
+and the generator's triggers — merged in time order:
+
+- annotation times are kept as-is but **clamped to the clip's playing length**,
+  `(duration - crops) / playbackSpeed`. The bear's walk has a `FootBack`
+  annotation at 1.4 in an animation that, at speed 1.5, finishes at 1.1111 — and
+  the cache says 1.1111.
+- a trigger marked relative to the end of the clip lands at that same playing
+  length plus its local time (the chicken's `clipEnd` at `-0.009` becomes
+  6.65767).
+- an annotation's text is stored as **the longest prefix that names a behaviour
+  event**. The chicken keeps `SoundPlay.NPCChickenScratch` in full because that
+  is an event of its graph; the atronach's `SoundPlay.NPCAtronachFrostAttack` is
+  not, so it is stored as `SoundPlay`.
+
+Those rules reproduce 92% of the game's clips exactly. The remainder needs finer
+rules still, and some of it is drift. So event lists, like cache indices, are
+**preserved rather than regenerated** — the library will not overwrite generated
+data it cannot reproduce.
+
 ## The split files shipped with the game are stale
 
 `animationdatasinglefile.txt` is the source of truth. The per-project files under
