@@ -57,8 +57,8 @@ public static class Fake
     }
 
     /// <summary>The same project with a character file, so indices can be edited.</summary>
-    public static HavokProject Project() =>
-        HavokProject.Open(
+    public static ActorProject Project() =>
+        ActorProject.Open(
             Data(),
             CharacterFile.Create("Fake",
             [

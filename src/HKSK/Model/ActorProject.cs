@@ -34,22 +34,12 @@ namespace HKSK.Model;
 /// entries and root motion blocks that refer to them all have to move in step.
 /// <see cref="AddAnimation"/> and <see cref="RemoveAnimation"/> do that.
 /// </remarks>
-public sealed partial class HavokProject
+public sealed partial class ActorProject : CacheProject
 {
     private readonly List<AnimationSlot> _slots = [];
     private readonly List<Clip> _clips = [];
 
-    private HavokProject(string name, AnimationDataProject data)
-    {
-        Name = name;
-        Data = data;
-    }
-
-    /// <summary>The project stem, e.g. <c>ChickenProject</c>.</summary>
-    public string Name { get; }
-
-    /// <summary>The project's entry in the animation data.</summary>
-    public AnimationDataProject Data { get; }
+    private ActorProject(AnimationDataProject data) : base(data) { }
 
     /// <summary>The project's animation sets, when it is a creature.</summary>
     public AnimationSetDataProject? Sets { get; private set; }
@@ -122,12 +112,12 @@ public sealed partial class HavokProject
     /// project is still usable from the cache alone -- slots then come from the
     /// root motion and clip indices rather than from the character file.
     /// </param>
-    public static HavokProject Open(
+    public static ActorProject Open(
         AnimationDataProject data,
         AnimationSetDataProject? sets = null,
         string? projectHkx = null)
     {
-        var project = new HavokProject(data.Stem, data) { Sets = sets };
+        var project = new ActorProject(data) { Sets = sets };
 
         if (projectHkx is not null && File.Exists(projectHkx))
             project.LoadHavok(projectHkx);
@@ -144,13 +134,13 @@ public sealed partial class HavokProject
     /// For a project being assembled in memory, and for callers that have
     /// already loaded the packfiles themselves.
     /// </remarks>
-    public static HavokProject Open(
+    public static ActorProject Open(
         AnimationDataProject data,
         CharacterFile character,
         IEnumerable<BehaviorFile>? behaviors = null,
         AnimationSetDataProject? sets = null)
     {
-        var project = new HavokProject(data.Stem, data)
+        var project = new ActorProject(data)
         {
             Sets = sets,
             Character = character,

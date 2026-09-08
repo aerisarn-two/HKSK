@@ -25,7 +25,7 @@ public class CacheIndexTests
     [CorpusFact]
     public void TheChickensClipsAreNumberedByTheirAnimationsPosition()
     {
-        HavokProject chicken = Open("ChickenProject");
+        ActorProject chicken = Open("ChickenProject");
 
         Assert.True(chicken.HasHavok, "the chicken's Havok files should resolve");
         Assert.Equal(20, chicken.Character!.AnimationNames.Count);
@@ -44,7 +44,7 @@ public class CacheIndexTests
     [CorpusFact]
     public void ClipsThatShareAnAnimationShareItsSlot()
     {
-        HavokProject chicken = Open("ChickenProject");
+        ActorProject chicken = Open("ChickenProject");
 
         Clip walk = chicken.Clip("Forward_Walk")!;
         Clip slow = chicken.Clip("Forward_WalkSlow")!;
@@ -60,7 +60,7 @@ public class CacheIndexTests
     [CorpusFact]
     public void UnreferencedAnimationsLeaveGapsInTheNumbering()
     {
-        HavokProject chaurus = Open("ChaurusProject");
+        ActorProject chaurus = Open("ChaurusProject");
 
         Assert.Equal(42, chaurus.Character!.AnimationNames.Count);
 
@@ -89,7 +89,7 @@ public class CacheIndexTests
         int resolved = 0, exact = 0, clips = 0, mismatches = 0;
         var drifted = new List<string>();
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (!project.HasHavok) continue;
             resolved++;
@@ -127,7 +127,7 @@ public class CacheIndexTests
     [CorpusFact]
     public void RootMotionIsKeyedByTheAnimationSlot()
     {
-        HavokProject chicken = Open("ChickenProject");
+        ActorProject chicken = Open("ChickenProject");
 
         AnimationSlot walk = chicken.Animation("WalkForward")!;
         Assert.NotNull(walk.Motion);
@@ -140,11 +140,11 @@ public class CacheIndexTests
         Assert.True(walk.Travels, "walking forward should travel");
     }
 
-    private static HavokProject Open(string name) =>
-        SkyrimCache.Load(Corpus.Root!).Open(name)
+    private static ActorProject Open(string name) =>
+        SkyrimCache.Load(Corpus.Root!).OpenActor(name)
         ?? throw new InvalidOperationException($"no project '{name}' in the corpus");
 
-    private static void AssertClip(HavokProject project, string clip, int index, string animation)
+    private static void AssertClip(ActorProject project, string clip, int index, string animation)
     {
         Clip found = project.Clip(clip) ?? throw new InvalidOperationException($"no clip '{clip}'");
 

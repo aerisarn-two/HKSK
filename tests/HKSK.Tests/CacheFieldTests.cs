@@ -231,7 +231,7 @@ public class CacheFieldTests
         int clipTotal = 0, clipKnown = 0;
         int variableTotal = 0, variableKnown = 0;
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (project.Sets is null || !project.HasHavok) continue;
 

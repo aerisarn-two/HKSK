@@ -23,7 +23,7 @@ public class SyntheticProjectTests
     public void TheFixtureOpensAsAProjectWithItsHavokFilesResolved()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         Assert.True(project.HasHavok, "the project, character and behaviour files should resolve");
         Assert.True(project.HasCache);
@@ -46,7 +46,7 @@ public class SyntheticProjectTests
     public void ClipsAreNumberedByTheirAnimationsPositionInTheCharacterFile()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         Assert.Equal(0, project.Clip("WalkForward")!.CacheIndex);
         Assert.Equal(0, project.Clip("WalkForwardSlow")!.CacheIndex);
@@ -67,7 +67,7 @@ public class SyntheticProjectTests
     public void RootMotionBelongsToTheAnimationNotTheClip()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         AnimationSlot walk = project.Animation("Walk")!;
         AnimationSlot run = project.Animation("Run")!;
@@ -92,7 +92,7 @@ public class SyntheticProjectTests
     public void RemovingAnAnimationRenumbersTheCacheWithIt()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         IReadOnlyList<string> orphaned = project.RemoveAnimation(project.Animation("Walk")!);
 
@@ -121,7 +121,7 @@ public class SyntheticProjectTests
     public void ADriftedPlaybackSpeedIsReported()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         Assert.Empty(ConsistencyReport.Check(project));
 
@@ -140,7 +140,7 @@ public class SyntheticProjectTests
     public void AnIndexPastTheEndOfTheAnimationListIsReported()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         project.Clip("RunForward")!.Entry.CacheIndex = 99;
 
@@ -156,7 +156,7 @@ public class SyntheticProjectTests
     public void AnAnimationSurvivesTheRoundTripThroughFbx()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         AnimationSlot walk = project.Animation("Walk")!;
         float travel = walk.Motion!.Travel;
@@ -198,7 +198,7 @@ public class SyntheticProjectTests
     public void ImportingTakesTheTravelOutOfTheAnimationAndLeavesItInTheCache()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         AnimationSlot run = project.Animation("Run")!;
         Assert.Equal(120f, run.Motion!.Travel, 2);
@@ -232,7 +232,7 @@ public class SyntheticProjectTests
     public void TheExportedRootMotionRampsFromTheOrigin()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         AnimationSlot run = project.Animation("Run")!;
         Assert.Single(run.Motion!.Translations);          // one key, at the end
@@ -272,7 +272,7 @@ public class SyntheticProjectTests
     public void AnFbxAuthoredElsewhereHasItsTravelExtractedIntoTheCache()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         const float travel = 200f;
         const float turn = MathF.PI / 2f;
@@ -348,7 +348,7 @@ public class SyntheticProjectTests
     }
 
     /// <summary>How far the root bone strays from the origin, over the whole clip.</summary>
-    private static float RootExcursion(HavokProject project, AnimationSlot slot)
+    private static float RootExcursion(ActorProject project, AnimationSlot slot)
     {
         (HKFBX.Codec.SplineAnimationData spline, _, _) =
             HKFBX.Hkx.HkxAnimationFile.ReadAnimation(project.AnimationPath(slot)!);
@@ -371,7 +371,7 @@ public class SyntheticProjectTests
     public void ABatchImportAppendsAndSurvivesASaveAndReload()
     {
         using var fixture = SyntheticProject.Build();
-        HavokProject project = fixture.Open();
+        ActorProject project = fixture.Open();
 
         var exchange = new AnimationExchange();
         string folder = Path.Combine(fixture.Folder, "fbx");
@@ -407,7 +407,7 @@ public class SyntheticProjectTests
         cache.AnimationData.Projects[0].Movements = project.Data.Movements;
         cache.Save();
 
-        HavokProject reread = fixture.Open();
+        ActorProject reread = fixture.Open();
 
         Assert.Equal(6, reread.Animations.Count);
         Assert.Equal(6, reread.Clips.Count);

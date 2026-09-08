@@ -32,7 +32,7 @@ public class BehaviorAgreementTests
 
         int withGenerator = 0, speed = 0, crop = 0, notCached = 0;
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (!project.HasHavok || !project.HasCache) continue;
 
@@ -72,7 +72,7 @@ public class BehaviorAgreementTests
 
         int generators = 0, bound = 0;
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (!project.HasHavok) continue;
 
@@ -105,7 +105,7 @@ public class BehaviorAgreementTests
 
         int cached = 0, withGenerator = 0;
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (!project.HasHavok || !project.HasCache) continue;
 
@@ -152,7 +152,7 @@ public class BehaviorAgreementTests
 
         int clips = 0, withEvents = 0;
 
-        foreach (HavokProject project in cache.OpenAll())
+        foreach (ActorProject project in cache.Actors())
         {
             if (!project.HasHavok || !project.HasCache) continue;
 

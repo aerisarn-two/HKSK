@@ -10,7 +10,7 @@ and keeps them consistent across an edit. It uses
 
 ```csharp
 var cache = SkyrimCache.Load(@"Data\meshes");
-var chicken = cache.Open("ChickenProject");
+var chicken = cache.OpenActor("ChickenProject");
 
 foreach (var clip in chicken.Clips)
     Console.WriteLine($"{clip.Name} plays {clip.Slot?.StoredName}, travels {clip.Slot?.Motion?.Travel}");
@@ -44,6 +44,38 @@ The cache exists so the game can answer "how far does this animation travel?"
 and "what events does this clip fire?" without loading the animation. That
 duplication is the whole difficulty: the two sides can disagree, and the game
 believes the cache.
+
+## Two kinds of project
+
+A project carries a clip cache **if and only if** it has animation set data —
+the same 49 on both sides of the shipped game, in both directions. The other 380
+are doors, windmills and puzzle pillars, and they carry a file list and nothing
+else: no clips, no root motion, no sets, in any of them. Their packfiles are not
+even under `actors/` — a door lives beside its door.
+
+So there are two types, not one with everything nullable:
+
+```csharp
+CacheProject           // what both have: a name and a file list
+├── ActorProject       // animations, clips, root motion, sets, editing, FBX
+└── PropProject        // the file list, and that is all
+```
+
+`cache.Open(name)` returns whichever it is; `cache.OpenActor(name)` returns null
+for a prop, which is usually what a caller wanting animations means.
+`cache.Actors()` and `cache.Props()` enumerate each kind. Because the hierarchy
+is closed, `AnimationExchange` takes an `ActorProject` and cannot be handed
+something it has no way to serve — what used to be a runtime failure is now a
+compile error.
+
+A prop can become an actor, but only by saying so:
+
+```csharp
+var actor = cache.PromoteToActor(prop, character);
+```
+
+which also creates the set-data entry, because a cached project without one is
+half-made. That used to happen silently as a side effect of adding a clip.
 
 ## The rule everything rests on
 

@@ -38,8 +38,50 @@ public sealed record Finding(Severity Severity, string Kind, string Message)
 /// </remarks>
 public static class ConsistencyReport
 {
-    /// <summary>Checks one project.</summary>
-    public static IReadOnlyList<Finding> Check(HavokProject project)
+    /// <summary>Checks one project, whichever kind it is.</summary>
+    /// <remarks>
+    /// The switch is exhaustive because the hierarchy is closed: a project is an
+    /// actor or a prop, and the compiler will say so if that ever stops being
+    /// true.
+    /// </remarks>
+    public static IReadOnlyList<Finding> Check(CacheProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return project switch
+        {
+            ActorProject actor => CheckActor(actor),
+            PropProject prop => CheckProp(prop),
+            _ => throw new NotSupportedException($"unknown project kind {project.GetType().Name}"),
+        };
+    }
+
+    /// <summary>
+    /// A prop has almost nothing to be wrong with, which is the point of it
+    /// being a different type.
+    /// </summary>
+    private static IReadOnlyList<Finding> CheckProp(PropProject prop)
+    {
+        var findings = new List<Finding>();
+
+        // The one thing that would make it not a prop.
+        if (prop.Data.Block.Clips.Count > 0)
+            findings.Add(new Finding(Severity.Error, "clips-without-cache",
+                $"'{prop.Name}' declares no animation cache but lists " +
+                $"{prop.Data.Block.Clips.Count} clips"));
+
+        if (prop.Data.Movements is not null)
+            findings.Add(new Finding(Severity.Error, "motion-without-cache",
+                $"'{prop.Name}' declares no animation cache but carries a root motion block"));
+
+        if (!prop.Data.Block.HasFiles || prop.Files.Count == 0)
+            findings.Add(new Finding(Severity.Drift, "no-files",
+                $"'{prop.Name}' lists no Havok files, so nothing says what it animates"));
+
+        return findings;
+    }
+
+    private static IReadOnlyList<Finding> CheckActor(ActorProject project)
     {
         var findings = new List<Finding>();
 
@@ -49,11 +91,20 @@ public static class ConsistencyReport
         return findings;
     }
 
-    private static void CheckCacheInternals(HavokProject project, List<Finding> findings)
+    private static void CheckCacheInternals(ActorProject project, List<Finding> findings)
     {
         if (project.HasCache && project.Data.Movements is null)
             findings.Add(new Finding(Severity.Error, "missing-movements",
                 $"'{project.Name}' declares an animation cache but carries no root motion block"));
+
+        // A project carries a clip cache if and only if it has animation set
+        // data -- true of all 49 in the shipped game, both ways round. An actor
+        // without sets is half-made, which is what promoting a prop without
+        // creating its set entry would leave behind.
+        if (project.Sets is null)
+            findings.Add(new Finding(Severity.Error, "missing-set-data",
+                $"'{project.Name}' has an animation cache but no animation set data; " +
+                "every cached project in the game has both"));
 
         // Saving the cache does not save the animation list: it lives in the
         // character packfile. A cache written without it refers to slots the
@@ -89,7 +140,7 @@ public static class ConsistencyReport
                     "which is not three per animation"));
     }
 
-    private static void CheckAgainstHavok(HavokProject project, List<Finding> findings)
+    private static void CheckAgainstHavok(ActorProject project, List<Finding> findings)
     {
         int animations = project.Character!.AnimationNames.Count;
 

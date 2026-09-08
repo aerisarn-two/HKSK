@@ -82,7 +82,7 @@ public class FbxExchangeTests
     public void RootMotionSurvivesTheTripOutToFbxAndBack()
     {
         using var work = new Workspace();
-        HavokProject project = work.Chicken();
+        ActorProject project = work.Chicken();
 
         AnimationSlot turn = project.Animation("TurnLoopingL")!;
         float travelBefore = turn.Motion!.Travel;
@@ -119,7 +119,7 @@ public class FbxExchangeTests
     public void ABatchImportAppendsSlotsAndLeavesTheNumberingAlone()
     {
         using var work = new Workspace();
-        HavokProject project = work.Chicken();
+        ActorProject project = work.Chicken();
 
         var before = project.Clips.ToDictionary(c => c.Name, c => c.CacheIndex, StringComparer.OrdinalIgnoreCase);
         var exchange = new AnimationExchange();
@@ -165,7 +165,7 @@ public class FbxExchangeTests
     public void AddingAnAnimationNeedsTheCharacterFileSavedToo()
     {
         using var work = new Workspace();
-        HavokProject project = work.Chicken();
+        ActorProject project = work.Chicken();
 
         var exchange = new AnimationExchange();
         string fbx = Path.Combine(work.Folder, "walk.fbx");
@@ -182,7 +182,7 @@ public class FbxExchangeTests
         Assert.False(project.CharacterModified);
 
         // Both halves are on disk now, so a fresh read agrees with itself.
-        HavokProject reread = SkyrimCache.Load(work.Meshes).Open("ChickenProject")!;
+        ActorProject reread = SkyrimCache.Load(work.Meshes).OpenActor("ChickenProject")!;
 
         Assert.Equal(21, reread.Animations.Count);
         Assert.NotNull(reread.Animation("Added"));
@@ -197,7 +197,7 @@ public class FbxExchangeTests
     public void ABatchRefusesOptionsThatNameASingleAnimation()
     {
         var exchange = new AnimationExchange();
-        HavokProject project = HavokProject.Open(Fake.Data());
+        ActorProject project = ActorProject.Open(Fake.Data());
         string[] paths = ["a.fbx", "b.fbx"];
 
         Assert.Throws<ArgumentException>(() =>
@@ -212,7 +212,7 @@ public class FbxExchangeTests
     public void AFailureIsReportedRatherThanThrown()
     {
         var exchange = new AnimationExchange();
-        HavokProject project = HavokProject.Open(Fake.Data());
+        ActorProject project = ActorProject.Open(Fake.Data());
 
         IReadOnlyList<ExchangeResult> results =
             exchange.ImportAll(project, ["nowhere/a.fbx", "nowhere/b.fbx"]);
@@ -244,8 +244,8 @@ public class FbxExchangeTests
         public string Meshes { get; }
         public SkyrimCache Cache { get; }
 
-        public HavokProject Chicken() =>
-            Cache.Open("ChickenProject") ?? throw new InvalidOperationException("no chicken in the cache");
+        public ActorProject Chicken() =>
+            Cache.OpenActor("ChickenProject") ?? throw new InvalidOperationException("no chicken in the cache");
 
         private static void Copy(string from, string to)
         {

@@ -94,50 +94,129 @@ public sealed class SkyrimCache
     /// lists <c>ChickenProject.txt</c> and the packfile is
     /// <c>actors/ambient/chicken/chickenproject.hkx</c>. When it is not there --
     /// a cache extracted without the meshes, say -- the project still opens from
-    /// the cache alone, with <see cref="HavokProject.HasHavok"/> false.
+    /// the cache alone, with <see cref="ActorProject.HasHavok"/> false.
     /// </remarks>
-    public HavokProject? Open(string projectName)
+    public CacheProject? Open(string projectName)
     {
         AnimationDataProject? data = AnimationData.Project(projectName);
-        if (data is null) return null;
-
-        return HavokProject.Open(data, SetData.Project(data.Stem), FindProjectFile(data.Stem));
+        return data is null ? null : OpenProject(data);
     }
 
-    /// <summary>Opens every project in the cache.</summary>
-    public IEnumerable<HavokProject> OpenAll() =>
-        AnimationData.Projects.Select(p =>
-            HavokProject.Open(p, SetData.Project(p.Stem), FindProjectFile(p.Stem)));
+    /// <summary>
+    /// Opens one project, expecting an actor.
+    /// </summary>
+    /// <remarks>
+    /// Returns null both when there is no such project and when it is a prop,
+    /// which is usually what a caller wanting animations means. Use
+    /// <see cref="Open"/> to tell those apart.
+    /// </remarks>
+    public ActorProject? OpenActor(string projectName) => Open(projectName) as ActorProject;
+
+    /// <summary>Opens every project in the cache, of both kinds.</summary>
+    public IEnumerable<CacheProject> OpenAll() => AnimationData.Projects.Select(OpenProject);
+
+    /// <summary>Every project that has animations: 49 of the game's 429.</summary>
+    public IEnumerable<ActorProject> Actors() => OpenAll().OfType<ActorProject>();
+
+    /// <summary>Every project that has not: doors, windmills, pillars.</summary>
+    public IEnumerable<PropProject> Props() => OpenAll().OfType<PropProject>();
+
+    /// <summary>
+    /// Decides which kind a project is, from the one field that separates them.
+    /// </summary>
+    /// <remarks>
+    /// The animation cache flag, not the presence of set data: the two agree
+    /// throughout the shipped game, but the flag is what the file itself
+    /// declares, and a cached project missing its set entry should open as the
+    /// actor it claims to be and then fail validation saying so.
+    /// </remarks>
+    private CacheProject OpenProject(AnimationDataProject data) =>
+        data.Block.HasAnimationCache
+            ? ActorProject.Open(data, SetData.Project(data.Stem), FindProjectFile(data.Stem))
+            : new PropProject(data);
 
     /// <summary>Locates a project's packfile under the meshes folder.</summary>
+    /// <remarks>
+    /// Actors live under <c>actors/</c>, but props do not: a door is beside its
+    /// door, a windmill beside its farmhouse, so they turn up in
+    /// <c>animbehaviors/</c>, <c>architecture/</c> and <c>clutter/</c>. The whole
+    /// tree is indexed, which costs little -- 7,699 packfiles in the shipped
+    /// game -- and <c>actors/</c> is indexed first so it wins any collision on a
+    /// name.
+    /// </remarks>
     public string? FindProjectFile(string projectStem)
     {
         if (MeshesFolder is null) return null;
 
-        string actors = Path.Combine(MeshesFolder, "actors");
-        if (!Directory.Exists(actors)) return null;
-
-        _index ??= BuildIndex(actors);
+        _index ??= BuildIndex(MeshesFolder);
         return _index.GetValueOrDefault(projectStem.ToLowerInvariant());
     }
 
     private Dictionary<string, string>? _index;
 
-    // Project packfiles are scattered a couple of levels down under actors/ and
-    // there is no manifest, so the folder is indexed once by file stem.
-    private static Dictionary<string, string> BuildIndex(string actors)
+    // There is no manifest, so the tree is indexed once by file stem.
+    private static Dictionary<string, string> BuildIndex(string meshes)
     {
         var index = new Dictionary<string, string>();
 
-        foreach (string file in Directory.EnumerateFiles(actors, "*.hkx", SearchOption.AllDirectories))
+        string actors = Path.Combine(meshes, "actors");
+        if (Directory.Exists(actors)) Add(index, actors);
+
+        Add(index, meshes);
+        return index;
+
+        static void Add(Dictionary<string, string> index, string folder)
         {
-            // Only the project files sit directly in an actor folder; characters,
-            // behaviours and animations are all one level further down.
-            string key = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
-            index.TryAdd(key, file);
+            foreach (string file in Directory.EnumerateFiles(folder, "*.hkx", SearchOption.AllDirectories))
+                index.TryAdd(Path.GetFileNameWithoutExtension(file).ToLowerInvariant(), file);
+        }
+    }
+
+    /// <summary>
+    /// Gives a prop an animation cache, making it an actor.
+    /// </summary>
+    /// <remarks>
+    /// The only way a project changes kind, and it is deliberately not something
+    /// that happens as a side effect of adding a clip. A cached project has
+    /// animation set data in every one of the 49 the game ships, so the set
+    /// entry is created here too -- an actor without one is half-made, and the
+    /// validator says so.
+    /// </remarks>
+    /// <param name="prop">The project to promote. It keeps its file list.</param>
+    /// <param name="character">
+    /// The character file whose animation list will number the new cache.
+    /// </param>
+    /// <param name="setFileName">The name of the first animation set.</param>
+    public ActorProject PromoteToActor(
+        PropProject prop, Havok.CharacterFile character, string setFileName = "FullBody.txt")
+    {
+        ArgumentNullException.ThrowIfNull(prop);
+        ArgumentNullException.ThrowIfNull(character);
+
+        if (!AnimationData.Projects.Contains(prop.Data))
+            throw new ArgumentException($"'{prop.Name}' does not belong to this cache", nameof(prop));
+
+        prop.Data.Block.HasAnimationCache = true;
+        prop.Data.Movements ??= new ProjectDataBlock();
+
+        AnimationSetDataProject? sets = SetData.Project(prop.Name);
+
+        if (sets is null)
+        {
+            sets = new AnimationSetDataProject
+            {
+                Name = $@"{prop.Name}Data\{prop.Name}.txt",
+                Sets = new ProjectAttackListBlock
+                {
+                    SetFiles = [setFileName],
+                    Sets = [new ProjectAttackBlock()],
+                },
+            };
+
+            SetData.Projects.Add(sets);
         }
 
-        return index;
+        return ActorProject.Open(prop.Data, character, sets: sets);
     }
 
     /// <summary>Writes both merged files back to the meshes folder.</summary>

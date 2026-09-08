@@ -54,7 +54,7 @@ public static class Conversions
     /// <summary>HKFBX's root motion as a cache movement block.</summary>
     /// <remarks>
     /// The cache index is not set here: it belongs to the slot the motion is
-    /// attached to, which <c>HavokProject.SetRootMotion</c> fills in.
+    /// attached to, which <c>ActorProject.SetRootMotion</c> fills in.
     /// </remarks>
     public static ClipMovement ToCache(this HkFbx.RootMotion motion) => new()
     {

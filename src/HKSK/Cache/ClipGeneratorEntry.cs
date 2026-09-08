@@ -26,7 +26,7 @@ public sealed record ClipEvent(string Name, float Time);
 /// <see cref="CacheIndex"/> is the part that is not a copy. It is the position
 /// of this clip's animation in the character file's animation list, and it is
 /// what ties the clip to its root motion -- see
-/// <c>HKSK.Model.HavokProject</c>.
+/// <c>HKSK.Model.ActorProject</c>.
 /// </remarks>
 public sealed class ClipGeneratorEntry
 {

@@ -61,7 +61,7 @@ public sealed class AnimationExchange
 
     /// <summary>Writes one animation slot to an FBX file.</summary>
     public ExchangeResult Export(
-        HavokProject project, AnimationSlot slot, string fbxPath, ExportOptions? options = null)
+        ActorProject project, AnimationSlot slot, string fbxPath, ExportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(slot);
@@ -125,7 +125,7 @@ public sealed class AnimationExchange
     /// rather than the animation to keep a batch from overwriting itself.
     /// </remarks>
     public ExchangeResult Export(
-        HavokProject project, Clip clip, string fbxPath, ExportOptions? options = null)
+        ActorProject project, Clip clip, string fbxPath, ExportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
 
@@ -143,7 +143,7 @@ public sealed class AnimationExchange
     /// reported as failures -- Skyrim's own projects have those.
     /// </remarks>
     public IReadOnlyList<ExchangeResult> ExportAll(
-        HavokProject project, string folder, ExportOptions? options = null)
+        ActorProject project, string folder, ExportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         Directory.CreateDirectory(folder);
@@ -161,7 +161,7 @@ public sealed class AnimationExchange
     }
 
     private static IReadOnlyList<HkFbx.AnnotationTrack> EventsFor(
-        HavokProject project,
+        ActorProject project,
         AnimationSlot slot,
         IReadOnlyList<HkFbx.AnnotationTrack> fromAnimation,
         EventSource source) => source switch
@@ -189,7 +189,7 @@ public sealed class AnimationExchange
     /// cache pointing at slots the character file does not have, which
     /// <see cref="Validation.ConsistencyReport"/> reports.
     /// </remarks>
-    public ExchangeResult Import(HavokProject project, string fbxPath, ImportOptions? options = null)
+    public ExchangeResult Import(ActorProject project, string fbxPath, ImportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -267,7 +267,7 @@ public sealed class AnimationExchange
 
     /// <summary>Imports every FBX in a folder.</summary>
     public IReadOnlyList<ExchangeResult> ImportAll(
-        HavokProject project, string folder, ImportOptions? options = null) =>
+        ActorProject project, string folder, ImportOptions? options = null) =>
         ImportAll(project,
             Directory.EnumerateFiles(folder, "*.fbx").OrderBy(f => f, StringComparer.Ordinal),
             options);
@@ -287,7 +287,7 @@ public sealed class AnimationExchange
     /// Use the overload taking a function to name each file.
     /// </remarks>
     public IReadOnlyList<ExchangeResult> ImportAll(
-        HavokProject project, IEnumerable<string> fbxPaths, ImportOptions? options = null)
+        ActorProject project, IEnumerable<string> fbxPaths, ImportOptions? options = null)
     {
         if (options?.StoredName is not null)
             throw new ArgumentException(
@@ -318,7 +318,7 @@ public sealed class AnimationExchange
     /// </code>
     /// </remarks>
     public IReadOnlyList<ExchangeResult> ImportAll(
-        HavokProject project, IEnumerable<string> fbxPaths, Func<string, ImportOptions?> options)
+        ActorProject project, IEnumerable<string> fbxPaths, Func<string, ImportOptions?> options)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(options);
@@ -414,7 +414,7 @@ public sealed class AnimationExchange
 
     // An existing animation of the same project shares its skeleton and binding,
     // which is exactly what a template has to supply.
-    private static string? TemplateFrom(HavokProject project, AnimationSlot exclude) =>
+    private static string? TemplateFrom(ActorProject project, AnimationSlot exclude) =>
         project.Animations
             .Where(s => s.Index != exclude.Index && s.StoredName.Length > 0)
             .Select(project.AnimationPath)
@@ -422,7 +422,7 @@ public sealed class AnimationExchange
 
     // The set data names animations by a checksum over their path below the data
     // folder, so the folder has to be expressed that way and not as an absolute.
-    private static string? DataRelativeAnimationFolder(HavokProject project, string stored)
+    private static string? DataRelativeAnimationFolder(ActorProject project, string stored)
     {
         if (project.Folder is null) return null;
 

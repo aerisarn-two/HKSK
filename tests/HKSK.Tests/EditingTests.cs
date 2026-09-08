@@ -18,7 +18,7 @@ public class EditingTests
     [Fact]
     public void AddingAnAnimationAppendsSoExistingIndicesStand()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
 
         int before = project.Animations.Count;
         Clip run = project.Clip("Run")!;
@@ -37,7 +37,7 @@ public class EditingTests
     [Fact]
     public void AddingTheSameAnimationTwiceReturnsTheSameSlot()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
 
         AnimationSlot first = project.AddAnimation("Animations\\New.hkx");
         AnimationSlot again = project.AddAnimation("Animations\\NEW.HKX");
@@ -52,7 +52,7 @@ public class EditingTests
     [Fact]
     public void RemovingAnAnimationRenumbersEverythingAboveIt()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
 
         // Walk is slot 1; Run is slot 2 and has root motion of its own.
         AnimationSlot walk = project.Animation("Walk")!;
@@ -79,7 +79,7 @@ public class EditingTests
     [Fact]
     public void RemovingAnAnimationDropsItsRootMotion()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
         int motions = project.Data.Movements!.Movements.Count;
 
         project.RemoveAnimation(project.Animation("Walk")!);
@@ -92,7 +92,7 @@ public class EditingTests
     [Fact]
     public void AddingAClipOverAnExistingSlotSharesItsMotion()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
         AnimationSlot run = project.Animation("Run")!;
 
         Clip added = project.AddClip("RunFast", run, playbackSpeed: 1.6f);
@@ -105,7 +105,7 @@ public class EditingTests
     [Fact]
     public void AddingAClipTwiceIsRejected()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
         AnimationSlot run = project.Animation("Run")!;
 
         Assert.Throws<InvalidOperationException>(() => project.AddClip("Run", run));
@@ -114,7 +114,7 @@ public class EditingTests
     [Fact]
     public void SettingRootMotionKeepsTheBlocksInIndexOrder()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
 
         // Idle is slot 0 and starts without motion; give it some.
         AnimationSlot idle = project.Animation("Idle")!;
@@ -137,7 +137,7 @@ public class EditingTests
     [Fact]
     public void SettingRootMotionReplacesWhatWasThere()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
         AnimationSlot run = project.Animation("Run")!;
         int before = project.Data.Movements!.Movements.Count;
 
@@ -150,7 +150,7 @@ public class EditingTests
     [Fact]
     public void RemovingAClipLeavesItsAnimationAlone()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
 
         Assert.True(project.RemoveClip("Run"));
         Assert.Null(project.Clip("Run"));
@@ -164,7 +164,7 @@ public class EditingTests
     public void EditingWithoutTheCharacterFileIsRefusedRatherThanGuessed()
     {
         // Opened from the cache alone, as when the .hkx are not to hand.
-        HavokProject project = HavokProject.Open(Fake.Data());
+        ActorProject project = ActorProject.Open(Fake.Data());
 
         Assert.False(project.HasHavok);
         Assert.Throws<InvalidOperationException>(() => project.AddAnimation("Animations\\New.hkx"));
@@ -174,7 +174,7 @@ public class EditingTests
     [Fact]
     public void AnEditedProjectStillRoundTrips()
     {
-        HavokProject project = Fake.Project();
+        ActorProject project = Fake.Project();
         project.RemoveAnimation(project.Animation("Walk")!);
 
         var file = new AnimationDataFile();

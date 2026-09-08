@@ -44,7 +44,7 @@ public sealed class ProjectFile(HavokFile file, hkbProjectData data)
 /// numbering the whole animation cache is built on. A clip's cache index is a
 /// position in this list, and so is the key of every root motion block, so
 /// inserting or removing an entry renumbers the cache. See
-/// <c>HKSK.Model.HavokProject</c>.
+/// <c>HKSK.Model.ActorProject</c>.
 /// </remarks>
 public sealed class CharacterFile(HavokFile? file, hkbCharacterData data)
 {

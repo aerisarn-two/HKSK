@@ -43,6 +43,15 @@ namespace HKSK.Tests;
 internal sealed class SyntheticProject : IDisposable
 {
     public const string ProjectName = "TestActorProject";
+
+    /// <summary>
+    /// A second project with no animation cache, so both kinds are covered.
+    /// </summary>
+    /// <remarks>
+    /// Shaped like the game's props: a file list naming a generic behaviour, a
+    /// generic character and a skeleton, and nothing else at all.
+    /// </remarks>
+    public const string PropName = "TestDoor01";
     public const string SkeletonName = "SynthSkeleton";
 
     /// <summary>The bones every animation drives, root first as Havok requires.</summary>
@@ -70,10 +79,15 @@ internal sealed class SyntheticProject : IDisposable
     public string Meshes { get; }
     public string ProjectFolder { get; }
 
-    /// <summary>Opens the project through a freshly read cache.</summary>
-    public HavokProject Open() =>
-        SkyrimCache.Load(Meshes).Open(ProjectName)
+    /// <summary>Opens the actor through a freshly read cache.</summary>
+    public ActorProject Open() =>
+        SkyrimCache.Load(Meshes).OpenActor(ProjectName)
         ?? throw new InvalidOperationException($"the fixture has no '{ProjectName}'");
+
+    /// <summary>Opens the prop through a freshly read cache.</summary>
+    public PropProject OpenProp() =>
+        SkyrimCache.Load(Meshes).Open(PropName) as PropProject
+        ?? throw new InvalidOperationException($"the fixture has no prop '{PropName}'");
 
     /// <summary>Reads the cache without opening a project.</summary>
     public SkyrimCache Cache() => SkyrimCache.Load(Meshes);
@@ -335,6 +349,22 @@ internal sealed class SyntheticProject : IDisposable
             Name = $"{ProjectName}.txt",
             Block = block,
             Movements = movements,
+        });
+
+        data.Projects.Add(new AnimationDataProject
+        {
+            Name = $"{PropName}.txt",
+            Block = new ProjectBlock
+            {
+                HasFiles = true,
+                Files =
+                [
+                    @"Behaviors\Behavior00.hkx",
+                    @"Characters\Character00.hkx",
+                    @"CharacterAssets\Skeleton.hkx",
+                ],
+                HasAnimationCache = false,
+            },
         });
 
         // A creature entry too, so the set data and its checksums are covered.

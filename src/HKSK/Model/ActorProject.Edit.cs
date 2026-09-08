@@ -2,7 +2,7 @@ using HKSK.Cache;
 
 namespace HKSK.Model;
 
-public sealed partial class HavokProject
+public sealed partial class ActorProject
 {
     /// <summary>
     /// Adds an animation to the project and returns the slot it took.
