@@ -21,9 +21,13 @@ public sealed class ProjectAttackBlock
     /// <c>MagicForceEquip</c>, <c>swimForceEquip</c>.
     /// </summary>
     /// <remarks>
-    /// The commonest thing in the set data by far -- 1,921 entries over 615
-    /// distinct names -- and the only part most sets have: 791 of 990 carry swap
-    /// events and nothing else.
+    /// Behaviour-graph event names: 1,910 of the 1,921 in the shipped game are
+    /// declared by a behaviour the project lists, and the eleven that are not
+    /// are Dawnguard and Dragonborn additions the base graphs never gained --
+    /// the same drift the cache indices show.
+    ///
+    /// The commonest thing in the set data by far, and the only part most sets
+    /// have: 791 of 990 carry swap events and nothing else.
     /// </remarks>
     public List<string> SwapEvents { get; set; } = [];
 
@@ -97,7 +101,14 @@ public sealed class ProjectAttackBlock
 /// </remarks>
 public sealed class ProjectAttackListBlock
 {
-    /// <summary>The set file names, e.g. <c>FullBody.txt</c>.</summary>
+    /// <summary>
+    /// The set file names, e.g. <c>FullBody.txt</c>.
+    /// </summary>
+    /// <remarks>
+    /// Always <c>.txt</c>, and unique within a creature -- they are file names
+    /// in the split form, so two sets sharing one would share a file. A creature
+    /// carries between 1 and 374 of them.
+    /// </remarks>
     public List<string> SetFiles { get; set; } = [];
 
     public List<ProjectAttackBlock> Sets { get; set; } = [];
@@ -139,6 +150,11 @@ public sealed class ProjectAttackListBlock
 public sealed class AnimationSetDataProject
 {
     /// <summary>The key as listed, e.g. <c>ChickenProjectData\ChickenProject.txt</c>.</summary>
+    /// <remarks>
+    /// Always <c>&lt;Project&gt;Data\&lt;Project&gt;.txt</c> -- true of all 49
+    /// in the shipped game -- which is also the path the split form writes it to
+    /// under <c>animationsetdata/</c>.
+    /// </remarks>
     public required string Name { get; set; }
 
     public required ProjectAttackListBlock Sets { get; set; }
@@ -152,8 +168,11 @@ public sealed class AnimationSetDataProject
 /// creature project.
 /// </summary>
 /// <remarks>
-/// Only creatures appear here. A project in the animation data with no entry in
-/// the set data is a prop, a piece of furniture or a non-combat actor.
+/// Only actors appear here, and exactly the ones that carry an animation cache:
+/// all 49 projects in this file are among the 49 the animation data caches, and
+/// there are no others on either side. A project has animation set data if and
+/// only if it has a clip cache. Everything else in the animation data -- props,
+/// furniture, traps -- appears in neither.
 ///
 /// Unlike the animation data, the blocks carry no line counts -- each is
 /// self-delimiting, so the file is read until it runs out.

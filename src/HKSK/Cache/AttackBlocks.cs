@@ -14,12 +14,14 @@ public sealed record HandVariable(string Name, int Min, int Max);
 /// The variables that decide when a set applies.
 /// </summary>
 /// <remarks>
+/// These are behaviour-graph variables: all 386 in the shipped game are declared
+/// in the variable list of a behaviour the project loads, which is what settles
+/// what they are.
+///
 /// Named for what it mostly holds -- <c>iRightHandType</c> and
-/// <c>iLeftHandType</c> are 297 of the 386 in the shipped game -- but it is not
-/// limited to hands: <c>iWantMountedWeaponAnims</c> and
-/// <c>bWantMountedWeaponAnims</c> also appear, with their own ranges. It is a
-/// list of behaviour variables and the values they must hold, whatever those
-/// variables are.
+/// <c>iLeftHandType</c> are 297 of the 386 -- but it is not limited to hands:
+/// <c>iWantMountedWeaponAnims</c> and <c>bWantMountedWeaponAnims</c> also
+/// appear, with their own ranges.
 ///
 /// The hand types run 0 to 12 in the shipped data. Naming them here would be
 /// guesswork past what the files show -- ck-cmd's enum stops at 11, and the game
@@ -50,7 +52,13 @@ public sealed class HandVariableData
 /// <summary>One attack: the event that starts it and the clips it may pick.</summary>
 public sealed class AttackData
 {
-    /// <summary>The behaviour event that triggers the attack, e.g. <c>attackStart</c>.</summary>
+    /// <summary>
+    /// The behaviour event that triggers the attack, e.g. <c>attackStart</c>.
+    /// </summary>
+    /// <remarks>
+    /// A behaviour-graph event: 735 of the 737 in the shipped game are declared
+    /// by a behaviour the project lists.
+    /// </remarks>
     public string EventName { get; set; } = "";
 
     /// <summary>
@@ -60,10 +68,15 @@ public sealed class AttackData
     public int Mirrored { get; set; }
 
     /// <summary>
-    /// The clips the attack may play, chosen between at runtime. Almost always
-    /// exactly one: of 737 attacks in the shipped game, 685 name a single clip,
-    /// 50 name several and 2 name none.
+    /// The clips the attack may play, chosen between at runtime.
     /// </summary>
+    /// <remarks>
+    /// Clip generator names, matching the animation data's clip list: 776 of the
+    /// 793 named in the shipped game are clips that project caches.
+    ///
+    /// Almost always exactly one -- of 737 attacks, 685 name a single clip, 50
+    /// name several and 2 name none.
+    /// </remarks>
     public List<string> Clips { get; set; } = [];
 
     public bool IsMirrored => Mirrored > 0;

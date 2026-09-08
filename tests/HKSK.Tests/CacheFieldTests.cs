@@ -165,6 +165,137 @@ public class CacheFieldTests
         Assert.All(sets.Projects, p => Assert.Equal(p.Sets.SetFiles.Count, p.Sets.Sets.Count));
     }
 
+    /// <summary>
+    /// The set data covers exactly the projects that carry a clip cache.
+    /// </summary>
+    /// <remarks>
+    /// Not a subset and not an overlap: the same 49 projects on both sides. A
+    /// project has animation set data if and only if it has an animation cache,
+    /// and everything else in the animation data -- props, furniture, traps --
+    /// is in neither.
+    /// </remarks>
+    [CorpusFact]
+    public void TheSetDataCoversExactlyTheCachedProjects()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        var cached = cache.AnimationData.Projects
+            .Where(p => p.Block.HasAnimationCache)
+            .Select(p => p.Stem)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var withSets = cache.SetData.Projects
+            .Select(p => p.Stem)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(49, cached.Count);
+        Assert.True(cached.SetEquals(withSets),
+            $"only cached: [{string.Join(", ", cached.Except(withSets))}]; " +
+            $"only sets: [{string.Join(", ", withSets.Except(cached))}]");
+    }
+
+    /// <summary>The set data's key names the project twice, in a fixed shape.</summary>
+    [CorpusFact]
+    public void EverySetDataKeyIsProjectDataBackslashProjectTxt()
+    {
+        AnimationSetDataFile sets = AnimationSetDataFile.Load(Corpus.AnimationSetData);
+
+        Assert.All(sets.Projects, project =>
+        {
+            string[] parts = project.Name.Split('\\');
+
+            Assert.Equal(2, parts.Length);
+            Assert.EndsWith("Data", parts[0], StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(".txt", parts[1], StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(parts[0][..^4], parts[1][..^4], ignoreCase: true);
+        });
+    }
+
+    /// <summary>
+    /// The names in the set data resolve against the behaviour graphs and the
+    /// clip list, which is what says they are what they look like.
+    /// </summary>
+    /// <remarks>
+    /// A name is only a hypothesis until it resolves somewhere. Hand variables
+    /// resolve completely; the rest resolve but for Dawnguard and Dragonborn
+    /// additions the base graphs never gained, which is the same drift the cache
+    /// indices show.
+    /// </remarks>
+    [CorpusFact]
+    public void TheNamesInTheSetDataResolveAgainstTheBehaviours()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        int swapTotal = 0, swapKnown = 0;
+        int eventTotal = 0, eventKnown = 0;
+        int clipTotal = 0, clipKnown = 0;
+        int variableTotal = 0, variableKnown = 0;
+
+        foreach (HavokProject project in cache.OpenAll())
+        {
+            if (project.Sets is null || !project.HasHavok) continue;
+
+            var events = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var variables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (Havok.BehaviorFile behavior in project.Behaviors)
+            {
+                HKX2.hkbBehaviorGraphStringData? strings =
+                    behavior.File.First<HKX2.hkbBehaviorGraphStringData>();
+
+                if (strings is null) continue;
+
+                foreach (string name in strings.m_eventNames) events.Add(name);
+                foreach (string name in strings.m_variableNames) variables.Add(name);
+            }
+
+            var clips = project.Data.Block.Clips
+                .Select(c => c.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (ProjectAttackBlock set in project.Sets.Sets.Sets)
+            {
+                foreach (string swap in set.SwapEvents)
+                {
+                    swapTotal++;
+                    if (events.Contains(swap)) swapKnown++;
+                }
+
+                foreach (AttackData attack in set.Attacks.Attacks)
+                {
+                    eventTotal++;
+                    if (events.Contains(attack.EventName)) eventKnown++;
+
+                    foreach (string clip in attack.Clips)
+                    {
+                        clipTotal++;
+                        if (clips.Contains(clip)) clipKnown++;
+                    }
+                }
+
+                foreach (HandVariable variable in set.HandVariables.Variables)
+                {
+                    variableTotal++;
+                    if (variables.Contains(variable.Name)) variableKnown++;
+                }
+            }
+        }
+
+        // Behaviour variables, exactly.
+        Assert.Equal(386, variableTotal);
+        Assert.Equal(386, variableKnown);
+
+        // The rest resolve but for the DLC drift.
+        Assert.Equal(1921, swapTotal);
+        Assert.Equal(1910, swapKnown);
+
+        Assert.Equal(737, eventTotal);
+        Assert.Equal(735, eventKnown);
+
+        Assert.Equal(793, clipTotal);
+        Assert.Equal(776, clipKnown);
+    }
+
     private static IEnumerable<ProjectAttackBlock> Sets() =>
         AnimationSetDataFile.Load(Corpus.AnimationSetData).Projects.SelectMany(p => p.Sets.Sets);
 }
