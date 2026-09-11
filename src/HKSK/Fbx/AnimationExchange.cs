@@ -3,6 +3,7 @@ using HKFBX.Codec;
 using HKFBX.Fbx;
 using HKFBX.Hkx;
 using HKSK.Cache;
+using HKSK.Havok;
 using HKSK.Model;
 using LeanMeshIO;
 using HkFbx = HKFBX.Model;
@@ -39,7 +40,7 @@ public sealed record ExchangeResult(
 /// Every operation is reported rather than thrown: a batch of eighty animations
 /// where three fail should still import seventy-seven, and say which three.
 /// </remarks>
-public sealed class AnimationExchange
+public sealed partial class AnimationExchange
 {
     private readonly IAnimationCodec _codec;
 
@@ -79,12 +80,31 @@ public sealed class AnimationExchange
                 ?? throw new FileNotFoundException(
                     $"'{slot.StoredName}' was not found under {project.Folder}");
 
-            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _,
+            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, string? boundSkeleton,
              IReadOnlyList<HkFbx.AnnotationTrack> annotations) =
                 HkxAnimationFile.ReadAnimationWithEvents(animationPath);
 
-            HkFbx.Skeleton skeleton = HkxAnimationFile.ReadSkeleton(skeletonPath);
+            HkFbx.Skeleton own = HkxAnimationFile.ReadSkeleton(skeletonPath);
             HkFbx.SampledAnimation sampled = _codec.Decompress(spline);
+
+            // Two cheap signals, because reading the bone names means parsing the
+            // packfile a second time and most animations are not paired. Usually
+            // the binding says so outright. The first-person killmoves do not --
+            // three of them are rooted at the viewer and bind to NPC -- but an
+            // animation carrying tracks its own skeleton has no bones for is not
+            // rigged to that skeleton either way, which catches those.
+            PairedAnimation? paired = null;
+
+            if (PairedAnimation.IsPairedSkeletonName(boundSkeleton) || sampled.TrackCount != own.Count)
+            {
+                PairedAnimation candidate = PairedAnimation.Read(animationPath);
+
+                if (candidate.IsCombined) paired = candidate;
+            }
+
+            HkFbx.Skeleton skeleton = paired is not null
+                ? CombinedSkeleton(paired, own, options.Partner)
+                : own;
 
             var animation = new HkFbx.SampledAnimation
             {
@@ -94,7 +114,13 @@ public sealed class AnimationExchange
                 FrameDuration = sampled.FrameDuration,
                 Transforms = sampled.Transforms,
                 Floats = sampled.Floats,
-                TrackToBone = trackToBone,
+
+                // A paired animation binds track to bone one for one and stores no
+                // mapping, and the combined skeleton is built in that same order,
+                // so the identity is the mapping.
+                TrackToBone = paired is not null && trackToBone.Count == 0
+                    ? Enumerable.Range(0, skeleton.Count).Select(bone => (short)bone).ToList()
+                    : trackToBone,
                 Annotations = EventsFor(project, slot, annotations, options.Events),
                 RootMotion = options.IncludeRootMotion
                     ? slot.Motion.ToFbx()
@@ -158,6 +184,25 @@ public sealed class AnimationExchange
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// The skeleton a paired animation is rigged to, with as much of it real as
+    /// the caller has given us.
+    /// </summary>
+    private static HkFbx.Skeleton CombinedSkeleton(
+        PairedAnimation paired, HkFbx.Skeleton own, ActorProject? partner)
+    {
+        HkFbx.Skeleton? other = partner?.SkeletonPath is { } path && File.Exists(path)
+            ? HkxAnimationFile.ReadSkeleton(path)
+            : null;
+
+        // Which half this project is cannot be assumed from the folder the
+        // animation sits in -- Human&Falmer holds one whose unprefixed half is the
+        // draugr's -- so the rigs are matched against the halves instead.
+        return PairedRig.DriverIs(paired, own)
+            ? PairedRig.Build(paired, own, other)
+            : PairedRig.Build(paired, other, own);
     }
 
     private static IReadOnlyList<HkFbx.AnnotationTrack> EventsFor(

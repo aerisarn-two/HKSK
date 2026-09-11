@@ -48,6 +48,21 @@ public sealed record ExportOptions
     /// The take name written into the FBX. Defaults to the animation's file stem.
     /// </summary>
     public string? TakeName { get; init; }
+
+    /// <summary>
+    /// The other actor of a paired animation, so its half can carry a real rig.
+    /// </summary>
+    /// <remarks>
+    /// A paired animation is exported against a skeleton holding both actors, and
+    /// the half belonging to the project being exported from is always real. This
+    /// supplies the other one. Without it that half is still exported -- every
+    /// track is, or the animation would be silently cut in two -- but its bones
+    /// are flat under <c>2_</c> with an identity pose, which animates correctly
+    /// and looks wrong at rest.
+    ///
+    /// <see cref="Model.SkyrimCache.ParticipantsOf"/> finds it.
+    /// </remarks>
+    public Model.ActorProject? Partner { get; init; }
 }
 
 /// <summary>What to do with an imported FBX.</summary>
