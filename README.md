@@ -254,6 +254,44 @@ Conversion needs `mopper.exe`, because Havok's spline *encoder* is proprietary
 and this is the only credible implementation of it. It is a Win32 binary and runs
 under Wine off Windows.
 
+## Paired animations
+
+Killmoves, mounts and executions drive **two skeletons from one file**: a skeleton
+called `PairedRoot` holding the driver's bones under `NPC` and the partner's under
+`2_`, every one of the partner's prefixed. Nothing ships that skeleton — the name
+appears in the paired animations and in none of the game's other 7,699 Havok files
+— so it is rebuilt from the animation's own track names and the two projects'
+rigs.
+
+```csharp
+var bear = cache.OpenActor("BearProject")!;
+var human = cache.OpenActor("DefaultMale")!;
+
+// Out: both skeletons in one FBX, the partner's rest pose where it is known.
+exchange.Export(bear, slot, "killmove.fbx", new ExportOptions { Partner = human });
+
+// Back: one packfile, and a slot in every project that plays it.
+exchange.ImportPaired(cache, "killmove.fbx", path, [bear, human]);
+```
+
+Exporting one used to succeed and write a lie — the bear's killmove came out as 76
+bear bones with no `2_` bone anywhere and 177 tracks laid onto them by position,
+which is a bear playing a human's motion with three quarters of the animation
+gone. Now every track gets a bone, and the round trip puts the motion back on the
+bone it came from: worst case 0.0013 units, against two different bones of that
+animation sitting 30 units apart.
+
+Two things are less obvious than they look, and both are measured in
+`docs/paired-animations.md`:
+
+- **The track order is the animation's**, not either skeleton's and not the tree's.
+  An FBX read back is depth first, and for the bear killmove the two orders part
+  company at bone 13, so import reorders before it compresses.
+- **An unshared pairing is normal.** 139 of the game's 294 are listed by a single
+  project — the first-person killmoves, whose partner half is applied to an actor
+  that never names the file — so nothing treats that as broken. What *is* checked,
+  by `PairingReport`, is that a project listing one can play it: 294 of 294.
+
 ## Fidelity
 
 Reading and writing are byte-exact: loading and saving with no edits reproduces

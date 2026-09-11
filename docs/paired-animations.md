@@ -29,6 +29,28 @@ per track, which is the only place they exist at all.
 **296 of the 302 carry a `2_` half.** The other six are single-skeleton
 animations that happen to be named `Paired_*` — of which more below.
 
+### The first-person layout is upside down
+
+Three of the game's own do not look like that at all. A first-person killmove is
+rooted at the **viewer**, and `PairedRoot` hangs inside the tree rather than at
+the top of it:
+
+```
+NPC                             track 0, and what the binding names
+├── NPC Root [Root] …           the arms, the camera, 82 bones
+└── PairedRoot                  track 83
+    └── 2_ …                    the victim
+```
+
+Two of them bind to `NPC` rather than `PairedRoot`, so **the binding alone is not
+a reliable test** — trusting it hands those back as ordinary animations, which is
+the bug this exists to remove. What catches them is that an animation carrying
+tracks its own skeleton has no bones for is not rigged to that skeleton either:
+the sabrecat one has 149 tracks against a 99-bone rig.
+
+A third places the partner's root bone with no `2_` subtree root above it at all,
+which is why that bone is treated as optional rather than indexed blindly.
+
 **The prefix is always `2_`, and only ever `2_`**: 23,824 prefixed tracks across
 the game, not one of them `3_`. A paired animation is two actors, never three.
 
@@ -97,34 +119,83 @@ an FBX that:
 It does not throw. It writes a file that looks like an export and is a bear
 playing a human's motion with three quarters of the animation discarded.
 
-## What exporting one properly needs
+## How it is handled
 
-The combined skeleton has to be rebuilt, because nothing ships it:
+The combined skeleton is rebuilt, because nothing ships it. All of it happens
+here, in Havok: the rig a paired animation is rigged to is the one in the Havok
+project, and a skeleton mesh is somebody else's business.
 
-1. **Identify the halves** — split the track names on the `2_` prefix. The two
-   subtree roots are `NPC` and `2_`, and `PairedRoot` is track 0.
-2. **Identify the participants** — the projects whose file lists name this
-   animation. Where that is ambiguous (a human-on-human file is listed by one
-   project and used for both halves), fall back to matching each half's bone set
-   against the rigs.
-3. **Rebuild the skeleton** — from the participants' **skeleton meshes** rather
-   than their Havok rigs, because the meshes carry the nodes the rigs lack. Parent
-   actor 1's tree under `NPC` and actor 2's under `2_`, prefix every bone of the
-   second, and put both under a `PairedRoot` node.
-4. **Bind** — the rebuilt skeleton's bone order has to match the animation's
-   track order, which is per-file and not alphabetical: in `Human&Draugr` the
-   `2_` half comes first, in `Human&Dragon` it comes second. Build the order from
-   the annotation track names, not from the two skeletons.
+**The animation decides the bone order, and the hierarchy.** Its annotation tracks
+name every bone in the order the binding expects, so that order is the bone order
+and track-to-bone is the identity. The order is per-file and not tree order:
+`Human&Draugr` lists the partner first, `Human&Dragon` second, and in the bear
+killmove the FBX's own depth-first order parts company with it at bone 13. Track 0
+is the tree root, which reproduces the first-person layout as faithfully as the
+ordinary one — and a hierarchy invented instead would move every bone, because the
+transforms are local to their parent.
 
-Step 3 is the one that reaches outside this library: a skeleton mesh is a NIF, and
-HKSK does not read NIFs. The split that keeps each library to its own format is
+**Detection is two cheap signals, not one.** The binding usually says `PairedRoot`
+outright; where it does not, an animation whose track count does not match the
+project's rig is not rigged to that rig, and its names are read to find out why.
+Neither costs a second parse of an animation that turns out to be ordinary.
 
-- **HKSK** exposes the pairing — the halves, the prefix, the participants, and
-  the track order — from the animation and the cache, which is what it already
-  holds;
-- **whoever owns the NIF** builds the combined skeleton from two skeleton meshes
-  and that description. `SKAssets.Content` already resolves a race to its
-  skeleton mesh and its project, which is the join this needs.
+**The rigs supply what the animation does not carry** — the hierarchy and the rest
+pose. `PairedRig.Build` takes the pairing and up to two rigs, and every track gets
+a bone whether a rig accounts for it or not: exporting a killmove from the bear
+when nobody has said who the other actor is still has to produce all 177 tracks,
+so an unaccounted bone is created under its own half's root at rest. That is not
+only a mod's problem — 18 of the game's own pairings name more bones on one side
+than that actor's rig declares, because a rig is not the whole skeleton.
+
+**Which half a project is, is matched rather than assumed.** The folder is a
+filing convention: `SharedKillMoves\Human&Falmer` holds one whose unprefixed half
+is the draugr's. `PairedRig.DriverIs` compares the rig against both halves, and
+the answer is never close -- a rig covers one half almost entirely and the other
+by a percent or two.
+
+```csharp
+var cache = SkyrimCache.Load(@"Data\meshes");
+var bear = cache.OpenActor("BearProject")!;
+var human = cache.OpenActor("DefaultMale")!;
+var exchange = new AnimationExchange();
+
+// Out. Both skeletons, in one FBX, with the partner's rest pose where it is known.
+exchange.Export(bear, slot, "killmove.fbx", new ExportOptions { Partner = human });
+
+// ...and back, into every project that plays it.
+exchange.ImportPaired(cache, "killmove.fbx", animationPath, [bear, human]);
+```
+
+Import reorders the FBX's tracks into the binding's order before compressing, and
+refuses a rig whose bones are not the ones the binding already names: a packfile
+carries its binding from the template rather than rebuilding it, so a bone added
+in Blender has no track to live in. It also refuses an FBX with no `2_` bone,
+which is an ordinary animation and should be imported as one.
+
+Consistency across the projects is `SkyrimCache.RegisterPaired`, which gives every
+participant a slot — each storing the path its own way, relative to its own folder
+— and optionally a clip, and keeps a slot a project already has rather than
+renumbering its cache. Root motion goes to every participant, because the cache
+keeps a movement block per project and all 164 shared pairings in the game record
+the same travel in each.
+
+## What is checked
+
+`PairingReport` covers what spans projects, which `ConsistencyReport` cannot see
+from inside one. Against the shipped game it reports exactly one finding — a
+listed animation that holds no animation at all.
+
+| Rule | Holds in vanilla |
+| --- | --- |
+| A project that lists a pairing has a clip over it | 294 / 294 |
+| A combined animation has both subtree roots | 294 / 294 |
+| A participant's rig accounts for one of the halves | 294 / 294 |
+
+The rule that is **not** checked is the one that looks obvious: that both actors
+list the file. 139 of the 294 are listed by a single project — nearly all the
+first-person killmoves, whose partner half is applied to an actor that never names
+the file — so an unshared pairing is normal and reporting it would bury the
+findings that matter under 139 that do not.
 
 ## The six that are not combined
 
