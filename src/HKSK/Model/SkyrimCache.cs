@@ -25,7 +25,7 @@ namespace HKSK.Model;
 /// reproduces Bethesda's own bytes, which the test suite checks against the
 /// shipped files.
 /// </remarks>
-public sealed class SkyrimCache
+public sealed partial class SkyrimCache
 {
     /// <summary>The merged animation data file's name.</summary>
     public const string AnimationDataFileName = "animationdatasinglefile.txt";
