@@ -255,6 +255,58 @@ A value capped by `root_motion * playback_rate`, equal to it where the state's
 fastest clip is locomotion and below it elsewhere, is a sample of the graph's
 output — i.e. the file stores answers, not source data.
 
+## 4.5 How the table relates to root motion
+
+`y` is built from the animations; `x` is not. The two axes anchor on different
+things, and the asymmetry is consistent.
+
+Coincidence with a project's clip speeds, against a permutation control that
+shuffles the clip sets between projects (n=200):
+
+| | real | shuffled | z |
+| --- | ---: | ---: | ---: |
+| x knots vs raw clip root-motion speed | 16.2% | 6.3% ± 1.7 | +5.9 |
+| x knots vs clip speed × `PlaybackSpeed` | 17.0% | 7.2% ± 2.1 | +4.8 |
+| y values vs raw clip root-motion speed | 25.8% | 8.0% ± 3.6 | +4.9 |
+| **y values vs clip speed × `PlaybackSpeed`** | **28.9%** | 10.5% ± 3.3 | **+5.6** |
+
+All four are significant; `y` matches roughly twice as well as `x`. Set against
+§5, where `x` matches *race* speeds at +18.9 sd, the split is: **x is anchored on
+what the race may request, y on what the animations can deliver.**
+
+The chicken shows it exactly, because it has only five locomotion clips:
+
+    y min   0.49  = WalkForward 34.71 x 0.014   (clip Forward_WalkSlow)
+    y max 403.10  = RunForward 251.94 x 1.6     (clip Forward_Run)
+
+The curve spans precisely its slowest to its fastest locomotion clip. And at the
+anchors, `y/x` is that clip's playback rate:
+
+    x  35.0 -> y  34.03   ratio 0.97    Forward_Walk plays at 1.0,  raw speed 34.71
+    x 252.5 -> y 403.10   ratio 1.596   Forward_Run  plays at 1.6,  raw speed 251.94
+
+### 4.6 The table was measured, not derived
+
+Two properties of the point spacing say the curves are sampled output, not a
+closed form:
+
+- **Spacing is more even in y than in x.** Median coefficient of variation of the
+  step size over the 1,321 records with 5+ points: 0.654 along y, 1.009 along x.
+- **Knots are load-bearing.** Of 15,034 interior knots, only 20.2% lie within 0.5%
+  of the chord between their neighbours; the median knot sits 5.1% off it. These
+  are not the leftovers of a dense sweep that was simplified — each one marks a
+  real bend.
+
+A curve whose input axis lands on race thresholds, whose output is capped by clip
+capability and equals it at the extremes, and whose knots mark bends in between,
+is the **recorded response of the behaviour graph** to a swept request. Which is
+what a "speed sampler" is named for.
+
+This is why O1 and O2 resist derivation from the shipped files: reproducing the
+knots means running the graph, not evaluating a formula. It also says an
+implementation can *validate* a generated table — bound by I8, anchored at race
+speeds — without being able to synthesise one.
+
 ## 5. Cross-check against RACE
 
 Join: a race's `BehaviorGraph` path stem is the project name
@@ -329,8 +381,8 @@ matching a sneak/walk/run/sprint ladder (§4.2), and the output variable is
 | # | Question | Ruled out |
 | --- | --- | --- |
 | O1 | What sets an entry's ceiling. | Not race max (23 counterexamples). Not the graph's `Speed` bound — stripped from compiled `.hkx`; the one shipped `.hkb` says 384 where its curve stops at 324.5. |
-| O2 | What generates the knots between race thresholds. | Not clip root-motion speeds. |
-| O3 | Why `y > x` (player answers 395.94 to a 324.5 ceiling). | Not a unit error — I8 shows y is a reachable speed. |
+| O2 | What generates the knots between race thresholds. *Narrowed, §4.6:* they mark bends in a measured response, so reproducing them needs the graph run rather than a formula. | Not clip root-motion speeds alone (§4.5 puts the match at 16%). |
+| O3 | Why `y > x` (player answers 395.94 to a 324.5 ceiling). *Narrowed, §4.5:* at an anchor `y/x` is the clip's `PlaybackSpeed`, so y exceeds x exactly where the clip is played faster than authored. | Not a unit error — I8 shows y is a reachable speed. |
 | O4 | Why direction stops at 0.90. | |
 | O5 | *Resolved, §1.2.* There are two paths, but the non-DB one is `speedOut = goalSpeed`, an identity pass-through. No runtime computation exists. | |
 
