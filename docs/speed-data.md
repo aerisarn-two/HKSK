@@ -170,7 +170,7 @@ Measured over the whole file. A reader may assert these; a writer must hold them
 | I1 | `version == 1` | 49/49 blocks |
 | I2 | `n_entries in {1,2,3,4,6,14}` | 49/49 |
 | I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
-| I4 | `direction[i] == 0.05 * i`, in order, complete | 86/86 entries |
+| I4 | `direction[i]` == float accumulation of `+0.05f` (§4.5.2), in order, complete | 86/86 entries |
 | I5 | `x mod 0.5 == 0` | 18302/18302 points |
 | I6 | `x` non-decreasing within a record | 1634/1634 records |
 | I7 | all 19 records of an entry share one exact `max(x)` | 86/86 entries |
@@ -317,6 +317,47 @@ saturates (I8) because clips run out at the top; it starts high on creatures wit
 no slow gait; `y/x` equals a playback rate at an anchor because one clip dominates
 there; and it drifts between anchors because two clips are blending.
 
+### 4.5.2 Both axes are half-open sweeps
+
+The two axes stop one step short of a round bound, and it is the same construction
+twice.
+
+**Direction.** The 19 values are **bit-identical to float accumulation**,
+`d += 0.05f`, in all 86 entries — and bit-*different* from `0.05f * i` and from
+`i / 20.0f`. They diverge at i = 7:
+
+    i    stored        0.05f * i     accumulated
+    7    0.350000024   0.349999994   0.350000024   <- accumulation
+    18   0.900000155   0.900000036   0.900000155
+
+    bit-identical to 0.05f * i     :  0 / 86
+    bit-identical to accumulation  : 86 / 86
+    bit-identical to i / 20.0f     :  0 / 86
+
+So the sweep is `for (d = 0; d < 0.95f; d += 0.05f)` or equivalent: a half-open
+range, 19 samples, **0.95 never sampled**. Directions in [0.95, 1.0) fall past the
+last knot and must clamp to the 0.90 curve. The mirror symmetry (§4.1) would make
+0.95 recoverable from 0.05, but nothing in the file does that — it is simply absent.
+
+A reader that reconstructs the axis as `0.05 * i` will mismatch from the seventh
+record on. Compare with a tolerance, or accumulate.
+
+**Speed.** Every x ceiling is `V - 0.5` for an integer V:
+
+    ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
+    V        190    325    415    425    450    750    833    1000
+
+which is the same half-open sweep on the 0.5 grid: `for (x = 0; x < V; x += 0.5f)`.
+V is a per-entry limit with **325 as the default** — 74 of the 88 entries. Two of
+the others are identifiable: the giant's V = 415 is exactly its fastest clip's raw
+root-motion speed (415.00), and the deer's V = 833 is exactly its race's
+`ForwardRun` (833.0).
+
+V is not derivable in general. Tested over every entry, "largest 0.5-grid value
+strictly below V" matches 1/86 for V = max raw clip speed, 0/86 for max effective
+clip speed and 1/40 for max race speed — because for 74 entries V is just the
+default. **V is sampler configuration, per state.**
+
 ### 4.6 The table was measured, not derived
 
 Two properties of the point spacing say the curves are sampled output, not a
@@ -412,10 +453,10 @@ matching a sneak/walk/run/sprint ladder (§4.2), and the output variable is
 
 | # | Question | Ruled out |
 | --- | --- | --- |
-| O1 | What sets an entry's ceiling. | Not race max (23 counterexamples). Not the graph's `Speed` bound — stripped from compiled `.hkx`; the one shipped `.hkb` says 384 where its curve stops at 324.5. |
+| O1 | What sets an entry's ceiling. *Narrowed, §4.5.2:* it is `V - 0.5` for an integer per-state sweep limit V, default 325; what sets a non-default V is sampler configuration. | Not a general rule over race max (23 counterexamples) or clip max (1/86). Not the graph's `Speed` bound — stripped from compiled `.hkx`; the one shipped `.hkb` says 384 where its curve stops at 324.5. |
 | O2 | What generates the knots between race thresholds. *Narrowed, §4.6:* they mark bends in a measured response, so reproducing them needs the graph run rather than a formula. | Not clip root-motion speeds alone (§4.5 puts the match at 16%). |
 | O3 | *Resolved, §4.5.1.* `y` is the speed of the nearest producible animation at its played rate, not `x` scaled by anything, so it may sit either side of `x` — above where a clip is played faster than authored, far above where the creature has no slow gait. | Not a unit error; not a bounded gain on x (29/45 over the whole curve). |
-| O4 | Why direction stops at 0.90. | |
+| O4 | *Resolved, §4.5.2.* Half-open sweep `d < 0.95f` over float-accumulated steps, 19 samples; 0.95 is never reached. | |
 | O5 | *Resolved, §1.2.* There are two paths, but the non-DB one is `speedOut = goalSpeed`, an identity pass-through. No runtime computation exists. | |
 
 ## 9. Method note
