@@ -243,7 +243,7 @@ Walking the graph's state machines is also how a state's animations are obtained
 each `hkbStateMachineStateInfo` carries `m_stateId` and a generator subtree, and
 the `hkbClipGenerator` leaves under it give `m_animationName` and
 `m_playbackSpeed`. That is the route from a key to the root motion behind it, used
-in §5.6.
+in §5.4.
 
 #### Other actors
 
