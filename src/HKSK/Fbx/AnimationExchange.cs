@@ -238,13 +238,57 @@ public sealed partial class AnimationExchange
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        options ??= new ImportOptions();
         string name = Path.GetFileNameWithoutExtension(fbxPath);
+
+        FbxDocument document;
 
         try
         {
             if (!File.Exists(fbxPath)) throw new FileNotFoundException($"no such file: {fbxPath}", fbxPath);
 
+            using FileStream stream = File.OpenRead(fbxPath);
+            document = FbxDocument.Load(stream);
+        }
+        catch (Exception e)
+        {
+            return new ExchangeResult(name, fbxPath, false, e.Message);
+        }
+
+        return Import(project, document, name, options);
+    }
+
+    /// <summary>
+    /// Reads one clip out of a document already in hand.
+    /// </summary>
+    /// <remarks>
+    /// What <see cref="Import(ActorProject, string, ImportOptions)"/> does once
+    /// the file is open, and what a caller holding a scene of its own wants: a
+    /// creature's whole set travels as one FBX with a stack per clip, and taking
+    /// it apart means reading each stack rather than each file.
+    /// </remarks>
+    /// <param name="name">
+    /// What to call this animation in the report, and the stem of its default
+    /// stored name. For a file that is the file's; for a stack it is usually the
+    /// stack's.
+    /// </param>
+    /// <param name="takeName">
+    /// Which stack to read. Null reads every curve in the document, which is
+    /// right for a document holding one animation and wrong for one holding
+    /// several -- their curves share the same properties of the same nodes, so
+    /// reading them all blends the clips together.
+    /// </param>
+    public ExchangeResult Import(
+        ActorProject project, FbxDocument document, string name,
+        ImportOptions? options = null, string? takeName = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        options ??= new ImportOptions();
+
+        try
+        {
             if (project.Folder is null)
                 throw new InvalidOperationException(
                     $"'{project.Name}' was opened without its Havok files, so there is nowhere to " +
@@ -268,12 +312,12 @@ public sealed partial class AnimationExchange
                     "animation packfile carries a binding and a reference frame that cannot be " +
                     "invented. Set ImportOptions.TemplatePath.");
 
-            FbxDocument document;
-            using (FileStream stream = File.OpenRead(fbxPath)) document = FbxDocument.Load(stream);
-
             HkFbx.Skeleton skeleton = FbxAnimationReader.ReadSkeleton(document);
-            HkFbx.SampledAnimation animation = FbxAnimationReader.ReadAnimation(document, skeleton);
-            HkFbx.RootMotion motion = FbxAnimationReader.ReadRootMotion(document, skeleton);
+
+            HkFbx.SampledAnimation animation =
+                FbxAnimationReader.ReadAnimation(document, skeleton, takeName: takeName);
+
+            HkFbx.RootMotion motion = FbxAnimationReader.ReadRootMotion(document, skeleton, takeName);
 
             // The travel belongs to the cache, not to the animation, so it comes
             // off the root bone before the animation is compressed. Always --
@@ -289,7 +333,8 @@ public sealed partial class AnimationExchange
 
             if (options.ImportEvents)
             {
-                IReadOnlyList<HkFbx.AnnotationTrack> events = FbxAnimationReader.ReadEvents(document);
+                IReadOnlyList<HkFbx.AnnotationTrack> events =
+                    FbxAnimationReader.ReadEvents(document, takeName);
 
                 // Rewrites the whole file from itself, so it has to follow the
                 // animation write rather than share a template with it.
@@ -306,7 +351,7 @@ public sealed partial class AnimationExchange
         }
         catch (Exception e)
         {
-            return new ExchangeResult(name, fbxPath, false, e.Message);
+            return new ExchangeResult(name, null, false, e.Message);
         }
     }
 

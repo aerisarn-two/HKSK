@@ -1,7 +1,9 @@
+using HKFBX.Fbx;
 using HKSK.Cache;
 using HKSK.Fbx;
 using HKSK.Model;
 using HKSK.Validation;
+using LeanMeshIO;
 using Xunit;
 
 namespace HKSK.Tests;
@@ -103,6 +105,50 @@ public class FbxExchangeTests
         Assert.True(imported.Succeeded, imported.Problem);
 
         // Replacing keeps the slot, so nothing pointing at it had to move.
+        Assert.Equal(turn.Index, imported.CacheIndex);
+        Assert.Equal(20, project.Animations.Count);
+
+        AnimationSlot after = project.Animation("TurnLoopingL")!;
+        Assert.Equal(travelBefore, after.Motion!.Travel, 2);
+        Assert.Equal(turnBefore, after.Motion.Turn, 2);
+    }
+
+    /// <summary>
+    /// The same import, from a scene already in hand and from one named stack
+    /// of it.
+    /// </summary>
+    /// <remarks>
+    /// A creature's whole set travels as one FBX with a stack per clip, so
+    /// taking it apart means reading stacks rather than files -- there is no
+    /// file per animation to point at. The document overload is what makes that
+    /// possible, and it has to reach the same result as the file one for the
+    /// case where the document holds a single stack.
+    /// </remarks>
+    [FbxFact]
+    public void ImportingOneNamedStackOfADocumentIsTheSameAsImportingTheFile()
+    {
+        using var work = new Workspace();
+        ActorProject project = work.Chicken();
+
+        AnimationSlot turn = project.Animation("TurnLoopingL")!;
+        float travelBefore = turn.Motion!.Travel;
+        float turnBefore = turn.Motion.Turn;
+
+        var exchange = new AnimationExchange();
+        string fbx = Path.Combine(work.Folder, "turn.fbx");
+
+        Assert.True(exchange.Export(project, turn, fbx).Succeeded);
+
+        FbxDocument document;
+        using (FileStream stream = File.OpenRead(fbx)) document = FbxDocument.Load(stream);
+
+        string take = Assert.Single(FbxAnimationReader.ReadTakeNames(document));
+
+        ExchangeResult imported = exchange.Import(
+            project, document, take,
+            new ImportOptions { StoredName = turn.StoredName }, take);
+
+        Assert.True(imported.Succeeded, imported.Problem);
         Assert.Equal(turn.Index, imported.CacheIndex);
         Assert.Equal(20, project.Animations.Count);
 
