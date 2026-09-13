@@ -285,6 +285,38 @@ anchors, `y/x` is that clip's playback rate:
     x  35.0 -> y  34.03   ratio 0.97    Forward_Walk plays at 1.0,  raw speed 34.71
     x 252.5 -> y 403.10   ratio 1.596   Forward_Run  plays at 1.6,  raw speed 251.94
 
+### 4.5.1 y is the nearest available animation, not x times a gain
+
+A tempting model is `y = raw_animation_speed * node_gain`, with the gain being the
+clip generator's `PlaybackSpeed`. It predicts that `y/x` stays inside the envelope
+of playback rates the project's clips use. Tested:
+
+| Range of the curve | `max(y/x) <= max playback` | `min(y/x) >= min playback` |
+| --- | ---: | ---: |
+| whole curve | 29/45 | 38/45 |
+| `x >= 10%` of ceiling | 36/45 | 38/45 |
+| `x >= 25%` of ceiling | 38/45 | 38/45 |
+| `x >= 50%` of ceiling | **40/45** | **41/45** |
+
+The failures are not scattered: every one is the **first driven sample**, where x
+is under 1% of the ceiling and y is already large.
+
+    DragonProject          x   3.0  ->  y 384.00    ratio 128.0
+    Dragon_Priest          x   1.0  ->  y  80.00    ratio  80.0
+    SlaughterfishProject   x   1.0  ->  y 162.06    ratio 162.1
+    RieklingProject        x   3.0  ->  y  37.02    ratio  12.3
+
+Ask a dragon to move at 3 and it moves at 384, because it has no slow locomotion
+to play. So the gain relates **y to its clip**, not y to x:
+
+> `y` is the speed of the nearest animation the graph can actually produce for that
+> request, at the rate its generator plays it. `x` is the query key, not a factor.
+
+That accounts for the rest of the shape without further assumptions: the curve
+saturates (I8) because clips run out at the top; it starts high on creatures with
+no slow gait; `y/x` equals a playback rate at an anchor because one clip dominates
+there; and it drifts between anchors because two clips are blending.
+
 ### 4.6 The table was measured, not derived
 
 Two properties of the point spacing say the curves are sampled output, not a
@@ -382,7 +414,7 @@ matching a sneak/walk/run/sprint ladder (§4.2), and the output variable is
 | --- | --- | --- |
 | O1 | What sets an entry's ceiling. | Not race max (23 counterexamples). Not the graph's `Speed` bound — stripped from compiled `.hkx`; the one shipped `.hkb` says 384 where its curve stops at 324.5. |
 | O2 | What generates the knots between race thresholds. *Narrowed, §4.6:* they mark bends in a measured response, so reproducing them needs the graph run rather than a formula. | Not clip root-motion speeds alone (§4.5 puts the match at 16%). |
-| O3 | Why `y > x` (player answers 395.94 to a 324.5 ceiling). *Narrowed, §4.5:* at an anchor `y/x` is the clip's `PlaybackSpeed`, so y exceeds x exactly where the clip is played faster than authored. | Not a unit error — I8 shows y is a reachable speed. |
+| O3 | *Resolved, §4.5.1.* `y` is the speed of the nearest producible animation at its played rate, not `x` scaled by anything, so it may sit either side of `x` — above where a clip is played faster than authored, far above where the creature has no slow gait. | Not a unit error; not a bounded gain on x (29/45 over the whole curve). |
 | O4 | Why direction stops at 0.90. | |
 | O5 | *Resolved, §1.2.* There are two paths, but the non-DB one is `speedOut = goalSpeed`, an identity pass-through. No runtime computation exists. | |
 
