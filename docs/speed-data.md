@@ -1,6 +1,6 @@
 # speeddatasinglefile.txt — speed sampler database
 
-    Status:    format CONFIRMED (byte-exact round trip); semantics part INFERRED
+    Status:    format CONFIRMED (byte-exact round trip); semantics CONFIRMED
     Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
@@ -28,18 +28,6 @@ Strings in `SkyrimSE.exe`:
 
 `BSSpeedSamplerModifier` occurs in 42 compiled graphs / 30 distinct graph names.
 
-Parameters, from `bcbehavior.hkb` (the one authoring file that shipped):
-
-    m_enable      bool            = true
-    m_state       hkFloatVariable -> iState
-    m_direction   hkFloatVariable -> Direction      range [0, 1]
-    m_goalSpeed   hkFloatVariable -> Speed          range [0, 384] (this graph)
-    m_speedOut    hkFloatVariable -> out
-
-Three inputs; the file nests three deep. Variable ranges exist only in `.hkb`:
-`m_wordMinVariableValues` / `m_wordMaxVariableValues` are empty (count 0) in all
-8 compiled graphs inspected, while `m_variableInitialValues` is fully populated.
-
 ### 1.1 INI default
 
 No shipped INI names the setting; `Skyrim_Default.ini` and the four quality
@@ -60,6 +48,78 @@ debug/dead-platform read 0 (`bDrawAnimPoseInVDB`, `bDisplayMarkWarning`,
 `bUseSPUGenerate`, `bEnableHavokHit`, `bAlwaysDriveRagdoll`, `bInitiallyLoadAllClips`),
 functional read 1 (`bFootIK`, `bAnimInterpEnable`, `bHumanoidFootIKEnable`,
 `bMultiThreadBoneUpdate`).
+
+### 1.2 Query path (from disassembly)
+
+`BSSpeedSamplerModifier::Update`, RVA 0xb9f000. `rbx` = the modifier:
+
+    140b9f047  mov   0x1431bd160,%rcx    ; DB singleton pointer
+    140b9f04e  movss 0x58(%rbx),%xmm0    ; goalSpeed
+    140b9f053  test  %rcx,%rcx
+    140b9f056  je    0x140b9f070         ; no DB -> skip, xmm0 unchanged
+    140b9f058  mov   (%rcx),%rax         ; vtable
+    140b9f05b  mov   %rdi,%rdx           ; arg2  context
+    140b9f05e  movss 0x54(%rbx),%xmm3    ; arg4  direction
+    140b9f063  mov   0x50(%rbx),%r8d     ; arg3  state (int)
+    140b9f067  movss %xmm0,0x20(%rsp)    ; arg5  goalSpeed
+    140b9f06d  call  *0x8(%rax)          ; -> xmm0
+    140b9f070  movss %xmm0,0x5c(%rbx)    ; speedOut = xmm0
+
+Member layout and query signature:
+
+    +0x50  i32  state          float Query(this,
+    +0x54  f32  direction                  void  *context,
+    +0x58  f32  goalSpeed                  i32    state,      /* -> entry.key   */
+    +0x5c  f32  speedOut                   f32    direction,  /* -> record      */
+                                           f32    goalSpeed); /* -> record.x    */
+                                           /* returns record.y */
+
+**With no database the call is skipped and `speedOut = goalSpeed`** — an identity
+pass-through, not a fallback computation. The table is the only source of the
+mapping; without it the modifier is inert.
+
+The signature fixes the file's three levels: an integer state, a float direction
+and a float goal speed, returning one float. That is `entry.key`, `record.direction`
+and `record.points[].x` returning `record.points[].y`.
+
+### 1.3 Load path (from disassembly)
+
+Two loaders, and the INI gate sits on only one of them.
+
+The merged file is read by an ungated function that opens the global
+`BSFixedString` for `Meshes/SpeedDataSingleFile.txt` (0x1431c67f8) at RVA 0xbc08af,
+then parses a line with radix 10 into a `u16` — the dirlist count.
+
+The gated function is RVA 0xbc0c20:
+
+    140bc0c48  xor   %dil,%dil
+    140bc0c4b  cmp   %dil,0x1461a86(%rip)  ; bUseSpeedSampler
+    140bc0c52  je    0x140bc0e09           ; off -> return false, do nothing
+    ...
+    140bc0c71  call  0x140bc1480           ; probe an existing entry
+    140bc0c7a  jne   0x140bc0dd7           ; hit -> done
+    140bc0cb3  mov   $0x104,%edx           ; else format MAX_PATH:
+    140bc0cc0  call  0x14018a900           ;   "%s%s%s/%s%s"
+                                           ;   MESHES/SPEEDDATA/ + ... + .SPD
+
+So `bUseSpeedSampler` gates the **per-project `.SPD` lazy load**, and its off path
+returns false immediately. The three path fragments are interned as globals:
+
+    0x1431c67e0  "MESHES/SPEEDDATA/"
+    0x1431c67f0  ".SPD"
+    0x1431c67f8  "Meshes/SpeedDataSingleFile.txt"
+
+Parameters, from `bcbehavior.hkb` (the one authoring file that shipped):
+
+    m_enable      bool            = true
+    m_state       hkFloatVariable -> iState
+    m_direction   hkFloatVariable -> Direction      range [0, 1]
+    m_goalSpeed   hkFloatVariable -> Speed          range [0, 384] (this graph)
+    m_speedOut    hkFloatVariable -> out
+
+Three inputs; the file nests three deep. Variable ranges exist only in `.hkb`:
+`m_wordMinVariableValues` / `m_wordMaxVariableValues` are empty (count 0) in all
+8 compiled graphs inspected, while `m_variableInitialValues` is fully populated.
 
 ## 2. On-disk format
 
@@ -167,13 +227,13 @@ how a shared graph selects its own table:
     Bear 0   Cow 10   Deer 20,21   Dog 30   Goat 40   Horker 50
     Horse 60   Mammoth 70   SabreCat 80   Skeever 90   Wolf 100
 
-### 4.3 x — goal speed, INFERRED (strong)
+### 4.3 x — goal speed, CONFIRMED
 
-Structural: the modifier takes exactly three inputs. `state` selects the entry,
-`direction` selects the record, so `goalSpeed` is what indexes within one. No
-fourth input exists.
+The query signature (§1.2) passes `(i32 state, f32 direction, f32 goalSpeed)` and
+returns one float. The first two select entry and record, so `goalSpeed` indexes
+within a record and the return is the paired `y`.
 
-Statistical: race movement speeds fall on x knots far past chance (§5).
+Corroborating: race movement speeds fall on x knots far past chance (§5).
 
 Units: same as RACE `MOVT` / `SpeedOverrides` (game units/s).
 
@@ -272,14 +332,32 @@ matching a sneak/walk/run/sprint ladder (§4.2), and the output variable is
 | O2 | What generates the knots between race thresholds. | Not clip root-motion speeds. |
 | O3 | Why `y > x` (player answers 395.94 to a 324.5 ceiling). | Not a unit error — I8 shows y is a reachable speed. |
 | O4 | Why direction stops at 0.90. | |
-| O5 | Whether a computed path exists, selected against the DB by the INI gate. | **Not testable statically.** The shipped exe is Steam-wrapped (`.bind` section); `.text` is encrypted at rest — 0 RIP-relative references to the setting object, and disassembling the modifier's vtable slots returns noise. Consistent with `BSISpeedSamplerDB` being an interface, but undemonstrated. |
+| O5 | *Resolved, §1.2.* There are two paths, but the non-DB one is `speedOut = goalSpeed`, an identity pass-through. No runtime computation exists. | |
 
-## 9. Consequences for tooling
+## 9. Method note
+
+§1.2 and §1.3 required unwrapping the SteamStub Variant 3.1 (x64) wrapper on the
+retail executable, which encrypts `.text`: entropy 8.000 bits/byte packed against
+6.354 unpacked, and 0 RIP-relative references to the setting object against 6.
+Unwrapped with Steamless v3.1.0.5 for reading only. The unwrapped binary is not
+redistributable and is not in this repository; every address above is an RVA that
+can be re-derived from a local copy.
+
+## 10. Consequences for tooling
 
 The gate defaults ON, so this data is live for every actor whose graph carries the
 modifier. A mod that adds a creature, alters a race's movement speeds, or
 renumbers a shared graph's species keys leaves this file stale, and nothing
 currently reads or writes it.
+
+A project absent from the table is not an error and will not be reported as one:
+the modifier passes `goalSpeed` through unchanged, so the actor moves at the speed
+requested rather than the speed its animations can deliver. The failure mode is
+foot sliding, not a crash.
+
+`MESHES/SPEEDDATA/<...>.SPD` (§1.3) is a supported per-project load path that the
+game ships nothing for. A tool that adds one creature can write a single `.SPD`
+rather than rewriting the merged file.
 
 Implementing §2 is sufficient to read and rewrite the file losslessly; §4 is
 sufficient to interpret it; O1 and O2 are required to *generate* one from scratch.
