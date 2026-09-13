@@ -168,7 +168,7 @@ Measured over the whole file. A reader may assert these; a writer must hold them
 | # | Invariant | Observed |
 | --- | --- | ---: |
 | I1 | `version == 1` | 49/49 blocks |
-| I2 | `n_entries` = one per sampled locomotion state (§4.1); in `{1,2,3,4,6,14}` | 49/49 |
+| I2 | `n_entries in {1,2,3,4,6,14}` | 49/49 |
 | I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
 | I4 | `direction[i]` is the float accumulation of `+0.05f`, in order, complete | 86/86 entries |
 | I5 | the direction sequence ends at 0.90; 0.95 is never present | 86/86 entries |
@@ -207,7 +207,7 @@ Entries within one project may differ: `DefaultMale` and `DefaultFemale`
 
 ## 4. Field semantics
 
-### 4.1 key — locomotion state id
+### 4.1 key — state id
 
 `m_state` reads the graph variable `iState`. The key is not opaque: it decomposes
 into a species slot and a locomotion state index, and both halves are readable off
@@ -238,24 +238,41 @@ in.
 
 Every actor that does not share a locomotion graph uses base 0.
 
-#### Locomotion state index
+#### Offset within a slot
 
-Within a species slot, the offset is the state index in the actor's forward
-locomotion state machine. The deer is the clear case, holding two entries where
-most actors hold one. Its `forwardlocomotion.hkx` carries
-`ForwardLocomotionBehavior` with exactly two states, and their clip sets separate
-the gaits:
+44 of the 49 projects hold one entry, so the offset is usually zero. Six hold
+several: the player 14, the draugr 6, the giant 3, and the deer, spriggan and
+benthic lurker 2 each.
+
+**What the offset indexes is not established.** One case is consistent with
+locomotion states. The deer holds keys 20 and 21, and its `forwardlocomotion.hkx`
+carries `ForwardLocomotionBehavior` with exactly two states whose clip sets
+separate the gaits:
 
     id 0   ForwardState_Deer     WalkForward, TrotForward (+L/R)     -> key 20
     id 1   RunForwardState       RunForward (+L/R)                   -> key 21
 
-The two tables differ as the gaits do: key 20 tops out at 431.92 and key 21 at
-832.25, which is the deer's run clip at its authored rate.
+The tables differ as the gaits do: key 20 tops out at 431.92, key 21 at 832.25,
+which is the deer's run clip at its authored rate.
 
-Sampling is per state and **not every state is sampled**. The canines carry the
-same two-state machine and have one entry each — dog 30, wolf 100, no 31 or 101 —
-so the walk and trot gait has no table of its own and resolves against the run
-table. Reading a state machine's state count does not predict the entry count.
+That reading does not generalise to the actors with more entries. Matching each
+key set against every state machine in the actor's own graph:
+
+    DefaultMale     keys [0..10,15,16,17]   0 of 5 machines match
+    DraugrProject   keys [0,3,4,5,6,7]      0 exact; nearest [0,1,3,4,5,6,7,9]
+    GiantProject    keys [0,1,2]            1 exact -- BleedOutBehavior
+
+The giant's exact match is `BleedOutBehavior`, whose three states are
+`BleedOut_Start`, `BleedOut_Idle` and `BleedOut_Getup`. Not locomotion; a
+three-state machine colliding with a three-key set, which is what a small-set match
+is worth.
+
+So the key is `iState` as the modifier reads it (§1.2), the species half is exact,
+and the offset is unattributed. A generator must take the key set as an input.
+
+Where several states exist, not all are sampled. The canines carry the deer's
+two-state machine and hold one entry each — dog 30, wolf 100, no 31 or 101 — so a
+state count does not give an entry count.
 
 #### Reading a state's clip set
 
@@ -431,9 +448,9 @@ on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshol
 error-bounded decimation) are scored against the shipped file by whether they
 reproduce its exact point sets in all 1,634 records.
 
-**4 — Sampled states.** One entry per sampled locomotion state. Not every state is
-sampled: the canines carry a two-state forward locomotion machine and hold one
-entry each (§4.1). A state count does not give an entry count.
+**4 — The key set.** One entry per key. The species half of a key is derivable
+(§4.1); the offset within a species slot is not, and no state machine's id set
+matches the key sets of the actors holding several entries. Supply the keys.
 
 With those four, the rest follows: key from §4.1, direction values from I4, grid and
 shared ceiling from I6-I8, output bound from I9.
