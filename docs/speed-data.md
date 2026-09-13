@@ -267,8 +267,32 @@ The giant's exact match is `BleedOutBehavior`, whose three states are
 three-state machine colliding with a three-key set, which is what a small-set match
 is worth.
 
-So the key is `iState` as the modifier reads it (§1.2), the species half is exact,
-and the offset is unattributed. A generator must take the key set as an input.
+#### iState is written by the engine
+
+The graph only consumes it. In every behaviour file that declares `iState` the sole
+binding is `BSSpeedSamplerModifier.state` — the modifier's own input — and **no
+state machine syncs to it**:
+
+    file                     iState var   machines syncing to it
+    0_master.hkx                     94                        0
+    giantbehavior.hkx                37                        0
+    quadrupedbehavior.hkx            45                        0
+    draugrbehavior.hkx               33                        0
+    ... 16 graphs checked, none
+
+The mechanism exists and is used for other variables — `hkbStateMachine`
+`m_syncVariableIndex` writes a machine's current state id into a variable, and the
+same files use it for `iSyncDefaultState`, `iSyncSprintState`,
+`currentDefaultState`, `iIsInSneak` and `iCrossbowState`. `iState` is not among
+them.
+
+So `iState` carries the actor's locomotion state as the game code sets it, and the
+values it takes are engine-side. That is why the key set is not recoverable from
+the shipped files, and why matching key sets against state machine ids finds
+nothing: the graph never enumerates them.
+
+The species half of a key is exact; the offset is not derivable. A generator must
+take the key set as an input.
 
 Where several states exist, not all are sampled. The canines carry the deer's
 two-state machine and hold one entry each — dog 30, wolf 100, no 31 or 101 — so a
@@ -448,9 +472,9 @@ on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshol
 error-bounded decimation) are scored against the shipped file by whether they
 reproduce its exact point sets in all 1,634 records.
 
-**4 — The key set.** One entry per key. The species half of a key is derivable
-(§4.1); the offset within a species slot is not, and no state machine's id set
-matches the key sets of the actors holding several entries. Supply the keys.
+**4 — The key set.** One entry per key. The species half is derivable (§4.1); the
+offset is not. `iState` is written by the engine and only read by the graph, so no
+shipped file enumerates the values it takes. Supply the keys.
 
 With those four, the rest follows: key from §4.1, direction values from I4, grid and
 shared ceiling from I6-I8, output bound from I9.
