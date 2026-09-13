@@ -1,7 +1,9 @@
 # speeddatasinglefile.txt — speed sampler database
 
     Status:    format CONFIRMED (byte-exact round trip); semantics CONFIRMED
-               four generator inputs unknown (§5.4)
+               key set derivable from the behaviour graph (§4.1)
+               y range derivable from clip root motion (§4.4)
+               three generator inputs unknown (§5.4)
     Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
@@ -210,14 +212,69 @@ Entries within one project may differ: `DefaultMale` and `DefaultFemale`
 
 ### 4.1 key — state id
 
-`m_state` reads the graph variable `iState`. The key is not opaque: it decomposes
-into a species slot and an offset. The species half is derivable; the offset is
-not.
+`m_state` reads the graph variable `iState`. **The key set is declared by the
+graph.** Each sampled state has an `iState_<MOVT>` variable whose initial value is
+the state id and whose name suffix names a RACE `MOVT` record:
+
+    variable                 initial value   movement type
+    iState_DeerDefault                  20   Deer_Default_MT
+    iState_DeerDefaultRun               21   Deer_DefaultRun_MT
+    iState_NPCBowDrawn                   3   NPC_BowDrawn_MT
+    iState_GiantCombatRun                2   GiantCombatRun_MT
+
+Read them from `hkbBehaviorGraphData.m_stringData.m_variableNames`, paired **by
+index** with `m_variableInitialValues.m_wordVariableValues`.
+
+#### Scope: the root graph, not the closure
+
+A project reaches many graphs; only its root one governs. Keys against declarations,
+all 49 projects, the Falmer's two corrupt keys (§7) excluded:
+
+    scope                     keys == declared   keys subset   violations
+    root behaviour graph                    24            25            0
+    full reference closure                  21            28            0
+
+Both are violation-free, so a key is always a declared state id. The root graph is
+the tighter statement and is the rule; **scope a generator to it.**
+
+The difference is not academic. `quadrupedbehavior.hkx` is a shared template holding
+the union of all quadruped constants, reachable from eleven projects, and it
+disagrees with two of them:
+
+    declaration                quadrupedbehavior.hkx   project root graph   key
+    iState_DeerDefault                            10   deerbehavior     20   20
+    iState_HorkerSwimDefault                      50   horkerbehavior   51    -
+
+Under closure scope the deer has both 10 and 20 and the horker has 50 twice. The
+cache follows the root graph: the deer is keyed 20 and 21, never 10. The template's
+two colliding constants are inert.
+
+#### Reaching the root graph
+
+The project file is `hkbProjectData`, not a character:
+
+    <Project>.hkx  hkbProjectStringData.m_characterFilenames  ->
+    character      hkbCharacterStringData.m_behaviorFilename  ->  ROOT GRAPH
+                   hkbBehaviorReferenceGenerator.m_behaviorName -> sub-graphs
+
+Resolve each path against the project file's own directory, case-insensitively.
+`m_behaviorFilenames` on the project holds the root only; every other graph is
+reached through `hkbBehaviorReferenceGenerator`, so a traversal that reads the
+project list alone sees one graph per project and misses the sub-behaviours.
+
+Two traps, each of which silently empties the result:
+
+- Havok members are modelled as **auto-properties** in HKX2. Reflecting over
+  `GetFields()` descends into nothing; use the properties.
+- the character file and its graphs are **siblings**, not nested
+  (`characters/defaultmale.hkx` against `behaviors/0_master.hkx`), so matching
+  graphs by path prefix under the character's directory finds none for the seven
+  projects shaped that way.
 
 #### Species slot
 
-Eleven actors share one locomotion graph, `quadrupedbehavior.hkx`. Each is given a
-slot of ten, and the slots are the species in **alphabetical order**:
+The declared numbers are not arbitrary. The eleven actors sharing
+`quadrupedbehavior.hkx` each hold a slot of ten, in **alphabetical order**:
 
     #   species     key      #   species     key
     0   Bear          0      6   Horse        60
@@ -227,85 +284,97 @@ slot of ten, and the slots are the species in **alphabetical order**:
     4   Goat         40     10   Wolf        100
     5   Horker       50
 
-`key = 10 x alphabetical index`, exact for all eleven. A shared graph needs a way
-to ask for its own species' table, and this is it. The horse is in the numbering
-though its graph is `horsebehavior.hkx` rather than the shared one.
+`key = 10 x alphabetical index`, exact for all eleven, with the offset within a slot
+distinguishing gaits (deer 20 walk/trot, 21 run; horse 60 default, 61 sprint, 62
+fall, 63 swim). A shared template needs a way to name its own species' table and
+this is it. The horse is in the numbering though its root graph is
+`horsebehavior.hkx`.
 
-**`BoarProject` is the exception and shows the scheme is static.** The boar
-(Dragonborn) shares `quadrupedbehavior.hkx` and would take slot 10 if inserted
-alphabetically, displacing Cow through Wolf. It has key 0 instead, colliding with
-the bear. The slots were fixed before the DLC and the late species was not fitted
-in.
+**`BoarProject` shows the scheme is static.** The boar (Dragonborn) would take slot
+10 if inserted alphabetically, displacing Cow through Wolf. Its root graph declares
+`iState_BoarDefault = 0` instead. The slots were fixed before the DLC and the late
+species was not fitted in; nothing collides, because each project reads its own root
+graph.
 
-Every actor that does not share a locomotion graph uses base 0.
+#### iState is engine-written, and still declared
 
-#### Offset within a slot
+The runtime value comes from game code: in every graph declaring `iState` the sole
+binding is `BSSpeedSamplerModifier.state` — the modifier's own input — and **no state
+machine syncs to it**:
 
-44 of the 49 projects hold one entry, so the offset is usually zero. Six hold
-several: the player 14, the draugr 6, the giant 3, and the deer, spriggan and
-benthic lurker 2 each.
+    file                     iState vars   machines syncing to it
+    0_master.hkx                      94                        0
+    giantbehavior.hkx                 37                        0
+    quadrupedbehavior.hkx             45                        0
+    draugrbehavior.hkx                33                        0
+    ... 16 graphs checked, none
 
-**What the offset indexes is not established.** One case is consistent with
-locomotion states. The deer holds keys 20 and 21, and its `forwardlocomotion.hkx`
-carries `ForwardLocomotionBehavior` with exactly two states whose clip sets
-separate the gaits:
+The mechanism exists and is used elsewhere — `hkbStateMachine.m_syncVariableIndex`
+writes a machine's state id into a variable, as for `iSyncDefaultState`,
+`iSyncSprintState`, `currentDefaultState`, `iIsInSneak` and `iCrossbowState`.
+`iState` is not among them.
 
-    id 0   ForwardState_Deer     WalkForward, TrotForward (+L/R)     -> key 20
-    id 1   RunForwardState       RunForward (+L/R)                   -> key 21
-
-The tables differ as the gaits do: key 20 tops out at 431.92, key 21 at 832.25,
-which is the deer's run clip at its authored rate.
-
-That reading does not generalise to the actors with more entries. Matching each
-key set against every state machine in the actor's own graph:
+These two facts are not in conflict, and the distinction matters. The value `iState`
+*takes* at runtime is engine-side, which is why matching key sets against state
+machine ids finds nothing:
 
     DefaultMale     keys [0..10,15,16,17]   0 of 5 machines match
     DraugrProject   keys [0,3,4,5,6,7]      0 exact; nearest [0,1,3,4,5,6,7,9]
-    GiantProject    keys [0,1,2]            1 exact -- BleedOutBehavior
+    GiantProject    keys [0,1,2]            1 exact -- BleedOutBehavior, whose
+                                            states are BleedOut_Start/Idle/Getup
 
-The giant's exact match is `BleedOutBehavior`, whose three states are
-`BleedOut_Start`, `BleedOut_Idle` and `BleedOut_Getup`. Not locomotion; a
-three-state machine colliding with a three-key set, which is what a small-set match
-is worth.
+But the set of values it *can* take is enumerated, once per movement type, as the
+initial values of the `iState_*` variables. The key set is therefore recoverable
+from the shipped files, and a generator need not be told it.
 
-#### iState is written by the engine
+#### Resolution to MOVT
 
-The graph only consumes it. In every behaviour file that declares `iState` the sole
-binding is `BSSpeedSamplerModifier.state` — the modifier's own input — and **no
-state machine syncs to it**:
+104 distinct `iState_*` declarations are reachable from the 49 projects; 103 name a
+`MOVT` record that exists. All 86 populated entries resolve. The full join is §11.
 
-    file                     iState var   machines syncing to it
-    0_master.hkx                     94                        0
-    giantbehavior.hkx                37                        0
-    quadrupedbehavior.hkx            45                        0
-    draugrbehavior.hkx               33                        0
-    ... 16 graphs checked, none
+Five naming disagreements between variable and record must be handled; without them a
+match on normalised names alone scores 93 of 104:
 
-The mechanism exists and is used for other variables — `hkbStateMachine`
-`m_syncVariableIndex` writes a machine's current state id into a variable, and the
-same files use it for `iSyncDefaultState`, `iSyncSprintState`,
-`currentDefaultState`, `iIsInSneak` and `iCrossbowState`. `iState` is not among
-them.
+    DLC prefix on the record, never on the variable
+        iState_NetchDefault      -> DLC2Netch_Default_MT
+    word order reversed
+        iState_DefaultChaurus_MT -> ChaurusDefault_MT
+    Swim/SwimDefault on the variable is Swimming on the record
+        iState_BearSwimDefault   -> Bear_Swimming_MT
+    one variable abbreviated
+        iState_ChaFlyerDefault   -> ChaurusFlyer_Default_MT
+    one record misspelt in the shipped data
+        iState_CowSiwmDefault    -> CowSwimDefault_MT
 
-So `iState` carries the actor's locomotion state as the game code sets it, and the
-values it takes are engine-side. That is why the key set is not recoverable from
-the shipped files, and why matching key sets against state machine ids finds
-nothing: the graph never enumerates them.
+Do not substitute a token-set or camelCase matcher for these. Consecutive capitals
+(`NPCDefault`) do not split, so such a matcher scores **worse** than plain
+normalisation, not better:
 
-The species half of a key is exact; the offset is not derivable. A generator must
-take the key set as an input.
+    matcher                                      resolved
+    token-set / camelCase split                  75 / 104
+    normalised names only                        93 / 104
+    normalised + the five rules above           103 / 104
 
-Where several states exist, not all are sampled. The canines carry the deer's
-two-state machine and hold one entry each — dog 30, wolf 100, no 31 or 101 — so a
-state count does not give an entry count.
+**`iState_CombatSpider_MT` is a dangling reference.** Both spider root graphs declare
+it at state 1, and no such `MOVT` exists — the only spider records are
+`DwarvenSpider_Default_MT` and `SpiderDefault_MT`. It is never a key, so it costs
+nothing; a resolver must tolerate a declaration the ESM does not back.
+
+Not every declared state is sampled. 25 of the 49 projects hold fewer entries than
+they declare states — the dragon declares Flying, Hovering and Perching and ships
+only state 0 — so a state count does not give an entry count.
 
 #### Reading a state's clip set
 
-Walking the graph's state machines is also how a state's animations are obtained:
-each `hkbStateMachineStateInfo` carries `m_stateId` and a generator subtree, and
-the `hkbClipGenerator` leaves under it give `m_animationName` and
-`m_playbackSpeed`. That is the route from a key to the root motion behind it, used
-in §5.4.
+A key is not a state machine id, so a key does not index a state machine's subtree.
+The route from an entry to the root motion behind it runs through the consumer
+instead: find the `hkbBlenderGenerator` whose `m_blendParameter` is bound to
+`SpeedSampled` (§6.1), and take its children. Each child gives an authored weight
+and an animation; the animation's travel and duration give a speed. That ladder is
+what §4.4 evaluates.
+
+Clip rate comes from the animation cache `ClipGeneratorEntry.PlaybackSpeed`, not
+from `hkbClipGenerator.m_playbackSpeed` alone.
 
 #### Other actors
 
@@ -358,6 +427,55 @@ required for the bound to hold, not a refinement:
     bound                                        exceeded by   hit exactly
     fastest clip root-motion speed                    4 / 46             8
     that x ClipGeneratorEntry.PlaybackSpeed           0 / 46             9
+
+#### The y bounds are the blend ladder's endpoints
+
+Root motion carries a travel and a duration, so a clip has a speed. Order the
+`SpeedSampled` blender's children by weight and pair each with its animation's
+`travel / duration x PlaybackSpeed`. That ladder reproduces both bounds of the
+entry. Measured on the 13 entries whose locomotion blender is identifiable:
+
+    entry              min y  slowest child     max y  ladder at max x   max x
+    Chicken:0           0.49           0.49    403.10           403.10   324.5
+    Hare:0              3.64           3.64    320.62           320.62   324.5
+    Bear:0              3.59           3.59    285.23           285.23   324.5
+    Dog:30              4.99           4.99    288.73           288.95   424.5
+    Wolf:100            4.99           4.99    288.73           288.95   424.5
+    HighlandCow:10      4.93           4.93    324.25           324.27   324.5
+    Deer:20             4.92           4.92    431.92           449.50   449.5
+    Deer:21           391.50         416.67    832.25           832.83   832.5
+    Goat:40             4.97           4.97    324.49           324.50   324.5
+    Horker:50           3.31           3.31     83.41            83.41   324.5
+    Mammoth:70          2.50           2.50    290.34           324.50   324.5
+    SabreCat:80         4.98           4.98    288.79           324.50   324.5
+    Skeever:90          5.15           5.15    308.37           325.24   324.5
+
+**`min y` is the root-motion speed of the blend's slowest child** — 12 of 13, to
+better than 0.5% and usually to the stored decimals. It is not a floor or an
+epsilon: it is what the actor still travels at when the requested speed is 0.
+
+**`max y` is that ladder evaluated at `max x`** — 9 of 13, and the split is clean:
+
+    max x reaches the top rung   4 / 4    max y is exactly the top clip's speed
+    max x lands mid-ladder       5 / 9    linear interpolation of the two speeds
+
+The four mid-ladder misses fall short of linear interpolation, never over: deer 20
+-3.9%, skeever -5.2%, mammoth -10.5%, sabrecat -11.0%.
+
+#### y follows the clip, not the weight
+
+Where the authored weight and the animation disagree (§6.3), the table records the
+animation:
+
+    entry        top weight   top clip's speed   table max y
+    Chicken:0        251.94             403.10        403.10
+    Dog:30           425.00             289.30        288.73
+
+The chicken's blend claims its fastest gait runs at 251.94 and the clip travels at
+403.10; asking for 324.5 delivers 403.10. **That is why `max y` can exceed `max x`**
+— on 24 of the 86 populated entries it exceeds every `MOVT` translation speed in its
+own row (§11) — and it is the reason the file has to exist: the engine knows the
+request, the blend knows the claim, and only this table knows the delivery.
 
 ## 5. Construction
 
@@ -441,45 +559,61 @@ record against a sweep of up to 650 positions.
             retain (x, y) at response breakpoints
         emit entry { key = s, records = 19 curves }
 
-`top(s)`, the retention rule, the evaluator and the set of sampled states are
-inputs, not derivable: §5.4.
+The sampled states come from the root graph's `iState_*` declarations (§4.1).
+`top(s)`, the retention rule and the evaluator are inputs, not derivable: §5.4.
 
 Output must satisfy I1-I9 (§3). x is in the units RACE `MOVT` records use.
 
 ### 5.4 Missing inputs
 
-§2 and §4 suffice to read and rewrite a table. Producing one needs four inputs, none
-present in the game files.
+§2 and §4 suffice to read and rewrite a table. Producing one needs three further
+inputs. The key set was a fourth and is now derivable.
 
     #  input                        shape              status
-    1  behaviour graph evaluator    code               blocker
+    1  behaviour graph evaluator    code               blocker; endpoints derivable
     2  top(s), sweep upper bound    1 float per entry  authored; default 324.5
     3  point-retention rule         1 algorithm        closed experiment
-    4  set of sampled states        list of state ids  authored
+    -  set of sampled states        list of state ids  DERIVABLE, §4.1
 
 **1 — Evaluator.** The inner loop is "step the graph, read the resulting locomotion
-speed". The table is that measurement and has no closed form (§5.2). Requires
-driving `hkbBehaviorGraph` far enough to resolve which animation plays at a given
-`(state, direction, speed)` and at what rate.
+speed". The interior of a curve is that measurement and has no closed form (§5.2).
+Requires driving `hkbBehaviorGraph` far enough to resolve which animation plays at a
+given `(state, direction, speed)` and at what rate.
 
-**2 — Sweep upper bound.** Exposed only as `max(x)`, distribution in §3. The seven
-non-default values were searched against `MOVT` speeds, race records,
-every numeric field of both, clip root motion, root motion times playback rate,
-clip travel distances, durations, behaviour-graph float literals, and a regression
-on each state's own animations. Every test is enriched on the twelve non-default
-entries and at chance across all 86 — a large candidate pool, not a mechanism.
+Its **endpoints no longer need it.** `min y` is the slowest blend child's root-motion
+speed and `max y` is the ladder evaluated at `top(s)` — 12 of 13 and 9 of 13 on the
+measurable entries (§4.4). So the evaluator is needed for the interior points, not
+for the range.
+
+**2 — Sweep upper bound.** Exposed only as `max(x)`, distribution in §3, and it
+bounds the sweep at both ends: `min(x)` is 0 on 84 of the 86 populated entries and
+has an authored floor on two (§11).
+
+The seven non-default values were searched against `MOVT` speeds, race records, every
+numeric field of both, clip root motion, root motion times playback rate, clip travel
+distances, durations, behaviour-graph float literals, and a regression on each state's
+own animations. Every test is enriched on the twelve non-default entries and at
+chance across all 86 — a large candidate pool, not a mechanism.
+
+One lead outranks those, and it is the first to predict a non-default value from a
+shipped file. `max(x) = V - 0.5` for `V` in {190, 325, 415, 425, 450, 750, 833, 1000},
+and for three entries `V` is exactly the top weight of the `SpeedSampled` blender:
+
+    entry       top blend weight    V    max x
+    Dog:30                425.00  425    424.5
+    Wolf:100              425.00  425    424.5
+    Deer:21               833.00  833    832.5
+
+It fails on the other ten, where `V` is the 325 default while the top weight is
+anything from 83.41 to 638.07. **3 of 13 is a lead, not a rule.** Do not implement it.
 
 **3 — Retention rule.** Unknown, and the only gap with a checkable answer. Given y
 on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshold,
 error-bounded decimation) are scored against the shipped file by whether they
 reproduce its exact point sets in all 1,634 records.
 
-**4 — The key set.** One entry per key. The species half is derivable (§4.1); the
-offset is not. `iState` is written by the engine and only read by the graph, so no
-shipped file enumerates the values it takes. Supply the keys.
-
-With those four, the rest follows: key from §4.1, direction values from I4, grid and
-shared ceiling from I6-I8, output bound from I9.
+With those three, the rest follows: keys from §4.1, direction values from I4, grid and
+shared ceiling from I6-I8, output range from §4.4 and I9.
 
 ### 5.5 Authoring
 
@@ -503,7 +637,7 @@ The modifier's four parameters bind to named graph variables. Read from the
 compiled graphs, not inferred:
 
     member       variable            
-    state    <-  iState              engine-written (§4.1)
+    state    <-  iState              engine-written, graph-declared (§4.1)
     direction<-  Direction           
     goalSpeed<-  Speed               
     speedOut ->  SpeedSampled        HorseSpeedSampled in horsebehavior.hkx
@@ -606,6 +740,12 @@ weight is authored and the cache is measured.
 child delivers". They are usually `raw x playback` and are not reliably so. A tool
 must not derive one from the other in either direction.
 
+**Where they disagree, the table sides with the cache.** The chicken's top weight is
+251.94 and its clip delivers 403.10; `max y` is 403.10. The dog's top weight is 425
+and its trot delivers 289.30; `max y` is 288.73. So the weight is a claim and the
+table is the measurement, which is what makes the table the correct index for the
+blender rather than a redundant copy of its weights (§4.4, §6.4).
+
 ### 6.4 Why the table exists
 
 A parametric blender must be indexed by a quantity its children are positioned on.
@@ -642,9 +782,20 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 8. Open
 
-Format and semantics are settled. Four generator inputs are not: see §5.4. A table
-can be read, rewritten and validated from the shipped files; it cannot be
-synthesised from them.
+Format and semantics are settled. Three generator inputs are not: see §5.4. A table
+can be read, rewritten and validated from the shipped files, and its keys and its y
+range can be derived from them (§4.1, §4.4); the interior of each curve still cannot,
+because it is the output of a graph evaluation.
+
+Two measured facts are unexplained rather than merely unimplemented:
+
+- `max y` falls 4-11% below the blend ladder's linear interpolation on 4 of the 13
+  measurable entries. Synchronised blending does not account for it: all 13 blenders
+  carry identical flags (`SYNC | PARAMETRIC_CYCLIC`, no sync master). The untested
+  candidate is that each rung is itself a sub-blend of straight and turning variants.
+- `DeerProject` key 21 has `min y` 391.50 against a slowest child of 416.67, sitting
+  below the bottom rung rather than clamping to it. It is also the entry with the
+  largest authored `min x` (400).
 
 ## 9. Method note
 
@@ -672,6 +823,12 @@ A project is matched to the RACE records that use it by the stem of the race's
 `BehaviorGraph` path: `Actors\Deer\DeerProject.hkx` names `DeerProject`. This
 covers 47 of the 49 projects; `DefaultFemale` and `FirstPerson` are not named by
 any race, which points its graph field at `Actors\Character\DefaultMale.hkx`.
+
+For movement types the race is not needed and should not be used: the project's own
+root graph names them (§4.1), which covers 49 of 49 and distinguishes states within a
+project as a race link cannot. Resolving through the race also picks the wrong record
+for the player, whose highest `ForwardRun` is `NPC_Horse_MT` — the mounted type, at
+double the on-foot speed.
 
 `MESHES/SPEEDDATA/<...>.SPD` (§1.3) is a supported per-project load path that the
 game ships nothing for. A tool that adds one creature can write a single `.SPD`
