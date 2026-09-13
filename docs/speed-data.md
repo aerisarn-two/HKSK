@@ -348,8 +348,8 @@ x is expressed in the units RACE `MOVT` records use.
 Two, both to §5.3. Everything else it consumes is in the shipped files or fixed by
 C1-C5.
 
-**V(s), the sweep limit.** Integer, per state. Accounted for in 11 of the 12
-non-default entries, unknown in 1 (§5.6). The file exposes it only as the ceiling `V - 0.5`:
+**V(s), the sweep limit.** Integer, per state. Authored, not derivable; §5.6 scores the
+candidate rules. The file exposes it only as the ceiling `V - 0.5`:
 
     ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
     V        190    325    415    425    450    750    833    1000
@@ -383,146 +383,66 @@ generator's `PlaybackSpeed`, then regenerate. Editing `y` in the file alone
 desynchronises the table from the animations it describes, and the result violates
 I8.
 
-### 5.6 V and the MOVT ForwardRun
+### 5.6 V is authored; no rule reproduces it
 
-For two thirds of the non-default entries V is the actor's `MOVT` `ForwardRun`
-multiplied by 1, 1.5 or 2. The match is exact and the control rate is 0.1%.
+V is a per-state generator input, default 325 (74 of the 88 entries). No single
+rule over the game data reproduces the other 14. Candidate rules were scored the
+same way — hit rate against a control drawing V uniformly from [50, 1050] against
+that entry's own candidate pool — because a rule whose pool holds thousands of
+values will "explain" almost any number.
 
-    project          key      V   =  MOVT record          ForwardRun   x
-    DefaultMale        3   1000   =  NPC_Sprinting_MT            500   2
-    DefaultMale       16   1000   =  NPC_Sprinting_MT            500   2
-    DefaultMale       10    750   =  NPC_Sprinting_MT            500   1.5
-    DefaultFemale      3   1000   =  NPC_Sprinting_MT            500   2
-    DefaultFemale     16   1000   =  NPC_Sprinting_MT            500   2
-    DefaultFemale     10    750   =  NPC_Sprinting_MT            500   1.5
-    DeerProject       21    833   =  Deer_Default_MT             833   1
-    GiantProject       2    415   =  GiantCombatRun_MT           415   1
+    rule                                   non-default        all entries
+                                          hit   control      hit   control
+    MOVT ForwardRun x {1, 1.5, 2}      8/12    1.5%       9/77    1.4%
+    clip raw x ANY generator playback  5/12   27.9%      29/86   18.4%
+    clip raw x its OWN playback        3/12    6.7%       4/86    5.0%
+    graph float literal                4/12    6.7%       6/86    3.8%
+    union of all of the above         11/12   38.6%      37/86   27.0%
 
-Method: candidate pool is the `ForwardRun` of every `MOVT` whose EditorID belongs
-to that actor, times every `PlaybackSpeed` its clips use. Requiring exact equality,
-8 of the 12 non-default entries match; drawing V uniformly from [50, 1050] and
-repeating against the same pools matches 0.1% of the time (400 draws per entry).
+Only the first row is worth anything. Its pool is 27 values — the actor's
+`ForwardRun` speeds times three multipliers — so its 1.5% control is meaningful,
+and 8 of 12 against it is not chance:
 
-Restricting the pool to `ForwardRun` matters. Allowing any MOVT field admits
-`63.5 x 3 = 190.50` and `103.86 x 4 = 415.44` for the giant, which are products of
-a 460-combination search rather than findings, and raises the control to 14%.
+    project            key      V   =  MOVT record          ForwardRun   x
+    DefaultMale/Female   3   1000   =  NPC_Sprinting_MT            500   2
+    DefaultMale/Female  16   1000   =  NPC_Sprinting_MT            500   2
+    DefaultMale/Female  10    750   =  NPC_Sprinting_MT            500   1.5
+    DeerProject         21    833   =  Deer_Default_MT             833   1
+    GiantProject         2    415   =  GiantCombatRun_MT           415   1
 
-**The multiplier is 1, 1.5 or 2 in every case.** Whether it is a clip's
-`PlaybackSpeed` or a plain headroom factor is not distinguishable here: those three
-values are both the commonest playback rates in the game and the obvious round
-factors. Nothing in the data separates the two readings.
+It still leaves four, and it explains 9 of 77 overall. **It is not a derivation of
+V; it is a description of how an author most often picked one** — the actor's run
+or sprint speed, or a round multiple of it.
 
-#### Entries that do not fit
+The rows below it are at or near chance and carry no information. Clip root motion
+times the generator's own playback rate scores 4 of 86 against a 5.0% control: the
+three non-default hits it finds (deer 833.3333, giant 190.4955, giant 414.9996) are
+what a 357-value pool produces by itself.
 
-    project          key     V    MOVT ForwardRun     multiplier needed
-    DogProject        30   425    500.14 (Dog_*)                 0.8498
-    WolfProject      100   425    555.56 (Wolf_*)                0.7650
-    DeerProject       20   450    833    (Deer_*)                0.5402
-    GiantProject       1   190    415    (GiantCombatRun)        0.4578
+**The union row is the trap.** Allowing any of the four mechanisms per entry
+reaches 11 of 12, which looks like an answer and is not: the combined pool holds a
+median of 3,167 values and the control rises to 38.6%. An earlier revision of this
+document reported that 11/12 as a result. It was overfitting, and the correction is
+the reason the control column exists.
 
-The giant's is resolved below by looking past `ForwardRun`; the other three are not.
+#### Individual coincidences, for the record
 
-None of those rates appears in the project's playback set, which holds clean values
-— the dog uses {0.067, 0.65, 0.75, 1, 1.4, 1.5}, the deer {0.029, 0.5, 1, 1.5}.
-Nor does 425 occur anywhere among the 209 distinct speeds in the game's 107 `MOVT`
-records and race overrides. The dog and the wolf share V = 425 while their
-`ForwardRun` values differ (500.14 against 555.56), so no single multiplier can
-produce it from both.
+Two are worth knowing because they will be rediscovered:
 
-Every numeric field of all 107 `MOVT` records and all 161 `RACE` records carrying a
-behaviour graph — 18 fields per MOVT, walked to depth 3, including
-`AnimationChangeThresholds` — was searched for each needed multiplier, for V
-itself, and for any value that multiplied by `ForwardRun` gives V. One hit:
+    GiantProject V = 190     GiantCombatWalk_MT.BackRun = 190.5
+                             CombatWalkBack 63.498 x playback 3 = 190.4955
+    DeerProject  V = 450     Horse_Default_MT.ForwardRun = 450, a different actor
 
-    GiantProject V = 190      GiantCombatWalk_MT.BackRun = 190.5, floor -> 190
-
-**That one is real**, and the clips confirm it independently. The giant's
-`CombatWalkBack` has a raw root-motion speed of 63.498 and its generator plays it
-at 3x:
-
-    63.498 x 3 = 190.4955      floor -> 190 = V
-    GiantCombatWalk_MT.BackRun = 190.5
-
-The `MOVT` field and the animation agree because the field was set to what the
-animation delivers. So the giant's second state takes its limit from a backward
-speed rather than a forward one, which the `ForwardRun` rule alone cannot see.
-
-`AnimationChangeThresholds` is set on only six records — `Wolf_Run_MT`,
-`Wolf_Default_MT`, `NPC_Horse_MT`, `ScribDefault_MT`, `Horse_Swim_MT`,
-`Horse_Sprint_MT` — and is `FLT_MAX` on the other 101. Its `Directional` value is
-π/4 throughout and its `MovementSpeed` is 100: animation-switching thresholds, not
-a speed factor. The wolf's 0.7854 against the 0.7650 it would need is close enough
-to invite the mistake and is not it (555.56 x 0.7854 = 436.3, not 425).
-
-#### The behaviour graph accounts for two more
-
-`V` occurs as a raw float literal inside the project's own behaviour files for 4 of
-the 12, against a 6.7% control (random integers in [50, 1050] against the same
-file's float set):
-
-    DogProject    425   actors/canine/behaviors/forwardlocomotion.hkx
-    WolfProject   425   actors/canine/behaviors wolf/forwardlocomotion.hkx
-    DeerProject   833   actors/deer/behaviors/forwardlocomotion.hkx
-    GiantProject  415   actors/giant/behaviors/giantbehavior.hkx
-
-Two of those — the deer's 833 and the giant's 415 — are the same numbers their
-`MOVT` already supplies, so they add nothing. The canine pair does: **425 appears
-in both canine `forwardlocomotion.hkx` files**, which is what a shared V needs,
-and their `ForwardRun` values of 500.14 and 555.56 cannot both produce it.
-
-The three accounts together cover 11 of the 12:
-
-    ForwardRun x {1, 1.5, 2}     8      player x6, deer key 21, giant key 2
-    graph literal, canine        2      dog key 30, wolf key 100
-    floor(clip x playback)       1      giant key 1 = floor(63.498 x 3)
-    unaccounted                  1      deer key 20 = 450
-
-Taken together the rule is looser than `ForwardRun` and firmer than nothing: **V is
-`floor` of a speed the actor can actually move at in that state**, whether that
-speed is written in a `MOVT` field, produced by a clip at its playback rate, or
-sitting as a literal in the graph. It is a forward run speed in most states and a
-backward one in the giant's second.
-
-The remaining case, `DeerProject` key 20 = 450, matches nothing: no deer clip at any
-of the project's playback rates lands within 0.5 of it, no deer `MOVT` field holds
-it, and it is absent from the deer's behaviour files. 450 does occur exactly as
-`Horse_Default_MT.ForwardRun`, which is not the deer.
-
-The literal could not be attributed to a field. It is not a variable initial value
-— those are stored as int32 bit patterns and were checked as such — and no typed
-HKX2 property in the file holds it, so it sits in a structure the reader does not
-model. The graph does carry speed constants elsewhere: `0_master.hkx` initialises
-`SpeedWalk` to 82.4541 and `SpeedRun` to 350.988.
-
-The 325 default is not in the graphs. Tested over all 86 entries the literal match
-falls to 6/86 against a 3.8% control, because the 74 default entries drag it down;
-the signal is in the non-default values only.
-
-#### What does not work
-
-Recorded so it is not retried. Over the 12 non-default entries, matching within
-0.5:
-
-    max MOVT ForwardRun alone        0 / 12        max raw clip speed    2 / 12
-    max of any MOVT field alone      0 / 12        max effective clip    1 / 12
-    max y of the entry               0 / 12        ceil(max y / 5) * 5   2 / 12
-
-`floor` of a clip speed looks promising across the whole game — 190.031, 325.383,
-450.237 and 833.333 all sit just above a V — and collapses when restricted to the
-project that uses each value: 3 of 86 entries for raw speed, 4 of 86 with playback
-applied, and 1 of 74 for the 325 default. Coincidence in a pool of 1,183 clip
-speeds.
+The giant's two sources agree with each other because the `MOVT` field was set to
+what the animation delivers; that says something true about how movement speeds are
+authored, and nothing about how V is chosen. The deer's is a cross-actor collision
+of the kind a 209-value pool produces.
 
 #### Status
 
-V is a per-state generator input with a default of 325. Eleven of the twelve
-non-default values are a speed the actor can reach in that state, floored: eight
-from a `MOVT` run or sprint speed times a round multiplier, two from a literal in
-the behaviour graph, one from a clip's root motion at its playback rate. The
-twelfth, `DeerProject` key 20 = 450, matches nothing in that actor's data.
-
-A tool should default to 325, accept a per-state override, and offer
-`ForwardRun x {1, 1.5, 2}` as a suggestion rather than computing it silently.
+V is sampler configuration, supplied per state. A tool must accept it as an input.
+It may suggest `ForwardRun x {1, 1.5, 2}` on the evidence above, and must not
+present the result as derived.
 
 Above `V - 0.5` the lookup has no knot and returns the final value. 23 entries keep
 V = 325 while their race permits more (bear 638, chaurus flyer 725, dragon 7400),
@@ -551,8 +471,7 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 ## 7. Open
 
 The format is fully specified. Missing are two of the generator's inputs (§5.4):
-the per-state sweep limit V, which §5.6 accounts for in 11 of 12 non-default entries and
-leaves open in 1, and a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
+the per-state sweep limit V, which §5.6 shows no rule reproduces, and a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
 files, so a table can be validated from them but not synthesised.
 
 ## 8. Method note
