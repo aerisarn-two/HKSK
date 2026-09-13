@@ -1,4 +1,7 @@
+using HKFBX.Codec;
 using HKFBX.Fbx;
+using HKFBX.Hkx;
+using HKFBX.Model;
 using HKSK.Cache;
 using HKSK.Fbx;
 using HKSK.Model;
@@ -111,6 +114,91 @@ public class FbxExchangeTests
         AnimationSlot after = project.Animation("TurnLoopingL")!;
         Assert.Equal(travelBefore, after.Motion!.Travel, 2);
         Assert.Equal(turnBefore, after.Motion.Turn, 2);
+    }
+
+    /// <summary>
+    /// The curves come back on the bones they left on.
+    /// </summary>
+    /// <remarks>
+    /// The other tests here check what the cache says about an animation. This
+    /// checks the animation, and it is a different question with a different
+    /// answer: an import can leave the cache perfect and still write a file that
+    /// plays the right curves on the wrong bones.
+    ///
+    /// That is what track order is. A packfile's binding says which bone each
+    /// track drives, and only the compressed animation is replaced on import, so
+    /// the binding kept is the template's. The FBX reader hands bones back
+    /// depth-first -- a parent always before its children, which Havok requires
+    /// and FBX does not promise -- and a rig is not listed that way: the
+    /// chicken's goes LeftThigh, RightThigh, LeftCafe, RightCafe where the
+    /// document reads LeftThigh, LeftCafe, LeftAnkle. Thirteen of its 33 bones
+    /// land somewhere else, and the animation comes back moving the wrong legs.
+    ///
+    /// The trip is lossy on purpose -- decompressed, sampled onto nodes, read
+    /// back and compressed again through Havok's own encoder -- so what is
+    /// asserted is the drift that survives all of it. A misordered track is not
+    /// drift: it is a whole bone's worth of motion in the wrong place, and shows
+    /// up as units rather than hundredths.
+    /// </remarks>
+    [FbxFact]
+    public void TheCurvesComeBackOnTheBonesTheyLeftOn()
+    {
+        using var work = new Workspace();
+        ActorProject project = work.Chicken();
+
+        AnimationSlot slot = project.Animation("Idle_Sitd1") ?? project.Animations[0];
+        var codec = new MopperAnimationCodec();
+
+        SampledAnimation before = Decoded(project.AnimationPath(slot)!, codec);
+
+        var exchange = new AnimationExchange(codec);
+        string fbx = Path.Combine(work.Folder, "clip.fbx");
+
+        Assert.True(exchange.Export(project, slot, fbx).Succeeded);
+
+        ExchangeResult imported = exchange.Import(
+            project, fbx, new ImportOptions { StoredName = slot.StoredName });
+
+        Assert.True(imported.Succeeded, imported.Problem);
+
+        SampledAnimation after = Decoded(imported.Path!, codec);
+
+        Assert.Equal(before.FrameCount, after.FrameCount);
+        Assert.Equal(before.TrackCount, after.TrackCount);
+
+        double worstTranslation = 0, worstRotation = 0;
+        string worst = string.Empty;
+
+        for (int frame = 0; frame < before.FrameCount; frame++)
+        for (int track = 0; track < before.TrackCount; track++)
+        {
+            BoneTransform a = before[frame, track];
+            BoneTransform b = after[frame, track];
+
+            double translation = (a.Translation - b.Translation).Length();
+
+            // A quaternion and its negation are the same rotation.
+            double rotation = Math.Min(
+                (a.Rotation - b.Rotation).Length(), (a.Rotation + b.Rotation).Length());
+
+            if (translation > worstTranslation || rotation > worstRotation)
+                worst = $"frame {frame}, track {track}";
+
+            worstTranslation = Math.Max(worstTranslation, translation);
+            worstRotation = Math.Max(worstRotation, rotation);
+        }
+
+        Assert.True(worstTranslation < 1e-1, $"translation drifted {worstTranslation} at {worst}");
+        Assert.True(worstRotation < 1e-2, $"rotation drifted {worstRotation} at {worst}");
+    }
+
+    /// <summary>An animation packfile as frames of bone transforms.</summary>
+    private static SampledAnimation Decoded(string path, IAnimationCodec codec)
+    {
+        (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
+            HkxAnimationFile.ReadAnimation(path);
+
+        return codec.Decompress(spline) with { TrackToBone = trackToBone };
     }
 
     /// <summary>

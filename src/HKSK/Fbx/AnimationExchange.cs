@@ -314,16 +314,30 @@ public sealed partial class AnimationExchange
 
             HkFbx.Skeleton skeleton = FbxAnimationReader.ReadSkeleton(document);
 
-            HkFbx.SampledAnimation animation =
+            HkFbx.SampledAnimation read =
                 FbxAnimationReader.ReadAnimation(document, skeleton, takeName: takeName);
 
             HkFbx.RootMotion motion = FbxAnimationReader.ReadRootMotion(document, skeleton, takeName);
+
+            // The FBX reader hands bones back in its own order -- depth first, so a
+            // parent always precedes its children, which Havok requires and FBX does
+            // not promise -- and that is not the order the rig lists them in. The
+            // chicken's rig goes LeftThigh, RightThigh, LeftCafe, RightCafe; the
+            // document reads LeftThigh, LeftCafe, LeftAnkle, and 13 of its 33 bones
+            // land somewhere else.
+            //
+            // The template's binding is kept, because only the compressed animation
+            // is replaced, so tracks written in the reader's order are played on the
+            // bones the template names for those positions: an animation that loads,
+            // runs, and moves the wrong legs.
+            HkFbx.Skeleton rig = Rig(project) ?? skeleton;
+            HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, BindingOf(template));
 
             // The travel belongs to the cache, not to the animation, so it comes
             // off the root bone before the animation is compressed. Always --
             // ImportRootMotion decides whether the cache is updated, not whether
             // the animation is left carrying motion it should not have.
-            SplineAnimationData spline = _codec.Compress(WithoutRootMotion(animation, skeleton, motion));
+            SplineAnimationData spline = _codec.Compress(WithoutRootMotion(animation, rig, motion));
 
             string? folder = Path.GetDirectoryName(target);
             if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
@@ -476,6 +490,86 @@ public sealed partial class AnimationExchange
     /// original static root; for one an animator moved by hand it moves all the
     /// travel into the root motion, which is where it belongs.
     /// </remarks>
+    /// <summary>The rig a project's animations are bound to, where it can be read.</summary>
+    private static HkFbx.Skeleton? Rig(ActorProject project)
+    {
+        if (project.SkeletonPath is not { } path || !File.Exists(path)) return null;
+
+        try { return HkxAnimationFile.ReadSkeleton(path); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return null; }
+    }
+
+    /// <summary>Which rig bone each of a packfile's tracks drives.</summary>
+    /// <remarks>
+    /// Empty where the file carries no binding, which is most of them and means
+    /// track i drives bone i.
+    /// </remarks>
+    private static IReadOnlyList<short> BindingOf(string template)
+    {
+        try
+        {
+            (_, IReadOnlyList<short> trackToBone, _) = HkxAnimationFile.ReadAnimation(template);
+            return trackToBone;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+    }
+
+    /// <summary>
+    /// The animation's tracks in the order the file being written expects them.
+    /// </summary>
+    /// <remarks>
+    /// Track order is not a detail of the curves, it is what joins them to bones:
+    /// the binding says track t drives bone b, and the binding belongs to the
+    /// template. So the samples are rearranged to suit it rather than the other
+    /// way round, matching on names, which are the only thing the two orders
+    /// agree on.
+    ///
+    /// Left alone when the two do not describe the same set of bones. A paired
+    /// animation is the case that matters: it is bound to a skeleton holding two
+    /// actors and has more tracks than this project's rig has bones, and
+    /// rearranging it against the wrong rig would be worse than leaving it.
+    /// </remarks>
+    private static HkFbx.SampledAnimation InOrderOf(
+        HkFbx.SampledAnimation animation, HkFbx.Skeleton read, HkFbx.Skeleton rig,
+        IReadOnlyList<short> binding)
+    {
+        if (rig.Count == 0 || animation.TrackCount == 0) return animation;
+        if (binding.Count > 0 && binding.Count != animation.TrackCount) return animation;
+        if (binding.Count == 0 && rig.Count != animation.TrackCount) return animation;
+
+        var trackOf = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        for (int track = 0; track < animation.TrackCount; track++)
+        {
+            int bone = animation.BoneForTrack(track);
+
+            if (bone >= 0 && bone < read.Count) trackOf.TryAdd(read.Bones[bone].Name, track);
+        }
+
+        var order = new int[animation.TrackCount];
+        bool moved = false;
+
+        for (int track = 0; track < order.Length; track++)
+        {
+            int bone = binding.Count > 0 ? binding[track] : track;
+
+            if (bone < 0 || bone >= rig.Count) return animation;
+            if (!trackOf.TryGetValue(rig.Bones[bone].Name, out order[track])) return animation;
+
+            moved |= order[track] != track;
+        }
+
+        if (!moved) return animation;
+
+        var transforms = new HkFbx.BoneTransform[animation.Transforms.Length];
+
+        for (int frame = 0; frame < animation.FrameCount; frame++)
+            for (int track = 0; track < order.Length; track++)
+                transforms[frame * order.Length + track] = animation[frame, order[track]];
+
+        return animation with { Transforms = transforms, TrackToBone = binding };
+    }
+
     private static HkFbx.SampledAnimation WithoutRootMotion(
         HkFbx.SampledAnimation animation, HkFbx.Skeleton skeleton, HkFbx.RootMotion motion)
     {
