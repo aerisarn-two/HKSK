@@ -430,9 +430,30 @@ of a large candidate pool, not a mechanism. Treat the bound as an authored input
 with a default.
 
 **3. The point-retention rule.** The sweep produces a value at every 0.5 step; the
-file keeps a median of 11 points per record. What decides a breakpoint is unknown —
+file keeps a median of 9.8 points per record. What decides a breakpoint is unknown —
 only that 80% of retained interior points sit more than 0.5% off the chord between
 their neighbours (§5.2), so the rule is not "keep every nth sample".
+
+This is the tractable gap. Given y on the full grid, candidate rules — Douglas-Peucker
+at some tolerance, a curvature threshold, error-bounded decimation — can be scored
+directly against the shipped file by whether they reproduce its exact point sets in
+all 1,634 records. That is a closed experiment; the other three inputs are not.
+
+Note that x cannot be laid down before y. Across an entry's 19 direction records the
+x positions are mostly **not** shared:
+
+    Jaccard of x positions within an entry     entries
+    0.0 - 0.1                                       53
+    0.1 - 0.4                                       11
+    0.5 - 0.9                                       19
+    1.0 (identical)                                  3
+
+`RieklingProject` key 0 holds 400 distinct x positions across its 19 records with
+one in common. The entries at the top of that distribution are the ones whose
+response is simple enough to bend in the same places for every direction —
+`AtronachStormProject`, `WispProject` and `WitchlightProject` are identical across
+all 19 because every y is zero. So the x series is a consequence of the y series,
+per direction, and only the upper bound is shared (C4).
 
 **4. Which states get sampled.** An entry exists per sampled locomotion state, and
 not every state is sampled: the canines carry a two-state forward locomotion
