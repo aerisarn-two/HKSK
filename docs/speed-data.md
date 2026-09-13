@@ -228,13 +228,48 @@ poorly suited to being an acceleration: the player's per-state maxima are 22.56,
 132.89, 307.96, 370.37 and 395.94, which are speed magnitudes matching a
 sneak/walk/run/sprint ladder, and the output variable is named `m_speedOut`.
 
+## y is precomputed from the animations
+
+The table holds answers, not inputs. `m_speedOut` is bounded by what the project's
+own clips can actually deliver, and the bound is exact:
+
+| | exceeds the bound | hits it exactly | worst ratio |
+| --- | ---: | ---: | ---: |
+| maxY vs the fastest clip's root-motion speed | 4 of 46 | 8 | 1.600 |
+| maxY vs that **× the clip generator's `PlaybackSpeed`** | **0 of 46** | **9** | **1.000** |
+
+Read the second row carefully, because it is the whole finding. Across the 46
+projects with a non-empty curve, the largest speed the table ever returns **never
+exceeds** the fastest achievable clip speed, and nine projects sit on it to within
+0.2%. The playback factor is what makes that true rather than nearly true: without
+it the chicken and the hare overshoot by exactly **1.600**, and applying their
+clip generators' rate turns both into 1.000.
+
+```
+ChickenProject   maxY 403.10   fastest clip 251.94   x playback 403.10   ratio 1.000
+HareProject      maxY 320.62   fastest clip 200.39   x playback 320.62   ratio 1.000
+```
+
+A quantity bounded by root motion times playback rate, hit exactly where the
+state's fastest clip is a locomotion clip and short of it elsewhere, is a
+**precomputed sample of the graph's own output**. That is what the file is: not a
+description of the animations, and not a curve the sampler integrates, but the
+answers it would otherwise have to work out.
+
+It also names the thing. A "speed sampler" samples the graph to learn what speed
+each request produces; this file is that sampling, done once by a tool and shipped.
+Whether the engine can instead do it at runtime — a computed path selected against
+the database path — is consistent with everything here and with the interface being
+called `BSISpeedSamplerDB` rather than a concrete class, but it is **not
+demonstrated**: the shipped executable is Steam-wrapped, its `.text` is encrypted
+at rest, and the branch cannot be read without unwrapping it.
+
 ## What is still open
 
-- **Which of x and y is the input.** The lookup is goal speed in, speed out, and
-  x is the swept axis, which makes x the goal. But the player's fastest state
-  answers 395.94 to a 324.5 ceiling, so y exceeds x and "the speed you will get"
-  cannot be the whole story. It may be a playback rate, or a speed in a second
-  frame of reference.
+- **Why y exceeds x.** x is the goal and y the answer, but the player's fastest
+  state answers 395.94 against a 324.5 ceiling, so the table returns more than it
+  was asked for. The bound above says y is a real speed the animations can reach,
+  so this is not a unit error; something scales the request.
 - **What sets an entry's ceiling** (324.5 on 74 of the 88 entries; also 189.5,
   414.5, 424.5, 449.5, 749.5, 832.5, 999.5). Not the race: 23 entries keep 324.5
   while their race allows more, the dragon's 7,400 included. Not the graph's
