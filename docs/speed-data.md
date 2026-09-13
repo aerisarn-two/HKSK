@@ -679,3 +679,128 @@ rather than rewriting the merged file.
 
 Implementing §2 is sufficient to read and rewrite the file losslessly; §4 is
 sufficient to interpret it; §5.4 is what stands between that and generating one.
+
+## 11. Entry census
+
+Every entry in the file, against the movement type its key resolves to. One row per
+entry, in file order.
+
+The movement type is resolved by the rule of §4.1: the key is a state id declared by
+an `iState_<MOVT>` variable in the project's **root** behaviour graph, and the
+variable's suffix names a `MOVT` record. 86 of the 88 entries resolve; the two that
+do not are the Falmer's corrupt keys (§7), which carry no points and so have no
+bounds either.
+
+Speeds are the `MOVT` translation speeds in game units/s. The three rotation fields
+(`RotateInPlaceWalk`, `RotateInPlaceRun`, `RotateWhileMovingRun`) are degrees/s and
+are omitted: they are not commensurable with `x`, and mixing them into a speed
+comparison is what made an earlier scale-factor search score below its own control.
+
+Reading the bounds columns:
+
+- **`max x`** takes 8 distinct values across the file (§3) and is shared by all 19
+  records of an entry (I8). It is authored; §5.4 lists it as an unresolved input.
+- **`min x` is 0 on 84 of the 86 populated entries.** The exceptions are both run
+  states with a floor below which the sampler is never asked: `DeerProject` 21
+  (`Deer_DefaultRun_MT`) starts at 400, `GiantProject` 2 (`GiantCombatRun_MT`) at
+  150. So the sweep has an authored lower bound as well as an upper one.
+- **`min y` is above 0 on 82 of the 86** — a standing actor still has the residual
+  speed of its idle. Of the four that reach 0, three are zero throughout:
+  `AtronachStormProject`, `WispProject` and `WitchlightProject` return 0 for every
+  direction and every speed. All three hover, and their locomotion carries no root
+  motion, so there is nothing to report; a generator must reproduce the all-zero
+  curve rather than treat it as a gap.
+- **`max y` is bounded by what the project's clips can deliver** (I9), not by any
+  `MOVT` field. On 24 of the 86 it exceeds every translation speed in its own row,
+  which is why `MOVT` is not the y axis: see §4.4.
+
+| character | state | movement type | min x | max x | min y | max y | fwd walk | fwd run | back walk | back run | left walk | left run | right walk | right run |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ChickenProject | 0 | `Chicken_Default_MT` | 0 | 324.50 | 0.49 | 403.10 | 34.71 | 251.94 | 0 | 0 | 0 | 0 | 0 | 0 |
+| HareProject | 0 | `Hare_Default_MT` | 0 | 324.50 | 3.64 | 320.62 | 89.18 | 244.44 | 0 | 77.84 | 0 | 0 | 0 | 0 |
+| AtronachFlame | 1 | `AtronachFlame_Default` | 0 | 324.50 | 7.77 | 499.50 | 112.50 | 500 | 112.50 | 500 | 112.50 | 500 | 112.50 | 500 |
+| AtronachFrostProject | 0 | `AtronachFrost_Default_MT` | 0 | 324.50 | 3.56 | 324.05 | 70.88 | 325.38 | 57.49 | 194.82 | 69.07 | 277.46 | 71.46 | 275.36 |
+| AtronachStormProject | 0 | `AtronachStorm_Default` | 0 | 324.50 | 0 | 0 | 100 | 500 | 100 | 500 | 100 | 500 | 100 | 500 |
+| BearProject | 0 | `Bear_Default_MT` | 0 | 324.50 | 3.59 | 285.23 | 59.82 | 638.07 | 51.89 | 51.89 | 0 | 0 | 0 | 0 |
+| DogProject | 30 | `Dog_Default_MT` | 0 | 424.50 | 4.99 | 288.73 | 74.54 | 500.14 | 74.54 | 74.54 | 0 | 0 | 0 | 0 |
+| WolfProject | 100 | `Wolf_Default_MT` | 0 | 424.50 | 4.99 | 288.73 | 74.54 | 555.56 | 74.54 | 74.54 | 0 | 0 | 0 | 0 |
+| DefaultFemale | 0 | `NPC_Default_MT` | 0 | 324.50 | 7.55 | 307.02 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 1 | `NPC_Sprinting_MT` | 0 | 324.50 | 370.37 | 370.37 | 500 | 500 | 270.84 | 270.84 | 0 | 0 | 0 | 0 |
+| DefaultFemale | 2 | `NPC_Sneaking_MT` | 0 | 324.50 | 3.91 | 132.89 | 47.20 | 222 | 43.38 | 150 | 41.44 | 200 | 41.44 | 200 |
+| DefaultFemale | 3 | `NPC_BowDrawn_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 135 | 65.11 | 98 | 76.81 | 115 | 74.89 | 115 |
+| DefaultFemale | 4 | `NPC_Blocking_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 81 | 71 | 71 | 81 | 81 | 81 | 81 |
+| DefaultFemale | 5 | `NPC_Bleedout_MT` | 0 | 324.50 | 12.74 | 22.56 | 20.11 | 20.11 | 16.49 | 16.49 | 22.01 | 22.01 | 17.59 | 17.59 |
+| DefaultFemale | 6 | `NPC_1HM_MT` | 0 | 324.50 | 3.80 | 321.03 | 80.10 | 370 | 45.45 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 7 | `NPC_2HM_MT` | 0 | 324.50 | 4.20 | 321.10 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 8 | `NPC_Bow_MT` | 0 | 324.50 | 4.21 | 320.99 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 9 | `NPC_Magic_MT` | 0 | 324.50 | 3.80 | 320.84 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 10 | `NPC_MagicCasting_MT` | 0 | 749.50 | 3.80 | 395.94 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
+| DefaultFemale | 15 | `NPC_Drunk_MT` | 0 | 324.50 | 29.47 | 29.47 | 29.47 | 29.47 | 0 | 0 | 0 | 0 | 0 | 0 |
+| DefaultFemale | 16 | `NPC_BowDrawn_QuickShot_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 370 | 65.11 | 205.25 | 76.81 | 370 | 74.89 | 370 |
+| DefaultFemale | 17 | `NPC_Blocking_ShieldCharge_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 370 | 71 | 205.25 | 81 | 370 | 81 | 370 |
+| DefaultMale | 0 | `NPC_Default_MT` | 0 | 324.50 | 7.17 | 307.96 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 1 | `NPC_Sprinting_MT` | 0 | 324.50 | 370.37 | 370.37 | 500 | 500 | 270.84 | 270.84 | 0 | 0 | 0 | 0 |
+| DefaultMale | 2 | `NPC_Sneaking_MT` | 0 | 324.50 | 3.91 | 132.89 | 47.20 | 222 | 43.38 | 150 | 41.44 | 200 | 41.44 | 200 |
+| DefaultMale | 3 | `NPC_BowDrawn_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 135 | 65.11 | 98 | 76.81 | 115 | 74.89 | 115 |
+| DefaultMale | 4 | `NPC_Blocking_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 81 | 71 | 71 | 81 | 81 | 81 | 81 |
+| DefaultMale | 5 | `NPC_Bleedout_MT` | 0 | 324.50 | 12.74 | 22.56 | 20.11 | 20.11 | 16.49 | 16.49 | 22.01 | 22.01 | 17.59 | 17.59 |
+| DefaultMale | 6 | `NPC_1HM_MT` | 0 | 324.50 | 3.80 | 321.03 | 80.10 | 370 | 45.45 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 7 | `NPC_2HM_MT` | 0 | 324.50 | 4.20 | 321.10 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 8 | `NPC_Bow_MT` | 0 | 324.50 | 4.21 | 320.99 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 9 | `NPC_Magic_MT` | 0 | 324.50 | 3.80 | 320.84 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 10 | `NPC_MagicCasting_MT` | 0 | 749.50 | 3.80 | 395.94 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
+| DefaultMale | 15 | `NPC_Drunk_MT` | 0 | 324.50 | 29.47 | 29.47 | 29.47 | 29.47 | 0 | 0 | 0 | 0 | 0 | 0 |
+| DefaultMale | 16 | `NPC_BowDrawn_QuickShot_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 370 | 65.11 | 205.25 | 76.81 | 370 | 74.89 | 370 |
+| DefaultMale | 17 | `NPC_Blocking_ShieldCharge_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 370 | 71 | 205.25 | 81 | 370 | 81 | 370 |
+| FirstPerson | 0 | `NPC_Default_MT` | 0 | 324.50 | 8.25 | 237.14 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
+| ChaurusProject | 0 | `ChaurusDefault_MT` | 0 | 324.50 | 3.54 | 324.71 | 85.51 | 350.27 | 95.09 | 95.09 | 87.53 | 350 | 87.53 | 350 |
+| HighlandCowProject | 10 | `Cow_Default_MT` | 0 | 324.50 | 4.93 | 324.25 | 65 | 525.45 | 77.84 | 77.84 | 0 | 0 | 0 | 0 |
+| DeerProject | 20 | `Deer_Default_MT` | 0 | 449.50 | 4.92 | 431.92 | 169.80 | 833 | 123.80 | 123.80 | 0 | 0 | 0 | 0 |
+| DeerProject | 21 | `Deer_DefaultRun_MT` | 400 | 832.50 | 391.50 | 832.25 | 169.80 | 833 | 123.80 | 123.80 | 0 | 0 | 0 | 0 |
+| ChaurusFlyer | 0 | `ChaurusFlyer_Default_MT` | 0 | 324.50 | 0 | 0 | 150 | 725 | 99 | 710.50 | 95 | 725 | 95 | 0 |
+| VampireBruteProject | 0 | `GargoyleDefault_MT` | 0 | 324.50 | 5.54 | 314.79 | 118.92 | 403.72 | 75.41 | 180.57 | 78.12 | 340 | 89.14 | 340 |
+| BenthicLurkerProject | 0 | `BenthicLurkerDefault_MT` | 0 | 324.50 | 5 | 232.09 | 122.15 | 305.46 | 91.95 | 91.95 | 99.52 | 99.52 | 99.52 | 99.52 |
+| BenthicLurkerProject | 1 | `BenthicLurkerCombatRun_MT` | 0 | 324.50 | 3 | 320.81 | 122.15 | 305.46 | 91.95 | 91.95 | 99.52 | 99.52 | 99.52 | 99.52 |
+| BoarProject | 0 | `Boar_Default_MT` | 0 | 324.50 | 6.42 | 315.12 | 64.23 | 594.35 | 64.23 | 128 | 0 | 0 | 0 | 0 |
+| BallistaCenturion | 0 | `DwarvenBallista_Default_MT` | 0 | 324.50 | 2.34 | 336.58 | 99.80 | 284.72 | 100.04 | 284.96 | 99.44 | 302.07 | 100.16 | 302.42 |
+| HMDaedra | 0 | `HMDaedraDefault_MT` | 0 | 324.50 | 2.32 | 64 | 64 | 128 | 64 | 128 | 64 | 128 | 64 | 128 |
+| NetchProject | 0 | `DLC2Netch_Default_MT` | 0 | 324.50 | 400 | 400 | 60 | 350 | 60 | 350 | 60 | 350 | 60 | 350 |
+| RieklingProject | 0 | `DLC2Riekling_Default_MT` | 0 | 324.50 | 0.92 | 381.13 | 167.42 | 300 | 167.42 | 275.82 | 167.42 | 300 | 167.42 | 300 |
+| ScribProject | 0 | `ScribDefault_MT` | 0 | 324.50 | 24.06 | 84.63 | 401.01 | 802.29 | 95.09 | 95.09 | 0 | 0 | 0 | 0 |
+| DragonProject | 0 | `Dragon_Default_MT` | 0 | 324.50 | 381.18 | 384 | 384 | 384 | 384 | 384 | 0 | 0 | 0 | 0 |
+| Dragon_Priest | 0 | `DragonPriest_Default_MT` | 0 | 324.50 | 55.29 | 300 | 80 | 300 | 80 | 300 | 80 | 300 | 80 | 300 |
+| DraugrProject | 0 | `DraugrDefault_MT` | 0 | 324.50 | 4.63 | 312.89 | 76.97 | 339.24 | 70.09 | 70.09 | 76.97 | 339.24 | 76.97 | 339.24 |
+| DraugrProject | 3 | `Draugr1HM_MT` | 0 | 324.50 | 4.61 | 312.77 | 92.25 | 345.37 | 70.09 | 70.09 | 92.25 | 345.37 | 92.25 | 345.37 |
+| DraugrProject | 4 | `DraugrBattleAxe_MT` | 0 | 324.50 | 4.59 | 271.38 | 105.25 | 271.38 | 70.09 | 70.09 | 105.25 | 271.38 | 105.25 | 271.38 |
+| DraugrProject | 5 | `DraugrGreatSword_MT` | 0 | 324.50 | 4.56 | 271.38 | 106.93 | 271.38 | 70.09 | 70.09 | 106.93 | 271.38 | 106.93 | 271.38 |
+| DraugrProject | 6 | `DraugrH2H_MT` | 0 | 324.50 | 4.54 | 351.68 | 116.74 | 298.92 | 70.09 | 70.09 | 116.74 | 298.92 | 116.74 | 298.92 |
+| DraugrProject | 7 | `DraugrBow_MT` | 0 | 324.50 | 4.57 | 312.89 | 76.97 | 339.22 | 70.09 | 70.09 | 76.97 | 339.22 | 76.97 | 339.22 |
+| DraugrSkeletonProject | 0 | `DraugrDefault_MT` | 0 | 324.50 | 4.63 | 312.89 | 76.97 | 339.24 | 70.09 | 70.09 | 76.97 | 339.24 | 76.97 | 339.24 |
+| SphereCenturion | 0 | `SphereDefault_MT` | 0 | 324.50 | 4.63 | 324.48 | 192 | 384 | 192 | 384 | 192 | 384 | 192 | 384 |
+| DwarvenSpiderCenturionProject | 0 | `SpiderDefault_MT` | 0 | 324.50 | 1.80 | 162.81 | 85.09 | 300.20 | 90.09 | 299.67 | 90.09 | 154.21 | 90.09 | 154.21 |
+| SteamProject | 0 | `SteamDefault_MT` | 0 | 324.50 | 4.63 | 192 | 96 | 192 | 96 | 192 | 96 | 192 | 96 | 192 |
+| FalmerProject | 2147483648 | *corrupt* | — | — | — | — | — | — | — | — | — | — | — | — |
+| FalmerProject | 1 | `FalmerBowDrawn_MT` | 0 | 324.50 | 3.99 | 100.46 | 100.44 | 100.44 | 81.55 | 81.55 | 77.12 | 77.12 | 90.73 | 90.73 |
+| FalmerProject | 2 | `Falmer_1HM_Walk` | 0 | 324.50 | 4.62 | 298.61 | 100.44 | 175.77 | 81.55 | 142.71 | 77.12 | 134.96 | 90.73 | 158.78 |
+| FalmerProject | 1651406194 | *corrupt* | — | — | — | — | — | — | — | — | — | — | — | — |
+| FrostbiteSpiderProject | 0 | `SpiderDefault_MT` | 0 | 324.50 | 4.83 | 300.20 | 85.09 | 300.20 | 90.09 | 299.67 | 90.09 | 154.21 | 90.09 | 154.21 |
+| GiantProject | 0 | `GiantDefault_MT` | 0 | 324.50 | 4.59 | 123.10 | 61.84 | 61.84 | 54.43 | 54.43 | 66.14 | 66.14 | 64.92 | 64.92 |
+| GiantProject | 1 | `GiantCombatWalk_MT` | 0 | 189.50 | 4.61 | 187.43 | 82.46 | 247.37 | 63.50 | 190.50 | 93.70 | 281.09 | 103.86 | 311.59 |
+| GiantProject | 2 | `GiantCombatRun_MT` | 150 | 414.50 | 61.16 | 410.56 | 50 | 415 | 50 | 115.90 | 50 | 227.27 | 50 | 220.59 |
+| GoatProject | 40 | `Goat_Default_MT` | 0 | 324.50 | 4.97 | 324.49 | 62.13 | 360 | 39.65 | 39.65 | 0 | 0 | 0 | 0 |
+| HagravenProject | 0 | `Hagraven_Default_MT` | 0 | 324.50 | 3.99 | 116.29 | 73.79 | 116.24 | 73.79 | 102.87 | 73.79 | 116.24 | 73.79 | 116.24 |
+| HorkerProject | 50 | `Horker_Default_MT` | 0 | 324.50 | 3.31 | 83.41 | 32.77 | 83.41 | 32.77 | 32.77 | 0 | 0 | 0 | 0 |
+| HorseProject | 60 | `Horse_Default_MT` | 0 | 324.50 | 5 | 321.14 | 125.11 | 450 | 108.08 | 108.08 | 0 | 0 | 0 | 0 |
+| IceWraithProject | 0 | `IceWraith_Default_MT` | 0 | 324.50 | 230.52 | 319.67 | 100 | 319.67 | 100 | 319.67 | 100 | 319.67 | 100 | 319.67 |
+| MammothProject | 70 | `Mammoth_Default_MT` | 0 | 324.50 | 2.50 | 290.34 | 61.84 | 400 | 61.84 | 61.84 | 0 | 0 | 0 | 0 |
+| MudcrabProject | 0 | `MCrab_Default_MT` | 0 | 324.50 | 2.79 | 149.65 | 72.74 | 145.87 | 72.74 | 145.87 | 72.74 | 145.87 | 72.74 | 145.87 |
+| SabreCatProject | 80 | `SabreCat_Default_MT` | 0 | 324.50 | 4.98 | 288.79 | 113.09 | 563 | 66.79 | 66.79 | 0 | 0 | 0 | 0 |
+| SkeeverProject | 90 | `Skeever_Default_MT` | 0 | 324.50 | 5.15 | 308.37 | 36.14 | 486.23 | 36.14 | 36.14 | 0 | 0 | 0 | 0 |
+| SlaughterfishProject | 0 | `SlaughterfishSwim_MT` | 0 | 324.50 | 0.58 | 302.23 | 180 | 360 | 15 | 0 | 0 | 0 | 0 | 0 |
+| Spriggan | 0 | `Spriggan_Default` | 0 | 324.50 | 4.64 | 310.24 | 65.32 | 358.87 | 57.73 | 214.02 | 90.57 | 358.87 | 90.57 | 358.87 |
+| Spriggan | 1 | `Spriggan_Combat` | 0 | 324.50 | 3.74 | 297.51 | 65.32 | 358.87 | 57.73 | 214.02 | 67.93 | 358.87 | 67.93 | 358.87 |
+| TrollProject | 0 | `TrollDefault_MT` | 0 | 324.50 | 4.50 | 269.50 | 102.70 | 269.50 | 83.11 | 83.11 | 102.70 | 269.50 | 102.70 | 269.50 |
+| VampireLord | 0 | `VampireLordDefault_MT` | 0 | 324.50 | 5.46 | 350.87 | 70 | 400 | 70 | 400 | 70 | 400 | 70 | 400 |
+| WerewolfBeastProject | 0 | `WerewolfBeastDefault_MT` | 0 | 324.50 | 4.65 | 303.06 | 70 | 400 | 70 | 400 | 70 | 400 | 70 | 400 |
+| WispProject | 0 | `Wisp_Default_MT` | 0 | 324.50 | 0 | 0 | 100 | 300 | 100 | 300 | 100 | 300 | 100 | 300 |
+| WitchlightProject | 0 | `Witchlight_Default_MT` | 0 | 324.50 | 0 | 0 | 500 | 500 | 500 | 500 | 500 | 500 | 500 | 500 |
