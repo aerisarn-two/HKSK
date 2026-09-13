@@ -1,6 +1,6 @@
 # speeddatasinglefile.txt — speed sampler database
 
-    Status:    format and semantics CONFIRMED; generator inputs partly unknown (§7)
+    Status:    format and semantics CONFIRMED; four generator inputs unknown (§5.4)
     Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
@@ -363,13 +363,21 @@ form: regeneration requires evaluating the graph.
 
     for each state s:
         for (d = 0.0f; d < 0.95f; d += 0.05f):          /* 19 iterations */
-            for (x = 0.0f; x < V(s); x += 0.5f):
+            for (x = 0.0f; x < top(s); x += 0.5f):
                 graph.Direction = d
                 graph.Speed     = x
                 graph.Step()
                 y = graph.locomotion_speed()
             retain the (x, y) pairs at response breakpoints
         emit entry { key = s, records = 19 curves }
+
+`top(s)` is the per-entry upper bound and is not recoverable (§5.4). Note that the
+retained points do **not** reach down to x = 0 uniformly: across the 1,634 records
+the lowest retained x takes 21 distinct values (0.0 on 329 records, 0.5 on 1,070,
+and up to 3.5 on others), and within a single entry the 19 records usually disagree
+on it — 62 of the 86 entries have two distinct minima, some have six or eight.
+Only the top is shared. So the loop bounds above describe the sweep; what lands in
+the file is what survives retention.
 
 Constraints on the output, each verified against every entry in the shipped file:
 
@@ -381,42 +389,58 @@ Constraints on the output, each verified against every entry in the shipped file
             7    0.350000024   0.349999994   0.350000024
             18   0.900000155   0.900000036   0.900000155
 
-    C2  Both loops are half-open. Direction terminates at 0.90; 0.95 is never
+    C2  The direction loop is half-open: it terminates at 0.90, 0.95 is never
         sampled, and inputs in [0.95, 1.0) resolve against the 0.90 curve.
-        Speed terminates at V - 0.5; V is never sampled.
 
     C3  x lies on the 0.5 grid at every point (18302/18302) and is
         non-decreasing within a record (1634/1634).
 
-    C4  All 19 records of an entry share one exact max(x) (86/86).
+    C4  All 19 records of an entry share one exact max(x) (86/86). They do not
+        share a minimum (see above).
 
     C5  max(y) does not exceed max over the project's clips of
         (root_speed * PlaybackSpeed) (46/46 projects).
 
 x is expressed in the units RACE `MOVT` records use.
 
-### 5.4 Required inputs not present in game data
+### 5.4 What is missing to author a project from scratch
 
-Two, both to §5.3. Everything else it consumes is in the shipped files or fixed by
-C1-C5.
+Everything in §2 and §4 is sufficient to read a table and to rewrite one. Four
+things are needed to produce one, and none is in the game files.
 
-**V(s), the sweep limit.** Integer, per state. Authored, not derivable; §5.6 scores the
-candidate rules. The file exposes it only as the ceiling `V - 0.5`:
+**1. A behaviour graph evaluator.** The inner loop of §5.3 is "step the graph and
+read the resulting locomotion speed". The whole table is that measurement; there is
+no closed form (§5.2). This is the large one — it means driving `hkbBehaviorGraph`
+with its clip generators, blend trees and state machines, at least far enough to
+resolve which animation plays at a given `(state, direction, speed)` and at what
+rate.
 
-    ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
-    V        190    325    415    425    450    750    833    1000
+**2. The upper bound of the speed sweep, per entry.** The file exposes it only as
+`max(x)`, and the eight values in use are:
+
+    max(x)   189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
     entries      1     74      1      2      1      2      1      4
 
-V = 325 is the default. Of the seven other values, `GiantProject` V = 415 equals
-its fastest clip's raw root-motion speed and `DeerProject` V = 833 equals its
-race's `ForwardRun`; the remaining five have no counterpart in game data. No rule
-over the shipped files predicts V. Treat it as sampler configuration.
+324.5 covers 74 of the 86 entries. The other seven values were searched against
+`MOVT` speeds, race records, every numeric field of both, clip root motion, clip
+root motion times playback rate, clip travel distances, durations, behaviour-graph
+float literals, and a regression on the state's own animations. Each test is
+enriched on the twelve hand-set entries and at chance across all 86 — the profile
+of a large candidate pool, not a mechanism. Treat the bound as an authored input
+with a default.
 
-**A behaviour graph evaluator.** Required by the inner loop and by the breakpoint
-retention in §5.2.
+**3. The point-retention rule.** The sweep produces a value at every 0.5 step; the
+file keeps a median of 11 points per record. What decides a breakpoint is unknown —
+only that 80% of retained interior points sit more than 0.5% off the chord between
+their neighbours (§5.2), so the rule is not "keep every nth sample".
 
-Without these, a table may be **validated** but not **synthesised**. Validation
-checks C1-C5 and the `V - 0.5` ceiling form against the shipped files alone.
+**4. Which states get sampled.** An entry exists per sampled locomotion state, and
+not every state is sampled: the canines carry a two-state forward locomotion
+machine and have one entry each (§4.1). A state count does not give an entry count.
+
+Given those four, everything else follows: the key from §4.1, the direction values
+from C1, the grid and the shared ceiling from C3 and C4, and the output bound from
+I8.
 
 ### 5.5 Authoring view
 
@@ -428,103 +452,12 @@ the table by changing one of these and regenerating:
     locomotion clip root motion        the y range: what the actor can deliver
     ClipGeneratorEntry.PlaybackSpeed   scales each clip's contribution to y
     RACE MOVT / SpeedOverrides         what the game requests at runtime, in x
-    V(s)                               how far along x the table covers
+    the sweep's upper bound            how far along x the table covers
 
 To make an actor move faster, add or replace a faster clip, or raise its
 generator's `PlaybackSpeed`, then regenerate. Editing `y` in the file alone
 desynchronises the table from the animations it describes, and the result violates
 I8.
-
-### 5.6 V is authored; no rule reproduces it
-
-V is a per-state generator input, default 325 (74 of the 88 entries). No single
-rule over the game data reproduces the other 14. Candidate rules were scored the
-same way — hit rate against a control drawing V uniformly from [50, 1050] against
-that entry's own candidate pool — because a rule whose pool holds thousands of
-values will "explain" almost any number.
-
-    rule                                   non-default        all entries
-                                          hit   control      hit   control
-    MOVT ForwardRun x {1, 1.5, 2}      8/12    1.5%       9/77    1.4%
-    clip raw x ANY generator playback  5/12   27.9%      29/86   18.4%
-    clip raw x its OWN playback        3/12    6.7%       4/86    5.0%
-    graph float literal                4/12    6.7%       6/86    3.8%
-    union of all of the above         11/12   38.6%      37/86   27.0%
-
-Only the first row is worth anything. Its pool is 27 values — the actor's
-`ForwardRun` speeds times three multipliers — so its 1.5% control is meaningful,
-and 8 of 12 against it is not chance:
-
-    project            key      V   =  MOVT record          ForwardRun   x
-    DefaultMale/Female   3   1000   =  NPC_Sprinting_MT            500   2
-    DefaultMale/Female  16   1000   =  NPC_Sprinting_MT            500   2
-    DefaultMale/Female  10    750   =  NPC_Sprinting_MT            500   1.5
-    DeerProject         21    833   =  Deer_Default_MT             833   1
-    GiantProject         2    415   =  GiantCombatRun_MT           415   1
-
-It still leaves four, and it explains 9 of 77 overall. **It is not a derivation of
-V; it is a description of how an author most often picked one** — the actor's run
-or sprint speed, or a round multiple of it.
-
-The rows below it are at or near chance and carry no information. Clip root motion
-times the generator's own playback rate scores 4 of 86 against a 5.0% control: the
-three non-default hits it finds (deer 833.3333, giant 190.4955, giant 414.9996) are
-what a 357-value pool produces by itself.
-
-**The union row is the trap.** Allowing any of the four mechanisms per entry
-reaches 11 of 12, which looks like an answer and is not: the combined pool holds a
-median of 3,167 values and the control rises to 38.6%. An earlier revision of this
-document reported that 11/12 as a result. It was overfitting, and the correction is
-the reason the control column exists.
-
-#### Individual coincidences, for the record
-
-Two are worth knowing because they will be rediscovered:
-
-    GiantProject V = 190     GiantCombatWalk_MT.BackRun = 190.5
-                             CombatWalkBack 63.498 x playback 3 = 190.4955
-    DeerProject  V = 450     Horse_Default_MT.ForwardRun = 450, a different actor
-
-The giant's two sources agree with each other because the `MOVT` field was set to
-what the animation delivers; that says something true about how movement speeds are
-authored, and nothing about how V is chosen. The deer's is a cross-actor collision
-of the kind a 209-value pool produces.
-
-#### Regression on the state's own animations
-
-Walking the behaviour graph's locomotion state machines gives the clip set behind
-each state (§4.1), so V can be regressed on the root motion of the animations that
-state actually plays. Five entries are mappable. The best single predictor is the
-mean raw root-motion speed of the state's clips:
-
-    all five points        V = 253.19 + 0.6954 * meanRaw      R2 = 0.996
-    without DeerProject 21 V = 307.21 + 0.4813 * meanRaw      R2 = 0.263
-
-The first line is not a result. One point carries it:
-
-    entry           meanRaw       V
-    Dog k30          240.94     425
-    Wolf k100        237.53     425
-    Giant k2         261.12     415      <- these four span 33 units of x
-    Deer k20         270.60     450         and 35 of V, R2 = 0.263
-    Deer k21         833.33     833      <- 563 units away, sets the slope
-
-Four points in a tight cluster plus one distant point will show a high R2 whatever
-the cluster does. Leave-one-out on the five gives 0.874 for this predictor and
-negative values for most others, and adding a second predictor reaches R2 = 1.000
-on n = 5 with three parameters. Also, the clip set per state was chosen by name
-prefix by hand, which is a further degree of freedom. No regression here is
-evidence.
-
-#### Status
-
-V is sampler configuration, supplied per state. A tool must accept it as an input.
-It may suggest `ForwardRun x {1, 1.5, 2}` on the evidence above, and must not
-present the result as derived.
-
-Above `V - 0.5` the lookup has no knot and returns the final value. 23 entries keep
-V = 325 while their race permits more (bear 638, chaurus flyer 725, dragon 7400),
-so that clamp is reached in the shipped game.
 
 ## 6. Known corruption
 
@@ -548,9 +481,11 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 7. Open
 
-The format is fully specified. Missing are two of the generator's inputs (§5.4):
-the per-state sweep limit V, which §5.6 shows no rule reproduces, and a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
-files, so a table can be validated from them but not synthesised.
+The format is fully specified. What is missing is four of the generator's inputs,
+set out in §5.4: a behaviour graph evaluator, the per-entry upper bound of the
+speed sweep, the point-retention rule, and which states get sampled. None is
+recoverable from the shipped files, so a table can be read, rewritten and validated
+from them, but not synthesised.
 
 ## 8. Method note
 
