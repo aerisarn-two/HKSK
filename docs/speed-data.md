@@ -235,98 +235,39 @@ land on x knots far past chance (§6).
 
 ### 4.4 y — speed out
 
-`y` is the speed of the **nearest animation the graph can produce** for that
-request, at the rate its generator plays it.
+The speed the actor ends up moving at: the animation the graph plays in answer to
+that request, at the rate its generator plays it. What that means for the curve's
+shape is §5.
 
-It never exceeds what the project's clips can deliver (I8). The clip generator's
-`PlaybackSpeed` is part of that bound, not a detail:
+It never exceeds what the project's clips can deliver (I8), and the clip
+generator's `PlaybackSpeed` is part of that bound rather than a detail — without
+it the bound does not hold:
 
 | Bound | Exceeded by | Hit exactly |
 | --- | ---: | ---: |
 | fastest clip root-motion speed | 4/46 | 8 |
 | that **x `ClipGeneratorEntry.PlaybackSpeed`** | **0/46** | **9** |
 
-    ChickenProject   max y 403.10   fastest clip 251.94   x playback 403.10   1.000
-    HareProject      max y 320.62   fastest clip 200.39   x playback 320.62   1.000
+## 5. What the table contains, and how to regenerate it
 
-`y` is free to sit either side of `x`, and does. It exceeds `x` where the clip is
-played faster than authored, and far exceeds it where the creature has no slow
-gait — ask a dragon for 3 and the table answers 384:
+### 5.1 What one record is
 
-    DragonProject          x   3.0  ->  y 384.00
-    Dragon_Priest          x   1.0  ->  y  80.00
-    SlaughterfishProject   x   1.0  ->  y 162.06
+A record is a **response curve**: what the actor ends up doing when it is asked to
+move at a given speed.
 
-This accounts for the whole curve shape: it saturates at the top because clips run
-out; it starts high where there is no slow gait; `y/x` equals a clip's playback
-rate at an anchor, where one clip dominates; and it drifts between anchors, where
-two are blending.
+    record for (state s, direction d)
 
-## 5. How the table was generated
+        x  what was asked for      goal speed, game units/s
+        y  what came out           the speed of the animation the graph
+                                   actually plays, at the rate it plays it
 
-### 5.1 Both axes are half-open sweeps
+The graph cannot produce arbitrary speeds. It has a fixed set of locomotion clips,
+each travelling at its own rate, and it blends between them. Ask for a speed
+between two clips and you get a blend; ask for more than the fastest clip can give
+and you get the fastest clip. The curve records that: 19 directions per state, and
+per direction a list of `(asked, got)` pairs.
 
-**Direction.** The 19 values are bit-identical to float accumulation, `d += 0.05f`,
-in all 86 entries — and bit-different from `0.05f * i` and from `i / 20.0f`, which
-diverge at i = 7:
-
-    i    stored        0.05f * i     accumulated
-    7    0.350000024   0.349999994   0.350000024
-    18   0.900000155   0.900000036   0.900000155
-
-    bit-identical to 0.05f * i     :  0 / 86
-    bit-identical to accumulation  : 86 / 86
-    bit-identical to i / 20.0f     :  0 / 86
-
-The sweep is `for (d = 0; d < 0.95f; d += 0.05f)` or equivalent: half-open, 19
-samples, **0.95 never sampled**. Directions in [0.95, 1.0) fall past the last knot
-and must clamp to the 0.90 curve; the mirror symmetry would make that sample
-recoverable from 0.05, but nothing in the file does it.
-
-**A reader that reconstructs the axis as `0.05 * i` mismatches from the seventh
-record on.** Compare with a tolerance, or accumulate.
-
-**Speed.** Every x ceiling is `V - 0.5` for an integer V:
-
-    ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
-    V        190    325    415    425    450    750    833    1000
-
-the same half-open sweep on the 0.5 grid, `for (x = 0; x < V; x += 0.5f)`. V is
-per entry, default **325** — 74 of the 88 entries. Two of the others are
-identifiable: the giant's V = 415 is exactly its fastest clip's raw root-motion
-speed, and the deer's V = 833 is exactly its race's `ForwardRun`. The remaining
-five are unattributed, and V is sampler configuration rather than anything
-recoverable from the shipped files (§8).
-
-### 5.2 The curves are measured, not derived
-
-Two properties of the point spacing:
-
-- **Spacing is more even in y than in x.** Median coefficient of variation of the
-  step size, over the 1,321 records with 5+ points: 0.654 along y, 1.009 along x.
-- **Knots are load-bearing.** Of 15,034 interior knots, only 20.2% lie within 0.5%
-  of the chord between their neighbours; the median sits 5.1% off it. Each marks
-  a real bend rather than being the residue of a denser sweep.
-
-### 5.3 Which axis comes from where
-
-`y` is built from the animations; `x` is not. Coincidence with a project's clip
-speeds, against a permutation control that shuffles the clip sets between projects
-(n=200):
-
-| | real | shuffled | z |
-| --- | ---: | ---: | ---: |
-| x knots vs raw clip root-motion speed | 16.2% | 6.3% ± 1.7 | +5.9 |
-| x knots vs clip speed × `PlaybackSpeed` | 17.0% | 7.2% ± 2.1 | +4.8 |
-| y values vs raw clip root-motion speed | 25.8% | 8.0% ± 3.6 | +4.9 |
-| **y values vs clip speed × `PlaybackSpeed`** | **28.9%** | 10.5% ± 3.3 | **+5.6** |
-
-All four are significant; `y` matches roughly twice as well as `x`. Set against §6,
-where `x` matches *race* speeds at +18.9 sd: **x is anchored on what the race may
-request, y on what the animations can deliver.**
-
-The chicken shows it directly, having only five locomotion clips — the curve spans
-precisely its slowest to its fastest:
+The chicken has five locomotion clips, so its curve is easy to read whole:
 
     y min   0.49  = WalkForward 34.71 x 0.014   (clip Forward_WalkSlow)
     y max 403.10  = RunForward 251.94 x 1.6     (clip Forward_Run)
@@ -334,10 +275,85 @@ precisely its slowest to its fastest:
     x  35.0 -> y  34.03   Forward_Walk plays at 1.0,  raw speed 34.71
     x 252.5 -> y 403.10   Forward_Run  plays at 1.6,  raw speed 251.94
 
-An input axis on race thresholds, an output capped by clip capability and equal to
-it at the extremes, and knots marking bends in between: the file is the **recorded
-response of the behaviour graph** to a swept request, which is what a speed
-sampler is named for.
+It spans exactly its slowest to its fastest clip, and at each end `y` is that
+clip's root-motion speed times its generator's `PlaybackSpeed`. In between the two
+blend. Past the top it saturates, which is invariant I8.
+
+`y` is therefore free to sit either side of `x`, and does. A creature with no slow
+gait answers a small request with a large speed, because the slowest thing it owns
+is already fast:
+
+    DragonProject          x   3.0  ->  y 384.00
+    Dragon_Priest          x   1.0  ->  y  80.00
+    SlaughterfishProject   x   1.0  ->  y 162.06
+
+### 5.2 The points are samples, not control points
+
+The curve was produced by sweeping the input and recording the output, then
+keeping the points where the response bends. Two measurements say so:
+
+- Of 15,034 interior knots, only 20.2% lie within 0.5% of the chord between their
+  neighbours; the median sits 5.1% off it. Every point is carrying a bend.
+- Step size is more even along `y` than along `x` — median coefficient of
+  variation 0.654 against 1.009, over the 1,321 records with 5+ points. The
+  spacing follows the output, not the input.
+
+There is no closed form to evaluate. Regenerating a curve means running the graph.
+
+### 5.3 The procedure
+
+    for each state s                      /* the iState values the graph uses */
+        for (d = 0.0f; d < 0.95f; d += 0.05f)          /* 19 directions       */
+            for (x = 0.0f; x < V(s); x += 0.5f)        /* the speed sweep     */
+                set Direction = d, Speed = x
+                step the behaviour graph
+                y = resulting locomotion speed
+            keep the (x, y) pairs where the response bends
+        write entry { key = s, records = the 19 curves }
+
+Three details are fixed by the file and must be reproduced exactly:
+
+**Accumulate the direction, do not multiply it.** The stored values are
+bit-identical to `d += 0.05f` in all 86 entries, and bit-different from `0.05f * i`
+and `i / 20.0f`, which diverge at i = 7:
+
+    i    stored        0.05f * i     accumulated
+    7    0.350000024   0.349999994   0.350000024
+    18   0.900000155   0.900000036   0.900000155
+
+Both loops are **half-open**, so `0.95` is never sampled and neither is `V`: the
+last direction is 0.90 and the last x is `V - 0.5`. Directions in [0.95, 1.0) fall
+past the last knot and clamp to the 0.90 curve. Mirror symmetry about 0.5 (§4.2)
+would make the missing sample recoverable from 0.05, but nothing in the file does
+that.
+
+`x` is on a 0.5 grid at every one of the 18,302 points, in the same units as the
+RACE movement records — which is why race speeds fall on knots (§6). The sweep
+covers the range a race may request; the answer comes from the animations.
+
+### 5.4 What you need that the shipped files do not have
+
+Two inputs. Everything else in the procedure is either in the game data or fixed
+above.
+
+**V, the sweep limit, per state.** It is an integer, and the ceiling you see in the
+file is `V - 0.5`:
+
+    ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
+    V        190    325    415    425    450    750    833    1000
+
+**325 is the default**, taken by 74 of the 88 entries. Of the seven other values,
+the giant's 415 is exactly its fastest clip's raw root-motion speed and the deer's
+833 is exactly its race's `ForwardRun`; the rest are unattributed. No rule over the
+shipped data predicts V, so it is sampler configuration.
+
+**A behaviour graph evaluator.** Step 4 of the procedure is "step the graph", and
+the knot placement (§5.2) follows the graph's blending. Without running it there is
+nothing to sample.
+
+What you can do without either: **validate** a table. The bound I8, the `V - 0.5`
+ceiling form, the accumulated direction axis, the 0.5 grid on `x`, and the race
+speeds falling on knots are all checkable against the shipped files.
 
 ## 6. Cross-check against RACE
 
@@ -387,19 +403,10 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 8. Open
 
-Both remaining questions are about the generator's inputs, not about the format.
-
-**What sets a non-default V** (§5.1). Two of the seven non-default ceilings match
-a clip speed and a race speed; the other five are unattributed, and no rule over
-the shipped data predicts V for the 74 entries that simply take the default.
-
-**What places the knots between race thresholds** (§6). They mark bends in a
-measured response (§5.2), so reproducing them means running the behaviour graph
-rather than evaluating a formula.
-
-Consequently a table can be **validated** from the shipped files — bound by I8,
-anchored at the race speeds, ceiling of the form `V - 0.5`, direction axis
-accumulated — without being **synthesised** from them.
+The format is fully specified; what is missing is two of the generator's inputs,
+set out in §5.4 — the per-state sweep limit V, and a behaviour graph evaluator to
+sample. Neither is recoverable from the shipped files, so a table can be validated
+from them but not synthesised.
 
 ## 9. Method note
 
