@@ -2,8 +2,8 @@
 
     Status:    format CONFIRMED (byte-exact round trip); semantics CONFIRMED
                key set derivable from the behaviour graph (§4.1)
-               y range derivable from clip root motion (§4.4)
-               three generator inputs unknown (§5.4)
+               y derivable in closed form from clip root motion (§5.1.1)
+               no graph evaluator required; one input authored (§5.4)
     Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
@@ -397,15 +397,39 @@ keyed 0-10 and 15-17, and their tables form a speed ladder:
 
 ### 4.2 direction
 
-The graph's `Direction` variable, range [0,1]. A compass: 0.0 ahead, 0.25 and 0.75
-the two sides, 0.5 behind.
+The graph's `Direction` variable, range [0,1]. A compass, and the sides are now
+pinned: **0.00 ahead, 0.25 right, 0.50 behind, 0.75 left.**
 
-Curves are mirror-symmetric about 0.5. Over the 688 pairs (0.10,0.90) (0.15,0.85)
+The convention is fixed by the four cardinal records of the player's bow-drawn states
+against the eight directional blenders (§6.2), each of which matches its own blender's
+top child exactly:
+
+    record       max y     blender                 weight    clip
+    0.00        155.21     Bow_ForwardBlend        155.21  155.21
+    0.25        131.06     Bow_RightBlend          130.04  131.06
+    0.50        113.94     Bow_BackwardBlend       113.93  113.94
+    0.75        134.43     Bow_LeftBlend           134.43  134.43
+
+Note 0.25 and 0.50 track the clip and not the weight, per §4.4.
+
+The 19 records sample at 0.05 while the eight blenders sit at 0.125 spacing, so only
+records 0, 5, 10 and 15 read a single blender; the rest are mixtures of two adjacent
+ones. That is why the direction profile is not monotonic — 0.20 gives 126.27 and 0.25
+gives 131.06, because 0.20 is a forward/right mixture and 0.25 is pure right.
+
+Curves are near mirror-symmetric about 0.5. Over the 688 pairs (0.10,0.90) (0.15,0.85)
 ... (0.45,0.55): 127 bit-identical, 499 within 2%, 62 differ — **91.0% mirrored**.
 The player's run state is exact:
 
     direction 0.40 -> 272.96      direction 0.60 -> 272.96
     direction 0.45 -> 259.44      direction 0.55 -> 259.44
+
+**The symmetry cannot be exact, and the residual is not noise.** `MOVT` is symmetric
+left/right — `LeftRun == RightRun` on 54 of 63 testable entries — but the animations
+are not. `Bow_LeftBlend` tops at 134.43 against `Bow_RightBlend`'s 130.04, a 3.4%
+difference from the animators' own clips, and the table reproduces it faithfully. Six
+entries carry a left/right ceiling gap above 1% despite symmetric `MOVT`, the riekling
+by 18%. Do not symmetrise a table on the assumption that the difference is error.
 
 ### 4.3 x — goal speed
 
@@ -454,13 +478,12 @@ entry. Measured on the 13 entries whose locomotion blender is identifiable:
 better than 0.5% and usually to the stored decimals. It is not a floor or an
 epsilon: it is what the actor still travels at when the requested speed is 0.
 
-**`max y` is that ladder evaluated at `max x`** — 9 of 13, and the split is clean:
-
-    max x reaches the top rung   4 / 4    max y is exactly the top clip's speed
-    max x lands mid-ladder       5 / 9    linear interpolation of the two speeds
-
-The four mid-ladder misses fall short of linear interpolation, never over: deer 20
--3.9%, skeever -5.2%, mammoth -10.5%, sabrecat -11.0%.
+**`max y` is that ladder evaluated at `max x`.** Where `max x` reaches the top rung it
+is exactly the top clip's delivered speed, 4 of 4. Where `max x` lands mid-ladder, a
+linear chord between the two bracketing speeds gets 5 of 9 and falls short on the other
+four — deer 20 by 3.9%, skeever 5.2%, mammoth 10.5%, sabrecat 11.0%, always short and
+never over. That is the chord error: the true segment is a hyperbola lying below it, and
+the ratio form of §5.1.1 predicts all four to within 0.33%. Use §5.1.1, not a chord.
 
 #### y follows the clip, not the weight
 
@@ -488,8 +511,9 @@ A record is the locomotion response of one `(state, direction)` pair.
                            times that clip generator's PlaybackSpeed
 
 The graph selects from a fixed clip set and blends adjacent clips, so the response
-is piecewise: pinned to one clip below the slowest, linear between clips, saturated
-above the fastest. The record stores the response, not the clip set behind it.
+is piecewise: pinned to one clip below the slowest, **hyperbolic** between clips
+(§5.1.1), saturated above the fastest. The record stores the response, not the clip
+set behind it.
 
 `ChickenProject` has five clips with non-zero root motion:
 
@@ -506,8 +530,16 @@ Its direction-0.00 record in full:
     y      0.486   3.99   8.79  12.60  34.03 114.70 190.55 270.56 354.20 403.10 403.10
 
 Endpoints are single clips, to stored precision: 34.71 x 0.014 = 0.48594 and
-251.94 x 1.6 = 403.104, the repeated last pair being the saturated region (I9).
-Interior points are blends and match no clip individually.
+251.94 x 1.6 = 403.104. Interior points are blends and match no clip individually;
+§5.1.1 computes them.
+
+**A repeated final pair is not a saturation marker.** 1162 of the 1634 records end
+with the last point written twice, at the same x — a terminal duplicate, present
+whether or not the curve has flattened. Saturation is a plateau between two
+*distinct* x, as in the chicken's `252.5 -> 324.5` above (which has no duplicate).
+Measured with the duplicate removed, 566 records end on a real plateau and **1068 are
+still rising at the final sample**, so most records are cut before the response
+flattens. A reader that tests `y[-1] == y[-2]` detects the duplicate, not the plateau.
 
 `y` is unordered with respect to `x`. It exceeds `x` where the selected clip plays
 above its authored rate, and by large factors where the actor's slowest locomotion
@@ -516,6 +548,62 @@ clip is fast:
     DragonProject          x   3.0  ->  y 384.00
     Dragon_Priest          x   1.0  ->  y  80.00
     SlaughterfishProject   x   1.0  ->  y 162.06
+
+#### 5.1.1 Closed form for y
+
+**y has a closed form. No graph evaluation is required.**
+
+The consumer is an `hkbBlenderGenerator` carrying `FLAG_SYNC | FLAG_PARAMETRIC_CYCLIC`
+(§6.2). Under sync, Havok interpolates the children's root-motion **translation** and
+their **duration** as two independent linear ramps, and the resulting speed is their
+quotient. Order the children by weight into a ladder of rungs
+
+    rung i  =  (w_i, travel_i, dur_i)          dur_i = clip duration / PlaybackSpeed
+
+then for x between rungs a and b
+
+    u     = (x - w_a) / (w_b - w_a)
+    y(x)  = (travel_a + u*(travel_b - travel_a)) / (dur_a + u*(dur_b - dur_a))
+
+clamped to `travel/dur` of the first rung below `w_0` and of the last rung above
+`w_n`. A quotient of two linear functions is a Mobius transform, so each segment is a
+hyperbolic arc, not a chord. Where two adjacent rungs differ greatly in duration the
+arc is strongly convex, which is why the curves read as acceleration ramps.
+
+The hare's forward ladder shows the size of the effect. Its slowest rung plays
+`walkforward` at `PlaybackSpeed` 0.058, stretching 0.833 s to 14.368 s:
+
+    rung   weight   travel      dur     speed
+       1     5.00    52.26   14.368      3.64
+       2    89.18    52.26    0.833     62.71
+       3   244.44   100.19    0.3125   320.62
+
+    x        observed     this form   linear chord
+    63.5        10.52         10.53          44.69
+    79.0        21.10         21.15          55.56
+    85.0        34.56         34.70          59.77
+    88.0        50.75         51.06          61.88
+
+Measured over the whole file, on the four cardinal records of every entry, selecting
+the blender by the state's family and the record's compass direction with no fitting:
+
+    records where family + direction leave exactly one candidate    122
+      median relative error < 1%                                    105
+    all deterministically selected records                          173
+      median relative error < 1%                                    114
+      median of the per-record medians                            0.13%
+
+The 68 misses are blender **identification**, not the form: they concentrate on
+`NPCBleedout` and `NPCDrunk`, whose movement-type names carry no family token, so no
+group can be chosen for them. Against a linear chord the same records score a median
+of roughly 10-25%, two orders of magnitude worse.
+
+**Scope.** Verified on the four cardinal directions. The 15 intermediate directions
+sample between two adjacent compass blenders — the eight sit at 0.125 spacing, the
+records at 0.05 — and need a two-blender mixture that is not yet measured. Quadruped
+side and back records have no directional family at all (§6.2) and are also
+unverified: 171 of the 344 cardinal records could not be assigned a blender, most of
+them for that reason.
 
 ### 5.2 Series structure
 
@@ -544,8 +632,22 @@ where every y is zero. Only `max(x)` is shared (I8); the minimum is not (§3).
       along y                                        0.654
       along x                                        1.009
 
-No point is redundant and spacing follows the output axis. Median 9.8 points per
-record against a sweep of up to 650 positions.
+No point is redundant and spacing follows the output axis: the retained points are
+the vertices a piecewise-linear reader needs, which is what the consumer does between
+them.
+
+Point counts per record, terminal duplicate included:
+
+    mean 11.2   median 11   min 2   max 121      quartiles 8 / 13, 90th 15
+
+The distribution is bimodal. A main mode of 8-14 holds 1052 of the 1634 records, and a
+separate spike at exactly **2 points** holds 180 — the degenerate curves, where y is
+constant over the whole sweep. The three all-zero hover entries are 2 points in all 19
+records; `RieklingProject` key 0 is the opposite extreme at 1037 points over its 19
+records, up to 121 in one. Per entry: mean 213, median 206, range 38 to 1037.
+
+Against a sweep of up to 650 grid positions, a median record retains about 1.7% of
+them.
 
 ### 5.3 Generation algorithm
 
@@ -559,8 +661,17 @@ record against a sweep of up to 650 positions.
             retain (x, y) at response breakpoints
         emit entry { key = s, records = 19 curves }
 
-The sampled states come from the root graph's `iState_*` declarations (§4.1).
-`top(s)`, the retention rule and the evaluator are inputs, not derivable: §5.4.
+The inner loop does not need a graph step. `y` at any x is §5.1.1, evaluated from the
+blender ladder; the sampled states come from the root graph's `iState_*` declarations
+(§4.1); the direction values from I4. What remains as input is `top(s)` and the
+retention rule: §5.4.
+
+A generator that does not care about matching the shipped file byte for byte can skip
+retention entirely and emit every grid point. That costs 1,206,044 points and about
+9.7 MB against the shipped 18,302 points and 162,527 bytes — 59x — and is more
+accurate, since the consumer then interpolates across half-unit steps rather than
+across gaps of up to 1768 of them. Every tenth grid point is 6x and still exact to
+well under one unit.
 
 Output must satisfy I1-I9 (§3). x is in the units RACE `MOVT` records use.
 
@@ -570,22 +681,20 @@ Output must satisfy I1-I9 (§3). x is in the units RACE `MOVT` records use.
 inputs. The key set was a fourth and is now derivable.
 
     #  input                        shape              status
-    1  behaviour graph evaluator    code               blocker; endpoints derivable
-    2  top(s), sweep upper bound    1 float per entry  authored; default 324.5
-    3  point-retention rule         1 algorithm        closed experiment
+    1  top(s), sweep upper bound    1 float per entry  authored; default 325
+    2  point-retention rule         1 algorithm        optional; see §5.3
     -  set of sampled states        list of state ids  DERIVABLE, §4.1
+    -  y at any x                   closed form        DERIVABLE, §5.1.1
+    -  behaviour graph evaluator    --                 NOT REQUIRED
 
-**1 — Evaluator.** The inner loop is "step the graph, read the resulting locomotion
-speed". The interior of a curve is that measurement and has no closed form (§5.2).
-Requires driving `hkbBehaviorGraph` far enough to resolve which animation plays at a
-given `(state, direction, speed)` and at what rate.
+**No evaluator is required.** Earlier revisions listed one as the blocker, on the
+grounds that the curve interior is a measurement with no closed form. It has one
+(§5.1.1): the blend is time-synchronised, so y is a quotient of two linear ramps, and
+the inputs are the child weights from the graph plus each clip's travel and duration
+from the animation cache. What still needs graph work is **identifying** which blender
+serves a given `(state, direction)` — a traversal (§6.4), not a simulation.
 
-Its **endpoints no longer need it.** `min y` is the slowest blend child's root-motion
-speed and `max y` is the ladder evaluated at `top(s)` — 12 of 13 and 9 of 13 on the
-measurable entries (§4.4). So the evaluator is needed for the interior points, not
-for the range.
-
-**2 — Sweep upper bound.** Exposed only as `max(x)`, distribution in §3, and it
+**1 — Sweep upper bound.** Exposed only as `max(x)`, distribution in §3, and it
 bounds the sweep at both ends: `min(x)` is 0 on 84 of the 86 populated entries and
 has an authored floor on two (§11).
 
@@ -607,13 +716,46 @@ and for three entries `V` is exactly the top weight of the `SpeedSampled` blende
 It fails on the other ten, where `V` is the 325 default while the top weight is
 anything from 83.41 to 638.07. **3 of 13 is a lead, not a rule.** Do not implement it.
 
-**3 — Retention rule.** Unknown, and the only gap with a checkable answer. Given y
-on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshold,
+Pools searched and exhausted, so they are not searched again:
+
+    pool                                                  325    650    the twelve V
+    RACE, every numeric leaf to depth 4, 161 records     1 hit      -   already above
+    RACE SpeedOverrides (only 10 races carry any)            -      -             -
+    MOVT, all fields, 107 records                            -      -   3/12, mixed
+    GMST, 665 settings                                       -   1 hit            -
+    behaviour-graph float literals                           2      -   4/12 weights
+
+The single 325 in RACE is `DLC2SprigganBurntRace.Starting[0].Value`, a starting actor
+value; the single 650 in GMST is `fIronSightsDOFRange`, a Fallout leftover. Neither is
+a movement quantity.
+
+**`V = MOVT ForwardRun x {1, 1.5, 2}` is withdrawn.** It reached 8 of 12 at a 3.1%
+control, but the 500 it leans on is `NPC_Horse_MT`/`NPC_Sprinting_MT` reached through
+the project's whole movement-type pool rather than the state's own. Scored against the
+movement type each state actually declares (§4.1) it falls to **2 of 12**, and both
+survivors are plain equality with no multiplier. The multiplier was an artefact of the
+loose pairing.
+
+**`max(x)` does not bound what the game can request.** 47 of the 86 entries stop below
+their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of
+802.29 — and 37 of those are still rising when the sweep ends. Above the last point the
+query clamps, so those actors are indexed below the speed they are asked for. `top(s)`
+is how far somebody swept, not a speed the engine computes.
+
+Nor is 325 derived: it is 650 half-unit steps, a grid length, applied unchanged to
+creatures whose speeds span 61.84 to 802.29. Where the bound was changed it was changed
+by hand and inconsistently — three entries set exactly to the blend ladder's top, two
+raised but still truncating, five left at the default although their ladder runs past
+it, and `GiantProject` state 1 *lowered* to 190 against a ladder reaching 247.37, which
+no sampling-efficiency argument produces.
+
+**2 — Retention rule.** Unknown, and needed only for a byte-identical rebuild
+(§5.3). Given y on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshold,
 error-bounded decimation) are scored against the shipped file by whether they
 reproduce its exact point sets in all 1,634 records.
 
-With those three, the rest follows: keys from §4.1, direction values from I4, grid and
-shared ceiling from I6-I8, output range from §4.4 and I9.
+With `top(s)`, the rest follows: keys from §4.1, direction values from I4, grid from I6,
+y from §5.1.1, and the retention rule only if the output must match byte for byte.
 
 ### 5.5 Authoring
 
@@ -636,14 +778,32 @@ from the animations it describes and can violate I9.
 The modifier's four parameters bind to named graph variables. Read from the
 compiled graphs, not inferred:
 
-    member       variable            
+    member       variable
     state    <-  iState              engine-written, graph-declared (§4.1)
-    direction<-  Direction           
-    goalSpeed<-  Speed               
-    speedOut ->  SpeedSampled        HorseSpeedSampled in horsebehavior.hkx
+    direction<-  Direction
+    goalSpeed<-  Speed
+    speedOut ->  SpeedSampled  |  SampledSpeed  |  HorseSpeedSampled
 
 This is independent confirmation of §4: the record tag is `Direction`, the point x
-is `Speed`, and the point y is what lands in `SpeedSampled`.
+is `Speed`, and the point y is what lands in the output variable.
+
+**The output variable has three names, and filtering on one loses a quarter of the
+consumers.** Counting blenders whose `blendParameter` binds to each:
+
+    SpeedSampled          764
+    SampledSpeed          266
+    HorseSpeedSampled       7
+    ------------------------
+                         1037   across 38 of the 49 projects
+
+`SpeedDamped` (184), `TurnDeltaDamped` (152), `TurnDelta` (102) and `staggerMagnitude`
+(132) are the other blend axes and are **not** sampler outputs. Match on
+`/(speedsampled|sampledspeed)/i`.
+
+Eleven projects bind no blender to any of the three: both atronachs, chaurus flyer,
+netch, dragon, dragon priest, dwarven spider, ice wraith, slaughterfish, wisp,
+witchlight. For the storm atronach, wisp and witchlight that is consistent — their
+tables are all-zero (§11), because there is no locomotion blend to report on.
 
 No node in the root graph reads `SpeedSampled`. The consumer sits in the referenced
 sub-behaviour `forwardlocomotion.hkx`:
@@ -667,10 +827,38 @@ Full path:
                   v
               gait mix
 
-### 6.2 Two families of blender
+### 6.2 Blender topology: who reads the sampled speed
 
-A locomotion sub-behaviour holds two kinds of `hkbBlenderGenerator`, distinguished
-by which variable drives them and by the sign pattern of their child weights.
+There are two topologies, and which one an actor uses decides what the 19 direction
+records mean for it.
+
+**Bipeds: eight cardinal blenders, one scalar.** The graph holds a full compass of
+`hkbBlenderGenerator` — Forward, ForwardRight, Right, BackRight, Back, BackLeft, Left,
+ForwardLeft — and **every one of them binds `blendParameter` to the same sampler
+output**. The blenders are not parameterised by direction; they *are* the direction,
+and the graph activates the one matching the heading. The giant's default state:
+
+    ForwardBlend       <- SpeedSampled   5, 61.84, 123.69
+    ForwardRightBlend  <- SpeedSampled   5, 62.67
+    RightBlend         <- SpeedSampled   5, 64.92
+    BackRightBlend     <- SpeedSampled   5, 47.07
+    BackBlend          <- SpeedSampled   5, 54.43
+    BackLeftBlend      <- SpeedSampled   5, 49.53
+    LeftBlend          <- SpeedSampled   5, 66.14
+    ForwardLeftBlend   <- SpeedSampled   5, 62.67
+    TurnLBlend         <- TurnDelta      45, 90        /* separate axis */
+
+**This is why the table needs a direction axis at all.** One scalar feeds all eight
+ladders and the ladders have different tops — for the player's bow, forward 155.21,
+left 134.43, right 130.04, backward 113.94. A heading-independent scalar would index
+`Bow_LeftBlend` against a number its children were never placed on. `Direction`
+selects the record so the returned speed and the active blender are on one scale.
+
+**Quadrupeds: one gait blender, turning instead of strafing.** A quadruped has a single
+speed blender whose children are turn blenders. It cannot strafe, so it has no compass
+family, and its side and back records come from the gait blender combined with the turn
+axis — a structure §5.1.1 does not yet model.
+
 `forwardlocomotion.hkx` for the deer:
 
     kind    generator                      blendParameter      child weights
@@ -683,7 +871,7 @@ by which variable drives them and by the sign pattern of their child weights.
     TURN    SlowRunBlend_Deer              TurnDeltaDamped     270, 0, -270
     TURN    RunBlend_Deer                  TurnDeltaDamped     270, 0, -270
 
-**`SpeedSampled` drives only the speed family.** The turn family takes
+**The sampled speed drives only the speed family.** The turn family takes
 `TurnDeltaDamped`, an unrelated variable, and its weights are angles in degrees
 with left/centre/right children. The two are independent axes:
 
@@ -737,8 +925,10 @@ animation cache records 192.866 for `TrotForward`. Where the two disagree the
 weight is authored and the cache is measured.
 
 **Consequence.** Blend weights are hand-authored numbers expressing "the speed this
-child delivers". They are usually `raw x playback` and are not reliably so. A tool
-must not derive one from the other in either direction.
+child delivers", and they are the *nominal* axis: `MOVT`-derived for the cardinals
+(§6.3), usually close to `raw x playback`, and not reliably equal to it. A tool must not
+derive one from the other in either direction. What the weights are **not** is the
+delivered speed — that is `travel/dur` per rung, and it is what §5.1.1 interpolates.
 
 **Where they disagree, the table sides with the cache.** The chicken's top weight is
 251.94 and its clip delivers 403.10; `max y` is 403.10. The dog's top weight is 425
@@ -746,7 +936,72 @@ and its trot delivers 289.30; `max y` is 288.73. So the weight is a claim and th
 table is the measurement, which is what makes the table the correct index for the
 blender rather than a redundant copy of its weights (§4.4, §6.4).
 
-### 6.4 Why the table exists
+#### Rungs are MOVT values
+
+For the cardinal blenders the rung positions are not free numbers: they are the
+movement type's own per-direction pair. `GiantCombatWalk_MT` against
+`giantbehavior.hkx`, exact to the stored decimals:
+
+    blender                        weights              MOVT
+    CombatForwardBlend_WALK    [5, 82.46, 247.37]   ForwardWalk 82.46  ForwardRun 247.37
+    CombatRightBlend_WALK      [5, 103.86, 311.59]  RightWalk  103.86  RightRun   311.59
+    CombatBackBlend_WALK       [5, 63.50, 190.50]   BackWalk    63.50  BackRun    190.50
+    CombatLeftBlend_WALK       [5, 93.70, 281.09]   LeftWalk    93.70  LeftRun    281.09
+
+Pattern `[floor, <dir>Walk, <dir>Run]`, with the floor a literal 5.0. The default state
+is the same with `Walk == Run`. The combat-run state drops the floor and extrapolates a
+rung above `Run`: `[<dir>Walk, <dir>Run, k x <dir>Run]` with k of 1.5 forward and 2.0
+sideways.
+
+**That is how the eight MOVT numbers enter the graph, and it is the only way they do.**
+The blender does not read `MOVT` at runtime; the values were baked in as blend
+positions at authoring time. It is also what puts x on the `MOVT` scale, which is what
+makes `Speed` comparable to a rung at all.
+
+Two limits. The four **diagonal** blenders are not derived from `MOVT` — `ForwardRight`
+and `ForwardLeft` share `[5, 82.07, 328.27]`, `BackRight` and `BackLeft` share
+`[5, 63.50, 317.49]`, symmetric pairs with their own numbers, because `MOVT` has only
+four directions. And **intermediate gait rungs are never in `MOVT`**: across twelve
+forward ladders, `ForwardWalk` is the second rung in 12 of 12 and `ForwardRun` the top
+in 7 of 12, but the trot and fast-trot rungs account for 19 of 38 non-floor rungs and
+appear nowhere in the record. `MOVT` alone will not reconstruct a ladder.
+
+### 6.4 Selecting the blender for a state
+
+A state owns a whole compass of blenders, and the selector states are labelled by
+weapon or stance family. Extracted by walking each project's root-graph closure and
+recording, per `hkbStateMachineStateInfo`, the sampler-bound blenders reachable beneath
+it — 4,753 such states across the 49 projects:
+
+    1hm_locomotion.hkx  Melee_Direction_Behavior
+        id 0-4, 10, 11  ->  1HM_*          id 7      ->  Bow_*
+        id 5, 6         ->  2HM_*          id 8, 9   ->  Magic_*
+                                           id 12     ->  CrossBow_*
+    magicbehavior.hkx   MagicCastLocomotion_Behavior   id 0 -> MagicCast_*
+    bow_direction_behavior.hkx  Bow_DirectionType_Behavior  id 0 -> Bow_* (8)
+    giantbehavior.hkx   StandingToLocomotionBehavior   id 1 -> ForwardBlend … (8)
+                        CombatLocomotionBehavior       id 0 -> Combat*_WALK (8)
+                        CombatLocomotionBehavior       id 1 -> Combat*_RUN  (8)
+
+**The machine ids are not `iState` values.** `Melee_Direction_Behavior` runs 0-12 while
+the player's key set is 0-10 and 15-17, and `id 7 -> Bow_*` sits against
+`iState 8 = NPC_Bow_MT`. This is the same fact as §4.1: `iState` is engine-written and
+no machine syncs to it, so game code drives the two independently and **nothing in the
+shipped data joins them.**
+
+So the join is by name, and it works: take the family token out of the state's
+`iState_<MOVT>` name and match it to the blender prefix.
+
+    NPC_BowDrawn, NPC_Bow          ->  Bow_          NPC_Sneaking  ->  Sneak_
+    NPC_MagicCasting               ->  MagicCast_    NPC_1HM       ->  1HM_
+    NPC_Magic                      ->  Magic_        NPC_2HM       ->  2HM_
+    NPC_Blocking                   ->  1HM_          NPC_Default   ->  MT_
+
+then pick within the family by the record's compass direction. This is a **convention,
+not a reference**: `NPC_Bleedout_MT` and `NPC_Drunk_MT` carry no family token and cannot
+be resolved this way, which is exactly where §5.1.1's misses land.
+
+### 6.5 Why the table exists
 
 A parametric blender must be indexed by a quantity its children are positioned on.
 The clips sit at irregular speeds — the dog's walk family at 5, 74.5, 104.4, 186.8,
@@ -757,8 +1012,37 @@ the anchors.
 The table converts request into achievable speed. That is the same quantity the
 blender's children are placed on, so the blend parameter is dimensionally correct
 by construction. It also explains the output bound (I9): above the fastest clip
-there is no further child to blend toward, so `SpeedSampled` pins and the curve
+there is no further child to blend toward, so the sampled speed pins and the curve
 saturates.
+
+#### End to end
+
+Authoring time, once per state and direction:
+
+    1  MOVT <dir>Walk / <dir>Run  ->  rung positions of the <dir> blender   (§6.3)
+    2  animator's clips           ->  each rung's travel and duration
+    3  sweep Speed 0 .. top(s) at 0.5, record the delivered speed, keep the
+       breakpoints                                                          (§5.3)
+
+Runtime, once per frame:
+
+    4  game code resolves the desired local velocity into a heading and a magnitude,
+       writes Direction (0 fwd, .25 right, .5 back, .75 left) and Speed (MOVT units)
+    5  game code writes iState for the current stance                       (§4.1)
+    6  BSSpeedSamplerModifier::Update reads +0x50/+0x54/+0x58 and calls
+       Query(state, direction, goalSpeed)                                   (§1.2)
+    7  the DB picks entry by key, record by direction, brackets goalSpeed between two
+       stored x and interpolates y linearly
+    8  y lands in SpeedSampled / SampledSpeed / HorseSpeedSampled           (§6.1)
+    9  that scalar is the blendParameter of all eight cardinal blenders; the graph has
+       one of them active for the heading                                   (§6.2)
+    10 the blend mixes the two bracketing gait clips, and because it is time-
+       synchronised the actor travels at exactly the y that was looked up    (§5.1.1)
+
+Step 10 closes the loop, and it is why the quantity in step 7 must be the *delivered*
+speed rather than the requested one. With no database, step 6 is skipped and
+`speedOut = goalSpeed` (§1.2): the blend is then indexed by the request, the gait mix is
+wrong wherever request and delivery differ, and the actor's feet slide.
 
 ## 7. Known corruption
 
@@ -782,20 +1066,31 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 8. Open
 
-Format and semantics are settled. Three generator inputs are not: see §5.4. A table
-can be read, rewritten and validated from the shipped files, and its keys and its y
-range can be derived from them (§4.1, §4.4); the interior of each curve still cannot,
-because it is the output of a graph evaluation.
+Format and semantics are settled, and so is the curve: `y` at any `x` follows from the
+blend ladder and the animation cache in closed form (§5.1.1). A functionally correct
+table can now be generated. What is still missing:
 
-Two measured facts are unexplained rather than merely unimplemented:
+- **`top(s)`**, the sweep bound. Authored, not derived; 325 covers 74 of 86; the twelve
+  exceptions were set by hand and inconsistently (§5.4). Carry it as an input.
+- **The retention rule.** Needed only to match the shipped file byte for byte; a
+  generator can emit the whole grid instead (§5.3). Now a tractable experiment, because
+  the dense curve can be produced to score candidates against.
+- **Blender identification for two player states.** `NPC_Bleedout_MT` and
+  `NPC_Drunk_MT` carry no family token, so §6.5's name join cannot place them.
+- **The 15 intermediate directions**, which mix two adjacent compass blenders, and
+  **quadruped side and back records**, which have no compass family at all. Both are
+  unmeasured; §5.1.1 is verified on the four cardinals only.
 
-- `max y` falls 4-11% below the blend ladder's linear interpolation on 4 of the 13
-  measurable entries. Synchronised blending does not account for it: all 13 blenders
-  carry identical flags (`SYNC | PARAMETRIC_CYCLIC`, no sync master). The untested
-  candidate is that each rung is itself a sub-blend of straight and turning variants.
-- `DeerProject` key 21 has `min y` 391.50 against a slowest child of 416.67, sitting
-  below the bottom rung rather than clamping to it. It is also the entry with the
-  largest authored `min x` (400).
+One measured fact remains unexplained rather than merely unimplemented:
+`DeerProject` key 21 has `min y` 391.50 against a slowest child of 416.67, sitting below
+the bottom rung rather than clamping to it. It is also the entry with the largest
+authored `min x` (400).
+
+Two earlier open items are closed. The `max y` shortfall of 4-11% on deer 20, skeever,
+mammoth and sabrecat was the hyperbola lying below its chord — the ratio form predicts
+all four to within 0.33% — and the note that "synchronised blending does not account for
+it, all 13 blenders carry identical flags" had the inference backwards: identical flags
+mean sync applies everywhere, which is the mechanism, not a reason to discount it.
 
 ## 9. Method note
 
