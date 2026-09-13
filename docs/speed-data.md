@@ -27,11 +27,29 @@ Two things worth taking from that list. The engine knows a **split form** under
 `MESHES/SPEEDDATA/`, the same arrangement as `animationdata/` and
 `animationsetdata/` — and unlike those two, no split file ships: searching every
 BSA for `.spd` or any path containing `speed` returns the merged file and nothing
-else. And the data is only consulted when `bUseSpeedSampler=1`, which is not the
-shipped default, so **every byte of this file is dormant in vanilla**.
+else.
+
+And the setting is **on by default**, so this data is live. That is worth stating
+carefully, because it is easy to assume the opposite of a file nothing reads. No
+INI shipped with the game mentions `bUseSpeedSampler` — none of `Skyrim_Default.ini`,
+`Low/Medium/High/Ultra.ini` even has an `[Animation]` section — so the value is the
+one compiled into the executable, and that is **1**.
+
+Read out of `SkyrimSE.exe` rather than assumed. Each INI setting is a 32-byte
+record `{vtable, value, name, pad}`, so the default sits eight bytes before the
+pointer to the name string. The offset is not a guess either: all 21 `b*:Animation`
+settings share one vtable, and their values split the way defaults should — the
+debug and dead-platform ones are 0 (`bDrawAnimPoseInVDB`, `bDisplayMarkWarning`,
+`bUseSPUGenerate`, `bEnableHavokHit`, `bAlwaysDriveRagdoll`) and the working ones
+are 1 (`bFootIK`, `bAnimInterpEnable`, `bHumanoidFootIKEnable`,
+`bMultiThreadBoneUpdate`). `bUseSpeedSampler` is among the 1s.
+
+This is static analysis, not a runtime observation: the sampler also needs a
+`BSSpeedSamplerModifier` wired into the graph and enabled, which 42 of the game's
+graphs have.
 
 The consumer is a behaviour node. `BSSpeedSamplerModifier` appears in 42 of the
-game's compiled behaviour graphs (30 distinct graph names, several shared between
+game's compiled behaviour graphs (30 distinct names, several shared between
 actors), and the authoring form — `bcbehavior.hkb`, the one text
 copy that shipped by accident — gives its parameters outright:
 
@@ -199,15 +217,20 @@ thresholds are among the points the table keeps. What generates the others is op
 | -2147483648 | `0x80000000` | 0 |
 | 1651406194 | `0x626F6172` — ASCII `boar` | 0 |
 
-Both carry `nRecords = 0`, which is why the file still parses: they cost eight
-bytes and describe nothing. A key holding the letters of `boar` is an exporter
-writing a string where an integer belongs, and the game never noticed because
-`bUseSpeedSampler` is off. **A reader must tolerate an entry with no records**, and
-a writer should not reproduce these.
+Both carry `nRecords = 0`, which is why the file still parses and why the game
+never notices: they cost eight bytes, describe nothing, and no lookup will ever
+ask for a state numbered `0x80000000`. A key holding the letters of `boar` is an
+exporter writing a string where an integer belongs. **A reader must tolerate an
+entry with no records**, and a writer should not reproduce these.
 
 ## Why it matters
 
 A mod that adds a creature, changes a race's movement speeds, or renumbers a
-shared behaviour graph's species keys has a fourth cache file to keep consistent,
-and nothing currently reads or writes it. It is dormant in vanilla, which makes it
-cheap to get wrong and invisible until someone sets `bUseSpeedSampler=1`.
+shared behaviour graph's species keys has a third cache file to keep consistent,
+and nothing currently reads or writes it.
+
+Since the setting is on by default, a project whose speed data is missing or stale
+is asking the sampler questions the table cannot answer — for every creature whose
+graph carries the modifier. That is the opposite of the conclusion this document
+first reached, and the reason it was worth reading the default out of the binary
+instead of inferring it from a file nobody parses.

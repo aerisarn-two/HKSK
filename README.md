@@ -262,8 +262,9 @@ dirlist, 49 projects, and read by nothing: HKSK does not parse it yet.
 
 **`docs/speed-data.md`** is the format, decoded and verified by writing it back
 byte-identically, along with what the engine and the RACE records say it means: a
-`(state, direction, goal speed) → speed` table for `BSSpeedSamplerModifier`, live
-only when `bUseSpeedSampler=1` and therefore dormant in the shipped game.
+`(state, direction, goal speed) → speed` table for `BSSpeedSamplerModifier`, gated
+on `bUseSpeedSampler` — which the executable defaults to **1**, so the data is
+live and not, as it first appeared, dormant.
 
 ## Paired animations
 
