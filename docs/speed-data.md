@@ -437,7 +437,9 @@ The query signature (§1.2) passes `(i32 state, f32 direction, f32 goalSpeed)` a
 returns one float. The first two select entry and record, so `goalSpeed` indexes
 within a record and the return is the paired `y`.
 
-Units are those of RACE `MOVT` / `SpeedOverrides` (game units/s).
+Units are game units/s, the same axis as RACE `MOVT`. x is the **position** axis of the
+consuming blender, and it is on the `MOVT` scale because the rung positions are `MOVT`
+values: §6.3.
 
 ### 4.4 y — speed out
 
@@ -487,18 +489,14 @@ the ratio form of §5.1.1 predicts all four to within 0.33%. Use §5.1.1, not a 
 
 #### y follows the clip, not the weight
 
-Where the authored weight and the animation disagree (§6.3), the table records the
-animation:
+`y` is the **content** axis: what the clips deliver, not what the blend rungs claim.
+Where the two disagree the table records the delivery, which is §6.3 and is the reason
+the file exists.
 
-    entry        top weight   top clip's speed   table max y
-    Chicken:0        251.94             403.10        403.10
-    Dog:30           425.00             289.30        288.73
-
-The chicken's blend claims its fastest gait runs at 251.94 and the clip travels at
-403.10; asking for 324.5 delivers 403.10. **That is why `max y` can exceed `max x`**
-— on 24 of the 86 populated entries it exceeds every `MOVT` translation speed in its
-own row (§11) — and it is the reason the file has to exist: the engine knows the
-request, the blend knows the claim, and only this table knows the delivery.
+One consequence is local to `y` and worth stating here: **`max y` may exceed `max x`.**
+On 24 of the 86 populated entries it exceeds every `MOVT` translation speed in its own
+row (§11). The chicken's top rung claims 251.94 while its `runforward` delivers 403.10,
+so asking for 324.5 returns 403.10. A reader must not treat `y <= x` as an invariant.
 
 ## 5. Construction
 
@@ -506,9 +504,10 @@ request, the blend knows the claim, and only this table knows the delivery.
 
 A record is the locomotion response of one `(state, direction)` pair.
 
-    x   requested speed    query key; game units/s; 0.5 grid
-    y   delivered speed    root-motion speed of the animation the graph selects,
-                           times that clip generator's PlaybackSpeed
+    x   position          the blend rung axis; what the game requests; game units/s
+                          on the MOVT scale; 0.5 grid                        (§6.3)
+    y   content           what the clips deliver there: travel / (duration /
+                          PlaybackSpeed), blended                            (§6.3)
 
 The graph selects from a fixed clip set and blends adjacent clips, so the response
 is piecewise: pinned to one clip below the slowest, **hyperbolic** between clips
@@ -759,17 +758,20 @@ y from §5.1.1, and the retention rule only if the output must match byte for by
 
 ### 5.5 Authoring
 
-The table is measured, so it is changed by changing what is measured:
+The table is measured, so it is changed by changing what is measured (§6.3):
 
     input                              controls
-    locomotion clip root motion        the y range: what the actor can deliver
-    ClipGeneratorEntry.PlaybackSpeed   scales each clip's contribution to y
-    RACE MOVT / SpeedOverrides         what the game requests at runtime, in x
+    clip travel and duration           the content axis: what the actor delivers, in y
+    ClipGeneratorEntry.PlaybackSpeed   scales content; the knob that aligns it to MOVT
+    blend rung m_weight                the position axis, in x
+    RACE MOVT                          what the game requests, and what the cardinal
+                                       rung positions are set from
     top(s)                             how far along x the table covers
 
-To make an actor faster: add or replace a faster clip, or raise its generator's
-`PlaybackSpeed`, then regenerate. Editing `y` in the file desynchronises the table
-from the animations it describes and can violate I9.
+To make an actor faster, raise the content: add or replace a faster clip, or raise its
+generator's `PlaybackSpeed` — then move the rung positions to match, or the table will
+simply record the new mismatch. Editing `y` in the file desynchronises it from the
+animations it describes and can violate I9.
 
 ## 6. Consumer
 
@@ -884,87 +886,118 @@ Turn authority grows with gait. The sampler supplies the speed axis and nothing
 else; direction of travel is the table's own `Direction` input, and turning is a
 separate variable the table never sees.
 
-### 6.3 Blend weights
+### 6.3 MOVT, root motion, and PlaybackSpeed
 
-A speed blender is parametric (`flags=17`): each child sits at the blend-parameter
-value where it is fully active, so the weights are speeds in `SpeedSampled` units.
-The intent is `clip root motion x PlaybackSpeed`, exactly as the table's y is
-defined (§4.4):
+Two different quantities meet at every blend rung, and the whole file exists because
+they disagree.
 
-    ForwardWalkBlend_Dog                     clip raw x playback
-      weight   5.000   WalkForward @0.067     74.54 x 0.067 =   4.994
-      weight  74.540   WalkForward @1         74.54 x 1     =  74.540   exact
-      weight 104.356   WalkForward @1.4       74.54 x 1.4   = 104.356   exact
+    POSITION   the child's m_weight -- where on the blend-parameter axis this child
+               is fully active. Authored. For a cardinal blender it is the movement
+               type's own value for that direction.
 
-Measured over every blender in the game, one test per child against the best clip
-under it:
+    CONTENT    what the clip under that child actually delivers:
+                     travel / (duration / PlaybackSpeed)
+               Measured. travel and duration come from the animation cache.
 
-    blender kind   children   exact (<0.01)   within 2%   combined
-    speed                75        27 (36%)    19 (25%)     61.3%
-    turn                 98         0            0           0.0%
+**They are meant to be the same number.** `PlaybackSpeed` is the knob that makes them
+so: one animation is reused at several rates, and each rate is a rung.
 
-The turn result is definitional, not a failure: those weights are angles.
+    GiantProject  CombatForwardBlend_WALK      movement type GiantCombatWalk_MT
+    one clip, combatwalkforward, travel 164.13, natural duration 2.0 s
 
-The 29 speed-family deviations fall into three authored classes, none random:
+      position     from MOVT        pb        content
+          5.00            --    0.0606           4.98
+         82.46   ForwardWalk         1          82.07
+        247.37   ForwardRun          3         246.20
 
-    1  floor constant     the slowest child is pinned at exactly 5.000 while its
-                          clip delivers 0.486 to 3.854 -- skeever, bear, horker,
-                          mammoth, boar, chicken, hare
+Position and content agree to 0.5%. The animator chose `pb` so the clip delivers what
+the movement type promises, then placed the rung at the movement type's number.
 
-    2  playback omitted   weight equals the clip's raw speed while the generator
-                          under it plays at another rate:
-                            ChickenProject Forward_Blend   251.938, played at 1.6
-                            BearProject    ForwardWalkBlend 59.820, played at 1.5
+#### Where they drift, the drift is exactly the playback factor
 
-    3  RACE value used    weight equals the actor's MOVT ForwardRun rather than any
-                          clip product: HareProject 244.444, BoarProject 638.070
+    ChickenProject  Forward_Blend, top rung
+      position  251.94   = Chicken_Default_MT.ForwardRun
+      clip runforward: travel 251.94, natural duration 1.0 s  -> 251.94 at pb 1
+      actual pb 1.6                                           -> content 403.10
+      251.94 x 1.6 = 403.104                                     <- the content
 
-The dog's trot children are internally consistent at 186.758 / 287.320 / 425.000,
-being 0.65 / 1 / 1.5 times 287.32, so 287.32 is the authored trot speed; the
-animation cache records 192.866 for `TrotForward`. Where the two disagree the
-weight is authored and the cache is measured.
+    DogProject  ForwardWalkBlend_Dog, ForwardWalk rung
+      position   74.54   = Dog_Default_MT.ForwardWalk
+      clip walkforward: travel 89.45, natural duration 1.2 s  ->  74.54 at pb 1
+      actual pb 1.4                                           -> content 104.36
+      74.54 x 1.4 = 104.356                                      <- the content
 
-**Consequence.** Blend weights are hand-authored numbers expressing "the speed this
-child delivers", and they are the *nominal* axis: `MOVT`-derived for the cardinals
-(§6.3), usually close to `raw x playback`, and not reliably equal to it. A tool must not
-derive one from the other in either direction. What the weights are **not** is the
-delivered speed — that is `travel/dur` per rung, and it is what §5.1.1 interpolates.
+In both the movement-type value equals what the clip delivers **at `pb = 1`**, and the
+whole discrepancy is the playback rate. The number was taken from the raw animation,
+the clip was later sped up for looks, and nothing went back to update it.
 
-**Where they disagree, the table sides with the cache.** The chicken's top weight is
-251.94 and its clip delivers 403.10; `max y` is 403.10. The dog's top weight is 425
-and its trot delivers 289.30; `max y` is 288.73. So the weight is a claim and the
-table is the measurement, which is what makes the table the correct index for the
-blender rather than a redundant copy of its weights (§4.4, §6.4).
+#### Consequence
 
-#### Rungs are MOVT values
+The blender's rungs are labelled with positions; the clips deliver contents. Feeding the
+requested speed straight into `blendParameter` would index a ladder labelled
+74.54 / 251.94 with a number meaning 104.36 / 403.10, and the gait mix would be wrong
+wherever the two differ.
 
-For the cardinal blenders the rung positions are not free numbers: they are the
-movement type's own per-direction pair. `GiantCombatWalk_MT` against
-`giantbehavior.hkx`, exact to the stored decimals:
+**So x is the position axis and y is the content axis.** Where `pb` was tuned correctly
+the table is nearly the identity and does nothing; where it was not, the table carries
+the exact factor needed to land on the right blend of clips. `MOVT` does not come from
+root motion and root motion does not come from `MOVT`: they are an intended equality
+mediated by `PlaybackSpeed`, and this file records how far the shipped data is from it.
 
-    blender                        weights              MOVT
+Neither side may be derived from the other. Measured over every blender in the game, one
+test per child against the best clip beneath it:
+
+    blender kind   children   position == content   within 2%   combined
+    speed                75             27 (36%)     19 (25%)     61.3%
+    turn                 98              0            0            0.0%
+
+The turn row is definitional — those weights are angles (§6.2). The 29 speed-family
+deviations fall into three authored classes, none random:
+
+    1  floor constant     the slowest rung is pinned at exactly 5.000 while its clip
+                          delivers 0.486 to 3.854 -- skeever, bear, horker, mammoth,
+                          boar, chicken, hare
+
+    2  playback omitted   the case above: position is the clip's natural speed while
+                          the generator plays it at another rate -- chicken 251.938
+                          at 1.6, bear 59.820 at 1.5
+
+    3  MOVT value used    position is the actor's MOVT ForwardRun and matches no clip
+                          product at all -- hare 244.444, boar 638.070
+
+The dog's trot rungs are internally consistent at 186.758 / 287.320 / 425.000, being
+0.65 / 1 / 1.5 times 287.32, so 287.32 is the authored trot speed; the cache records
+192.866 for `TrotForward`. Where the two disagree the position is authored and the
+content is measured, and **the table always records the content** — the chicken's
+`max y` is 403.10 and not 251.94, the dog's is 288.73 and not 425.
+
+#### Which positions come from MOVT
+
+For the four cardinal blenders the positions are the movement type's own per-direction
+pair, exact to the stored decimals:
+
+    blender                        positions            MOVT
     CombatForwardBlend_WALK    [5, 82.46, 247.37]   ForwardWalk 82.46  ForwardRun 247.37
     CombatRightBlend_WALK      [5, 103.86, 311.59]  RightWalk  103.86  RightRun   311.59
     CombatBackBlend_WALK       [5, 63.50, 190.50]   BackWalk    63.50  BackRun    190.50
     CombatLeftBlend_WALK       [5, 93.70, 281.09]   LeftWalk    93.70  LeftRun    281.09
 
-Pattern `[floor, <dir>Walk, <dir>Run]`, with the floor a literal 5.0. The default state
-is the same with `Walk == Run`. The combat-run state drops the floor and extrapolates a
-rung above `Run`: `[<dir>Walk, <dir>Run, k x <dir>Run]` with k of 1.5 forward and 2.0
+Pattern `[floor, <dir>Walk, <dir>Run]` with the floor a literal 5.0. A default state is
+the same with `Walk == Run`. A combat-run state drops the floor and extrapolates one
+rung above `Run`: `[<dir>Walk, <dir>Run, k x <dir>Run]`, k of 1.5 forward and 2.0
 sideways.
 
-**That is how the eight MOVT numbers enter the graph, and it is the only way they do.**
-The blender does not read `MOVT` at runtime; the values were baked in as blend
-positions at authoring time. It is also what puts x on the `MOVT` scale, which is what
-makes `Speed` comparable to a rung at all.
+**This is the only way the eight MOVT numbers enter the graph.** The blender does not
+read `MOVT` at runtime; the values were baked in as positions at authoring time, and
+that is what puts x on the `MOVT` scale and makes `Speed` comparable to a rung at all.
 
-Two limits. The four **diagonal** blenders are not derived from `MOVT` — `ForwardRight`
-and `ForwardLeft` share `[5, 82.07, 328.27]`, `BackRight` and `BackLeft` share
+Two limits. The four **diagonal** blenders are not from `MOVT` — `ForwardRight` and
+`ForwardLeft` share `[5, 82.07, 328.27]`, `BackRight` and `BackLeft` share
 `[5, 63.50, 317.49]`, symmetric pairs with their own numbers, because `MOVT` has only
-four directions. And **intermediate gait rungs are never in `MOVT`**: across twelve
-forward ladders, `ForwardWalk` is the second rung in 12 of 12 and `ForwardRun` the top
-in 7 of 12, but the trot and fast-trot rungs account for 19 of 38 non-floor rungs and
-appear nowhere in the record. `MOVT` alone will not reconstruct a ladder.
+four directions. And **intermediate gait positions are never in `MOVT`**: across twelve
+forward ladders `ForwardWalk` is the second rung in 12 of 12 and `ForwardRun` the top in
+7 of 12, but trot and fast-trot account for 19 of 38 non-floor rungs and appear nowhere
+in the record. `MOVT` alone will not reconstruct a ladder.
 
 ### 6.4 Selecting the blender for a state
 
@@ -1003,17 +1036,16 @@ be resolved this way, which is exactly where §5.1.1's misses land.
 
 ### 6.5 Why the table exists
 
-A parametric blender must be indexed by a quantity its children are positioned on.
-The clips sit at irregular speeds — the dog's walk family at 5, 74.5, 104.4, 186.8,
-287.3, 425 — so interpolating on the raw request would give the wrong gait mix
-wherever the request and the achievable speed diverge, which is everywhere outside
-the anchors.
+§6.3 is the reason: the rungs carry positions, the clips carry contents, and the table is
+the correction between them. Two further consequences follow from it.
 
-The table converts request into achievable speed. That is the same quantity the
-blender's children are placed on, so the blend parameter is dimensionally correct
-by construction. It also explains the output bound (I9): above the fastest clip
-there is no further child to blend toward, so the sampled speed pins and the curve
-saturates.
+**The output bound I9 is structural.** Above the top rung there is no further child to
+blend toward, so the sampled speed pins and the curve saturates — which is why `max y`
+is bounded by what the project's clips can deliver and by nothing in `MOVT`.
+
+**A missing table is not a crash.** With no database the query is skipped and
+`speedOut = goalSpeed` (§1.2), so the blend is indexed by the position axis instead of
+the content axis. The failure mode is a wrong gait mix and sliding feet.
 
 #### End to end
 
