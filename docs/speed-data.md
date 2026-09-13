@@ -92,7 +92,8 @@ and a float goal speed, returning one float — `entry.key`, `record.direction`,
 
 **With no database the call is skipped and `speedOut = goalSpeed`.** That is an
 identity pass-through, not a fallback computation: the table is the only source of
-the mapping, and without it the modifier is inert.
+the mapping, and without it the modifier is inert — the actor blends gaits on the
+speed requested rather than the speed it can reach (§6.4).
 
 ### 1.3 Load path
 
@@ -169,7 +170,7 @@ Measured over the whole file. A reader may assert these; a writer must hold them
 | --- | --- | ---: |
 | I1 | `version == 1` | 49/49 blocks |
 | I2 | `n_entries in {1,2,3,4,6,14}` | 49/49 |
-| I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
+| I3 | `n_records == 19` | 86/88 entries (2 are 0, §7) |
 | I4 | `direction[i]` is the float accumulation of `+0.05f`, in order, complete | 86/86 entries |
 | I5 | the direction sequence ends at 0.90; 0.95 is never present | 86/86 entries |
 | I6 | `x mod 0.5 == 0` | 18302/18302 points |
@@ -348,7 +349,8 @@ Units are those of RACE `MOVT` / `SpeedOverrides` (game units/s).
 ### 4.4 y — speed out
 
 The speed the actor moves at: the root-motion speed of the animation the graph
-selects, times that clip generator's `PlaybackSpeed`. Curve shape is §5.1.
+selects, times that clip generator's `PlaybackSpeed`. Curve shape is §5.1; where
+the value goes is §6.
 
 `y` is bounded by what the project's clips can deliver (I9). The playback factor is
 required for the bound to hold, not a refinement:
@@ -493,7 +495,132 @@ To make an actor faster: add or replace a faster clip, or raise its generator's
 `PlaybackSpeed`, then regenerate. Editing `y` in the file desynchronises the table
 from the animations it describes and can violate I9.
 
-## 6. Known corruption
+## 6. Consumer
+
+### 6.1 Output binding
+
+The modifier's four parameters bind to named graph variables. Read from the
+compiled graphs, not inferred:
+
+    member       variable            
+    state    <-  iState              engine-written (§4.1)
+    direction<-  Direction           
+    goalSpeed<-  Speed               
+    speedOut ->  SpeedSampled        HorseSpeedSampled in horsebehavior.hkx
+
+This is independent confirmation of §4: the record tag is `Direction`, the point x
+is `Speed`, and the point y is what lands in `SpeedSampled`.
+
+No node in the root graph reads `SpeedSampled`. The consumer sits in the referenced
+sub-behaviour `forwardlocomotion.hkx`:
+
+    hkbBlenderGenerator 'ForwardWalkBlend_Dog' . blendParameter  <- SpeedSampled
+    hkbBlenderGenerator 'ForwardRunBlend_Dog'  . blendParameter  <- SpeedSampled
+
+Full path:
+
+    engine --> iState, Direction, Speed
+                  |
+                  v
+           BSSpeedSamplerModifier --query--> speeddatasinglefile.txt
+                  |
+                  v
+              SpeedSampled                  (= the table's y)
+                  |
+                  v
+           hkbBlenderGenerator.blendParameter
+                  |
+                  v
+              gait mix
+
+### 6.2 Two families of blender
+
+A locomotion sub-behaviour holds two kinds of `hkbBlenderGenerator`, distinguished
+by which variable drives them and by the sign pattern of their child weights.
+`forwardlocomotion.hkx` for the deer:
+
+    kind    generator                      blendParameter      child weights
+    SPEED   ForwardLocomotionBlend_Deer    SpeedSampled        5, 169.8, 371.4, 557.1
+    SPEED   RunForwardBlend                SpeedSampled        416.5, 833
+    TURN    WalkSlowBlend_Deer             TurnDeltaDamped     90, 0, -90
+    TURN    WalkBlend_Deer                 TurnDeltaDamped     90, 0, -90
+    TURN    TrotBlend_Deer                 TurnDeltaDamped     135, 0, -135
+    TURN    FastTrotBlend_Deer             TurnDeltaDamped     135, 0, -135
+    TURN    SlowRunBlend_Deer              TurnDeltaDamped     270, 0, -270
+    TURN    RunBlend_Deer                  TurnDeltaDamped     270, 0, -270
+
+**`SpeedSampled` drives only the speed family.** The turn family takes
+`TurnDeltaDamped`, an unrelated variable, and its weights are angles in degrees
+with left/centre/right children. The two are independent axes:
+
+    gait    speed position      turn authority
+    walk         169.8               +/- 90
+    trot         371.4               +/- 135
+    run          833.0               +/- 270
+
+Turn authority grows with gait. The sampler supplies the speed axis and nothing
+else; direction of travel is the table's own `Direction` input, and turning is a
+separate variable the table never sees.
+
+### 6.3 Blend weights
+
+A speed blender is parametric (`flags=17`): each child sits at the blend-parameter
+value where it is fully active, so the weights are speeds in `SpeedSampled` units.
+The intent is `clip root motion x PlaybackSpeed`, exactly as the table's y is
+defined (§4.4):
+
+    ForwardWalkBlend_Dog                     clip raw x playback
+      weight   5.000   WalkForward @0.067     74.54 x 0.067 =   4.994
+      weight  74.540   WalkForward @1         74.54 x 1     =  74.540   exact
+      weight 104.356   WalkForward @1.4       74.54 x 1.4   = 104.356   exact
+
+Measured over every blender in the game, one test per child against the best clip
+under it:
+
+    blender kind   children   exact (<0.01)   within 2%   combined
+    speed                75        27 (36%)    19 (25%)     61.3%
+    turn                 98         0            0           0.0%
+
+The turn result is definitional, not a failure: those weights are angles.
+
+The 29 speed-family deviations fall into three authored classes, none random:
+
+    1  floor constant     the slowest child is pinned at exactly 5.000 while its
+                          clip delivers 0.486 to 3.854 -- skeever, bear, horker,
+                          mammoth, boar, chicken, hare
+
+    2  playback omitted   weight equals the clip's raw speed while the generator
+                          under it plays at another rate:
+                            ChickenProject Forward_Blend   251.938, played at 1.6
+                            BearProject    ForwardWalkBlend 59.820, played at 1.5
+
+    3  RACE value used    weight equals the actor's MOVT ForwardRun rather than any
+                          clip product: HareProject 244.444, BoarProject 638.070
+
+The dog's trot children are internally consistent at 186.758 / 287.320 / 425.000,
+being 0.65 / 1 / 1.5 times 287.32, so 287.32 is the authored trot speed; the
+animation cache records 192.866 for `TrotForward`. Where the two disagree the
+weight is authored and the cache is measured.
+
+**Consequence.** Blend weights are hand-authored numbers expressing "the speed this
+child delivers". They are usually `raw x playback` and are not reliably so. A tool
+must not derive one from the other in either direction.
+
+### 6.4 Why the table exists
+
+A parametric blender must be indexed by a quantity its children are positioned on.
+The clips sit at irregular speeds — the dog's walk family at 5, 74.5, 104.4, 186.8,
+287.3, 425 — so interpolating on the raw request would give the wrong gait mix
+wherever the request and the achievable speed diverge, which is everywhere outside
+the anchors.
+
+The table converts request into achievable speed. That is the same quantity the
+blender's children are placed on, so the blend parameter is dimensionally correct
+by construction. It also explains the output bound (I9): above the fastest clip
+there is no further child to blend toward, so `SpeedSampled` pins and the curve
+saturates.
+
+## 7. Known corruption
 
 `FalmerProjectData` declares 4 entries, 2 malformed. In file order:
 
@@ -513,13 +640,13 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 **A reader MUST tolerate `n_records == 0`.** A writer SHOULD NOT reproduce these.
 
-## 7. Open
+## 8. Open
 
 Format and semantics are settled. Four generator inputs are not: see §5.4. A table
 can be read, rewritten and validated from the shipped files; it cannot be
 synthesised from them.
 
-## 8. Method note
+## 9. Method note
 
 §1.2 and §1.3 required unwrapping the SteamStub Variant 3.1 (x64) wrapper on the
 retail executable, which encrypts `.text`. Unwrapped with Steamless v3.1.0.5, for
@@ -529,7 +656,7 @@ by references to the setting object appearing (6, against 0 while packed).
 The unwrapped binary is not redistributable and is not in this repository. Every
 address quoted is an RVA, re-derivable from a local copy.
 
-## 9. Consequences for tooling
+## 10. Consequences for tooling
 
 The gate defaults ON, so this data is live for every actor whose graph carries the
 modifier. A mod that adds a creature, alters a race's movement speeds, or renumbers
@@ -537,9 +664,9 @@ a shared graph's species keys leaves this file stale, and nothing currently read
 or writes it.
 
 A project absent from the table is not an error and will not be reported as one:
-the modifier passes `goalSpeed` through unchanged (§1.2), so the actor moves at the
-speed requested rather than the speed its animations can deliver. The failure mode
-is foot sliding, not a crash.
+the modifier passes `goalSpeed` through unchanged (§1.2), so the gait blender is
+indexed by the requested speed instead of the achievable one (§6.4). The failure
+mode is a wrong gait mix and foot sliding, not a crash.
 
 A project is matched to the RACE records that use it by the stem of the race's
 `BehaviorGraph` path: `Actors\Deer\DeerProject.hkx` names `DeerProject`. This
