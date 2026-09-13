@@ -254,6 +254,17 @@ Conversion needs `mopper.exe`, because Havok's spline *encoder* is proprietary
 and this is the only credible implementation of it. It is a Win32 binary and runs
 under Wine off Windows.
 
+## The third cache file
+
+The cache is three files, not two. Beside the animation data and the animation set
+data the game ships **`meshes/speeddatasinglefile.txt`** — binary after a text
+dirlist, 49 projects, and read by nothing: HKSK does not parse it yet.
+
+**`docs/speed-data.md`** is the format, decoded and verified by writing it back
+byte-identically, along with what the engine and the RACE records say it means: a
+`(state, direction, goal speed) → speed` table for `BSSpeedSamplerModifier`, live
+only when `bUseSpeedSampler=1` and therefore dormant in the shipped game.
+
 ## Paired animations
 
 Killmoves, mounts and executions drive **two skeletons from one file**: a skeleton
