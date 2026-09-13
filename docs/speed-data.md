@@ -348,8 +348,8 @@ x is expressed in the units RACE `MOVT` records use.
 Two, both to §5.3. Everything else it consumes is in the shipped files or fixed by
 C1-C5.
 
-**V(s), the sweep limit.** Integer, per state; see §5.6 for what it appears to
-mean. The file exposes it only as the ceiling `V - 0.5`:
+**V(s), the sweep limit.** Integer, per state, authored rather than computed
+(§5.6). The file exposes it only as the ceiling `V - 0.5`:
 
     ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
     V        190    325    415    425    450    750    833    1000
@@ -383,50 +383,87 @@ generator's `PlaybackSpeed`, then regenerate. Editing `y` in the file alone
 desynchronises the table from the animations it describes, and the result violates
 I8.
 
-### 5.6 V: hypothesis
+### 5.6 V is authored, not computed
 
-Not established. The following is consistent with every non-default value in the
-shipped file and is stated so it can be refuted.
+**V cannot be derived from root motion, MOVT records and playback speed.** This
+was tested exhaustively; the result is negative and is recorded so it is not
+re-attempted.
 
-**V is the top speed the state must serve, set per state, defaulting to 325.**
+**Search 1 — does V appear in the movement data at all?** Pool: every field of all
+107 `MOVT` records plus every race `SpeedOverrides` field, 209 distinct values.
 
-Supporting observations. Per entry, `sat` is the lowest x at which the curve
+    V      nearest value in the pool     gap
+    190                      190.500    0.500
+    325                      325.380    0.380
+    415                      415.000    0.000   exact
+    425                      415.000   10.000
+    450                      450.000    0.000   exact
+    750                      725.000   25.000
+    833                      833.000    0.000   exact
+    1000                     833.000  167.000
+
+Five of the eight values occur nowhere in the game's movement data. Of the three
+exact hits, two belong to the actor that uses them — `GiantCombatRun_MT`
+`ForwardRun` = 415 for `GiantProject`, `Deer_Default_MT` `ForwardRun` = 833 for
+`DeerProject`. The third does not: 450 is `Horse_Default_MT` `ForwardRun`, while
+the entry using V = 450 is the deer, whose own MOVT records contain only
+833, 169.8, 123.8, 90 and 180. That one is coincidence, which is the measure of how
+much weight the other two carry.
+
+**Search 2 — does V equal `floor` of a clip speed in the same project?** Over the
+game's 1,183 distinct clip speeds the values look promising (190.031, 325.383,
+450.237, 833.333), but restricted to the project that actually uses each V:
+
+    floor(raw clip speed)          matches  3 / 86 entries
+    floor(clip speed x playback)   matches  4 / 86 entries
+    default V = 325                matches  1 / 74 entries
+
+The global near-misses are coincidence in a large pool.
+
+**Search 3 — formula fitting.** Best of nine candidates over the 12 non-default
+entries, matching within 0.5:
+
+    max raw clip speed              2 / 12
+    ceil(max y / 5) * 5             2 / 12
+    max effective clip speed        1 / 12
+    max MOVT ForwardRun             0 / 12
+    max of any MOVT field           0 / 12
+    max y of the entry              0 / 12
+
+Two counterexamples defeat any clip- or MOVT-derived rule on their own:
+`DogProject` and `WolfProject` share V = 425 while their `ForwardRun` values are
+500.14 and 555.56 and their clip sets differ; and `DefaultMale` uses V = 325, 750
+and 1000 across its 14 states from one clip set.
+
+**What V appears to be.** Per entry, `sat` is the lowest x at which the curve
 reaches its maximum:
 
-    project          key     V   sat at x   V/sat   tail beyond sat
-    DeerProject       21   833      832.5    1.00   none
-    DeerProject       20   450      449.5    1.00   none
-    GiantProject       2   415      414.5    1.00   none
-    GiantProject       1   190      189.5    1.00   none
-    DogProject        30   425      424.5    1.00   none
-    WolfProject      100   425      424.5    1.00   none
-    DefaultMale       10   750      749.5    1.00   none
-    DefaultMale        3  1000      157.0    6.37   843 units
-    DefaultMale       16  1000      157.0    6.37   843 units
-    ChickenProject     0   325      252.5    1.29    72 units
-    BearProject        0   325      287.0    1.13    38 units
+    project          key     V   sat at x   tail beyond sat
+    DeerProject       21   833      832.5   none
+    DeerProject       20   450      449.5   none
+    GiantProject       2   415      414.5   none
+    GiantProject       1   190      189.5   none
+    DogProject        30   425      424.5   none
+    WolfProject      100   425      424.5   none
+    DefaultMale       10   750      749.5   none
+    DefaultMale        3  1000      157.0   843 units
+    DefaultMale       16  1000      157.0   843 units
+    ChickenProject     0   325      252.5    72 units
+    BearProject        0   325      287.0    38 units
 
-Seven of the eleven are **still rising at the final sample**: the response reaches
-its maximum exactly at `V - 0.5` and the sweep stops there. A limit discovered by
-sampling would sit above saturation, as it does on the default-V entries. A limit
-that lands precisely where the curve is still climbing was supplied, not found.
+Seven of eleven are still rising at the final sample: the response peaks exactly
+at `V - 0.5` and the sweep stops. A limit found by sampling would sit above
+saturation, as it does on the default-V entries. These were supplied.
 
-Two values have an exact counterpart in the game data:
+V is therefore the sampler's per-state sweep limit: an authored number, default
+325, raised by hand where an actor needed more range. It is an input to the
+generator, not a property of the animations.
 
-    GiantProject V = 415   == its fastest clip's raw root-motion speed, 415.00
-    DeerProject  V = 833   == its race's ForwardRun, 833.0
-
-The remaining five (190, 425, 450, 750, 1000) have no counterpart, and 325 is a
-round default rather than a measurement.
-
-**Consequence if true.** V must cover the fastest speed the state will be asked
-for. Above `V - 0.5` the lookup has no knot and returns the last value, so an
-actor requested beyond its table's range moves at whatever the table's final point
-says. 23 entries keep V = 325 while their race permits more (bear 638, chaurus
-flyer 725, dragon 7400), so that clamp is reached in the shipped game.
-
-**How to refute.** Find the sampler's configuration, or an actor whose top
-requested speed exceeds its V and whose locomotion is nonetheless correct above it.
+**What a tool should do.** Default to 325. Accept an override per state. Validate
+that V covers the request range, because above `V - 0.5` the lookup has no knot
+and returns the final value — 23 entries keep V = 325 while their race permits
+more (bear 638, chaurus flyer 725, dragon 7400), so that clamp is live in the
+shipped game.
 
 ## 6. Known corruption
 
@@ -451,7 +488,7 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 ## 7. Open
 
 The format is fully specified. Missing are two of the generator's inputs (§5.4):
-the per-state sweep limit V, for which §5.6 offers a hypothesis and no proof, and
+the per-state sweep limit V, which §5.6 shows is authored and not derivable, and
 a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
 files, so a table can be validated from them but not synthesised.
 
