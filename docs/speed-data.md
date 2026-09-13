@@ -348,8 +348,8 @@ x is expressed in the units RACE `MOVT` records use.
 Two, both to §5.3. Everything else it consumes is in the shipped files or fixed by
 C1-C5.
 
-**V(s), the sweep limit.** Integer, per state. The file exposes it only as the
-ceiling `V - 0.5`:
+**V(s), the sweep limit.** Integer, per state; see §5.6 for what it appears to
+mean. The file exposes it only as the ceiling `V - 0.5`:
 
     ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
     V        190    325    415    425    450    750    833    1000
@@ -365,6 +365,68 @@ retention in §5.2.
 
 Without these, a table may be **validated** but not **synthesised**. Validation
 checks C1-C5 and the `V - 0.5` ceiling form against the shipped files alone.
+
+### 5.5 Authoring view
+
+The numbers are not authored. Four inputs determine them, and an animator changes
+the table by changing one of these and regenerating:
+
+    input                              controls
+    ---------------------------------  ------------------------------------------
+    locomotion clip root motion        the y range: what the actor can deliver
+    ClipGeneratorEntry.PlaybackSpeed   scales each clip's contribution to y
+    RACE MOVT / SpeedOverrides         what the game requests at runtime, in x
+    V(s)                               how far along x the table covers
+
+To make an actor move faster, add or replace a faster clip, or raise its
+generator's `PlaybackSpeed`, then regenerate. Editing `y` in the file alone
+desynchronises the table from the animations it describes, and the result violates
+I8.
+
+### 5.6 V: hypothesis
+
+Not established. The following is consistent with every non-default value in the
+shipped file and is stated so it can be refuted.
+
+**V is the top speed the state must serve, set per state, defaulting to 325.**
+
+Supporting observations. Per entry, `sat` is the lowest x at which the curve
+reaches its maximum:
+
+    project          key     V   sat at x   V/sat   tail beyond sat
+    DeerProject       21   833      832.5    1.00   none
+    DeerProject       20   450      449.5    1.00   none
+    GiantProject       2   415      414.5    1.00   none
+    GiantProject       1   190      189.5    1.00   none
+    DogProject        30   425      424.5    1.00   none
+    WolfProject      100   425      424.5    1.00   none
+    DefaultMale       10   750      749.5    1.00   none
+    DefaultMale        3  1000      157.0    6.37   843 units
+    DefaultMale       16  1000      157.0    6.37   843 units
+    ChickenProject     0   325      252.5    1.29    72 units
+    BearProject        0   325      287.0    1.13    38 units
+
+Seven of the eleven are **still rising at the final sample**: the response reaches
+its maximum exactly at `V - 0.5` and the sweep stops there. A limit discovered by
+sampling would sit above saturation, as it does on the default-V entries. A limit
+that lands precisely where the curve is still climbing was supplied, not found.
+
+Two values have an exact counterpart in the game data:
+
+    GiantProject V = 415   == its fastest clip's raw root-motion speed, 415.00
+    DeerProject  V = 833   == its race's ForwardRun, 833.0
+
+The remaining five (190, 425, 450, 750, 1000) have no counterpart, and 325 is a
+round default rather than a measurement.
+
+**Consequence if true.** V must cover the fastest speed the state will be asked
+for. Above `V - 0.5` the lookup has no knot and returns the last value, so an
+actor requested beyond its table's range moves at whatever the table's final point
+says. 23 entries keep V = 325 while their race permits more (bear 638, chaurus
+flyer 725, dragon 7400), so that clamp is reached in the shipped game.
+
+**How to refute.** Find the sampler's configuration, or an actor whose top
+requested speed exceeds its V and whose locomotion is nonetheless correct above it.
 
 ## 6. Known corruption
 
@@ -388,10 +450,10 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 7. Open
 
-The format is fully specified; what is missing is two of the generator's inputs,
-set out in §5.4: the per-state sweep limit V, and a behaviour graph evaluator to
-sample. Neither is recoverable from the shipped files, so a table can be validated
-from them but not synthesised.
+The format is fully specified. Missing are two of the generator's inputs (§5.4):
+the per-state sweep limit V, for which §5.6 offers a hypothesis and no proof, and
+a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
+files, so a table can be validated from them but not synthesised.
 
 ## 8. Method note
 
