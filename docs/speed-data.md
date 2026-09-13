@@ -429,6 +429,25 @@ records and race overrides. The dog and the wolf share V = 425 while their
 `ForwardRun` values differ (500.14 against 555.56), so no single multiplier can
 produce it from both.
 
+The factor is not stored in the records either. Every numeric field of all 107
+`MOVT` records and all 161 `RACE` records carrying a behaviour graph — 18 fields
+per MOVT, walked to depth 3, including `AnimationChangeThresholds` — was searched
+for each needed multiplier, for V itself, and for any value that multiplied by
+`ForwardRun` gives V. One hit, in a single case:
+
+    GiantProject V = 190      GiantCombatWalk_MT.BackRun = 190.5, floor -> 190
+
+That is one coincidence in four, from a field that is neither the maximum of its
+record (`RightRun` = 311.59 is) nor consistent with the deer, whose `BackRun` is
+123.8 against V = 450.
+
+`AnimationChangeThresholds` is set on only six records — `Wolf_Run_MT`,
+`Wolf_Default_MT`, `NPC_Horse_MT`, `ScribDefault_MT`, `Horse_Swim_MT`,
+`Horse_Sprint_MT` — and is `FLT_MAX` on the other 101. Its `Directional` value is
+π/4 throughout and its `MovementSpeed` is 100: animation-switching thresholds, not
+a speed factor. The wolf's 0.7854 against the 0.7650 it would need is close enough
+to invite the mistake and is not it (555.56 x 0.7854 = 436.3, not 425).
+
 #### What does not work
 
 Recorded so it is not retried. Over the 12 non-default entries, matching within
