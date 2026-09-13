@@ -167,7 +167,7 @@ Measured over the whole file. A reader may assert these; a writer must hold them
 | # | Invariant | Observed |
 | --- | --- | ---: |
 | I1 | `version == 1` | 49/49 blocks |
-| I2 | `n_entries in {1,2,3,4,6,14}` | 49/49 |
+| I2 | `n_entries in {1,2,3,4,6,14}` — one per sampled locomotion state (§4.1) | 49/49 |
 | I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
 | I4 | `direction[i]` == float accumulation of `+0.05f` (§5.1), in order, complete | 86/86 entries |
 | I5 | `x mod 0.5 == 0` | 18302/18302 points |
@@ -187,10 +187,68 @@ Entries within one project may disagree: DefaultMale and DefaultFemale
 
 ## 4. Field semantics
 
-### 4.1 key — state id
+### 4.1 key — locomotion state id
 
-`m_state` reads `iState`. The player has 14 entries, keys 0-10 and 15-17, forming
-a speed ladder:
+`m_state` reads the graph variable `iState`. The key is not opaque: it decomposes
+into a species slot and a locomotion state index, and both halves are readable off
+the behaviour graph.
+
+#### Species slot
+
+Eleven actors share one locomotion graph, `quadrupedbehavior.hkx`. Each is given a
+slot of ten, and the slots are the species in **alphabetical order**:
+
+    #   species     key      #   species     key
+    0   Bear          0      6   Horse        60
+    1   Cow          10      7   Mammoth      70
+    2   Deer         20      8   SabreCat     80
+    3   Dog          30      9   Skeever      90
+    4   Goat         40     10   Wolf        100
+    5   Horker       50
+
+`key = 10 x alphabetical index`, exact for all eleven. A shared graph needs a way
+to ask for its own species' table, and this is it. The horse is in the numbering
+though its graph is `horsebehavior.hkx` rather than the shared one.
+
+**`BoarProject` is the exception and shows the scheme is static.** The boar
+(Dragonborn) shares `quadrupedbehavior.hkx` and would take slot 10 if inserted
+alphabetically, displacing Cow through Wolf. It has key 0 instead, colliding with
+the bear. The slots were fixed before the DLC and the late species was not fitted
+in.
+
+Every actor that does not share a locomotion graph uses base 0.
+
+#### Locomotion state index
+
+Within a species slot, the offset is the state index in the actor's forward
+locomotion state machine. The deer is the clear case, holding two entries where
+most actors hold one. Its `forwardlocomotion.hkx` carries
+`ForwardLocomotionBehavior` with exactly two states, and their clip sets separate
+the gaits:
+
+    id 0   ForwardState_Deer     WalkForward, TrotForward (+L/R)     -> key 20
+    id 1   RunForwardState       RunForward (+L/R)                   -> key 21
+
+The two tables differ as the gaits do: key 20 tops out at 431.92 and key 21 at
+832.25, which is the deer's run clip at its authored rate.
+
+Sampling is per state and **not every state is sampled**. The canines carry the
+same two-state machine and have one entry each — dog 30, wolf 100, no 31 or 101 —
+so the walk and trot gait has no table of its own and resolves against the run
+table. Reading a state machine's state count does not predict the entry count.
+
+#### Reading a state's clip set
+
+Walking the graph's state machines is also how a state's animations are obtained:
+each `hkbStateMachineStateInfo` carries `m_stateId` and a generator subtree, and
+the `hkbClipGenerator` leaves under it give `m_animationName` and
+`m_playbackSpeed`. That is the route from a key to the root motion behind it, used
+in §5.6.
+
+#### Other actors
+
+Where the graph is not shared, keys are a plain state list. The player has 14,
+keyed 0-10 and 15-17, and their tables form a speed ladder:
 
     key   max y    ceiling
       5    22.56     324.5
@@ -205,25 +263,6 @@ a speed ladder:
       7   321.10     324.5      /
       1   370.37     324.5
      10   395.94     749.5
-
-Species sharing `quadrupedbehavior.hkx` are keyed in multiples of ten, which is
-how a shared graph selects its own table:
-
-    Bear 0   Cow 10   Deer 20,21   Dog 30   Goat 40   Horker 50
-    Horse 60   Mammoth 70   SabreCat 80   Skeever 90   Wolf 100
-
-The deer's second key is its second locomotion state. Its
-`forwardlocomotion.hkx` holds a state machine `ForwardLocomotionBehavior` with
-exactly two states, and their clip sets separate the gaits:
-
-    id 0  ForwardState_Deer    WalkForward, TrotForward (+L/R)
-    id 1  RunForwardState      RunForward (+L/R)
-
-So a key is a species base plus a locomotion state index, and an actor gets one
-entry per state the sampler was run for. The canines have the same two-state
-machine and only one entry each, so not every state is sampled.
-
-Walking these machines is also how a state's clip set is obtained, which §5.6 uses.
 
 ### 4.2 direction
 
