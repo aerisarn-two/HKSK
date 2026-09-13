@@ -210,8 +210,8 @@ Entries within one project may differ: `DefaultMale` and `DefaultFemale`
 ### 4.1 key — state id
 
 `m_state` reads the graph variable `iState`. The key is not opaque: it decomposes
-into a species slot and a locomotion state index, and both halves are readable off
-the behaviour graph.
+into a species slot and an offset. The species half is derivable; the offset is
+not.
 
 #### Species slot
 
