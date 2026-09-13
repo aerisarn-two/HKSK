@@ -348,9 +348,8 @@ x is expressed in the units RACE `MOVT` records use.
 Two, both to §5.3. Everything else it consumes is in the shipped files or fixed by
 C1-C5.
 
-**V(s), the sweep limit.** Integer, per state. Derivable as the actor's `MOVT`
-`ForwardRun` times 1, 1.5 or 2 for 8 of the 12 non-default entries, unknown for the
-other 4 (§5.6). The file exposes it only as the ceiling `V - 0.5`:
+**V(s), the sweep limit.** Integer, per state. Accounted for in 10 of the 12
+non-default entries, unknown in 2 (§5.6). The file exposes it only as the ceiling `V - 0.5`:
 
     ceiling  189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
     V        190    325    415    425    450    750    833    1000
@@ -448,6 +447,38 @@ record (`RightRun` = 311.59 is) nor consistent with the deer, whose `BackRun` is
 a speed factor. The wolf's 0.7854 against the 0.7650 it would need is close enough
 to invite the mistake and is not it (555.56 x 0.7854 = 436.3, not 425).
 
+#### The behaviour graph accounts for two more
+
+`V` occurs as a raw float literal inside the project's own behaviour files for 4 of
+the 12, against a 6.7% control (random integers in [50, 1050] against the same
+file's float set):
+
+    DogProject    425   actors/canine/behaviors/forwardlocomotion.hkx
+    WolfProject   425   actors/canine/behaviors wolf/forwardlocomotion.hkx
+    DeerProject   833   actors/deer/behaviors/forwardlocomotion.hkx
+    GiantProject  415   actors/giant/behaviors/giantbehavior.hkx
+
+Two of those — the deer's 833 and the giant's 415 — are the same numbers their
+`MOVT` already supplies, so they add nothing. The canine pair does: **425 appears
+in both canine `forwardlocomotion.hkx` files**, which is what a shared V needs,
+and their `ForwardRun` values of 500.14 and 555.56 cannot both produce it.
+
+The two accounts together cover 10 of the 12:
+
+    ForwardRun x {1, 1.5, 2}     8      player x6, deer key 21, giant key 2
+    graph literal, canine        2      dog key 30, wolf key 100
+    unaccounted                  2      deer key 20 = 450, giant key 1 = 190
+
+The literal could not be attributed to a field. It is not a variable initial value
+— those are stored as int32 bit patterns and were checked as such — and no typed
+HKX2 property in the file holds it, so it sits in a structure the reader does not
+model. The graph does carry speed constants elsewhere: `0_master.hkx` initialises
+`SpeedWalk` to 82.4541 and `SpeedRun` to 350.988.
+
+The 325 default is not in the graphs. Tested over all 86 entries the literal match
+falls to 6/86 against a 3.8% control, because the 74 default entries drag it down;
+the signal is in the non-default values only.
+
 #### What does not work
 
 Recorded so it is not retried. Over the 12 non-default entries, matching within
@@ -465,11 +496,15 @@ speeds.
 
 #### Status
 
-V is a per-state generator input with a default of 325. For the states above it
-was set from the actor's sprint or run speed with a round multiplier; for the
-remaining four the source is unknown. A tool should default to 325, accept a
-per-state override, and offer `ForwardRun x {1, 1.5, 2}` as the suggested value
-rather than a computed one.
+V is a per-state generator input with a default of 325. Ten of the twelve
+non-default values are accounted for: eight as the actor's run or sprint speed
+times a round multiplier, two as a literal already present in the behaviour graph.
+Two are not — `DeerProject` key 20 = 450 and `GiantProject` key 1 = 190 — and
+neither appears anywhere in that actor's MOVT records, race records, behaviour
+files or clip speeds.
+
+A tool should default to 325, accept a per-state override, and offer
+`ForwardRun x {1, 1.5, 2}` as a suggestion rather than computing it silently.
 
 Above `V - 0.5` the lookup has no knot and returns the final value. 23 entries keep
 V = 325 while their race permits more (bear 638, chaurus flyer 725, dragon 7400),
@@ -498,8 +533,8 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 ## 7. Open
 
 The format is fully specified. Missing are two of the generator's inputs (§5.4):
-the per-state sweep limit V, which §5.6 derives for 8 of 12 non-default entries and
-leaves open for 4, and a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
+the per-state sweep limit V, which §5.6 accounts for in 10 of 12 non-default entries and
+leaves open in 2, and a behaviour graph evaluator to sample with. Neither is recoverable from the shipped
 files, so a table can be validated from them but not synthesised.
 
 ## 8. Method note
