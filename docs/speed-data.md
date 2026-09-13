@@ -212,6 +212,19 @@ how a shared graph selects its own table:
     Bear 0   Cow 10   Deer 20,21   Dog 30   Goat 40   Horker 50
     Horse 60   Mammoth 70   SabreCat 80   Skeever 90   Wolf 100
 
+The deer's second key is its second locomotion state. Its
+`forwardlocomotion.hkx` holds a state machine `ForwardLocomotionBehavior` with
+exactly two states, and their clip sets separate the gaits:
+
+    id 0  ForwardState_Deer    WalkForward, TrotForward (+L/R)
+    id 1  RunForwardState      RunForward (+L/R)
+
+So a key is a species base plus a locomotion state index, and an actor gets one
+entry per state the sampler was run for. The canines have the same two-state
+machine and only one entry each, so not every state is sampled.
+
+Walking these machines is also how a state's clip set is obtained, which §5.6 uses.
+
 ### 4.2 direction
 
 The graph's `Direction` variable, range [0,1]. A compass: 0.0 ahead, 0.25 and 0.75
@@ -437,6 +450,32 @@ The giant's two sources agree with each other because the `MOVT` field was set t
 what the animation delivers; that says something true about how movement speeds are
 authored, and nothing about how V is chosen. The deer's is a cross-actor collision
 of the kind a 209-value pool produces.
+
+#### Regression on the state's own animations
+
+Walking the behaviour graph's locomotion state machines gives the clip set behind
+each state (§4.1), so V can be regressed on the root motion of the animations that
+state actually plays. Five entries are mappable. The best single predictor is the
+mean raw root-motion speed of the state's clips:
+
+    all five points        V = 253.19 + 0.6954 * meanRaw      R2 = 0.996
+    without DeerProject 21 V = 307.21 + 0.4813 * meanRaw      R2 = 0.263
+
+The first line is not a result. One point carries it:
+
+    entry           meanRaw       V
+    Dog k30          240.94     425
+    Wolf k100        237.53     425
+    Giant k2         261.12     415      <- these four span 33 units of x
+    Deer k20         270.60     450         and 35 of V, R2 = 0.263
+    Deer k21         833.33     833      <- 563 units away, sets the slope
+
+Four points in a tight cluster plus one distant point will show a high R2 whatever
+the cluster does. Leave-one-out on the five gives 0.874 for this predictor and
+negative values for most others, and adding a second predictor reaches R2 = 1.000
+on n = 5 with three parameters. Also, the clip set per state was chosen by name
+prefix by hand, which is a further degree of freedom. No regression here is
+evidence.
 
 #### Status
 
