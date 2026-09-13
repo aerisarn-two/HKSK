@@ -1,6 +1,7 @@
 # speeddatasinglefile.txt — speed sampler database
 
-    Status:    format and semantics CONFIRMED; four generator inputs unknown (§5.4)
+    Status:    format CONFIRMED (byte-exact round trip); semantics CONFIRMED
+               four generator inputs unknown (§5.4)
     Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
@@ -167,23 +168,42 @@ Measured over the whole file. A reader may assert these; a writer must hold them
 | # | Invariant | Observed |
 | --- | --- | ---: |
 | I1 | `version == 1` | 49/49 blocks |
-| I2 | `n_entries in {1,2,3,4,6,14}` — one per sampled locomotion state (§4.1) | 49/49 |
+| I2 | `n_entries` = one per sampled locomotion state (§4.1); in `{1,2,3,4,6,14}` | 49/49 |
 | I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
-| I4 | `direction[i]` == float accumulation of `+0.05f` (§5.1), in order, complete | 86/86 entries |
-| I5 | `x mod 0.5 == 0` | 18302/18302 points |
-| I6 | `x` non-decreasing within a record | 1634/1634 records |
-| I7 | all 19 records of an entry share one exact `max(x)` | 86/86 entries |
-| I8 | `max(y) <= max over clips of (root_speed * PlaybackSpeed)` | 46/46 projects |
+| I4 | `direction[i]` is the float accumulation of `+0.05f`, in order, complete | 86/86 entries |
+| I5 | the direction sequence ends at 0.90; 0.95 is never present | 86/86 entries |
+| I6 | `x mod 0.5 == 0` | 18302/18302 points |
+| I7 | `x` non-decreasing within a record | 1634/1634 records |
+| I8 | all 19 records of an entry share one exact `max(x)` | 86/86 entries |
+| I9 | `max(y) <= max over the project's clips of (root_speed * PlaybackSpeed)` | 46/46 projects |
 
-`y` is **not** monotonic; do not assume it.
+Not invariant, and not to be assumed: `y` is not monotonic; the 19 records of an
+entry do not share a minimum `x` (21 distinct minima across the file, 62 of 86
+entries holding at least two); `y` may exceed `x` (§5.1).
 
-Observed `max(x)` per entry (the ceiling):
+**I4 is exact and a reader must match it exactly.** The stored values are
+bit-identical to accumulation and bit-different from `0.05f * i` and `i / 20.0f`,
+which diverge from i = 7:
 
-    189.5   414.5   424.5   449.5   749.5   832.5   999.5    324.5
-        1       1       2       1       2       1       4       74     entries
+    i    stored        0.05f * i     accumulated
+    7    0.350000024   0.349999994   0.350000024
+    18   0.900000155   0.900000036   0.900000155
 
-Entries within one project may disagree: DefaultMale and DefaultFemale
-{324.5, 749.5, 999.5}, DeerProject {449.5, 832.5}, GiantProject {189.5, 324.5, 414.5}.
+**I5** means directions in [0.95, 1.0) have no record and resolve against the 0.90
+curve.
+
+**I9** requires the playback factor. Against raw root-motion speed alone the bound
+fails on 4 of 46 projects; with each clip's `ClipGeneratorEntry.PlaybackSpeed`
+applied it holds on all 46 and is met exactly by 9.
+
+`max(x)` per entry:
+
+    189.5   324.5   414.5   424.5   449.5   749.5   832.5   999.5
+        1      74       1       2       1       2       1       4     entries
+
+Entries within one project may differ: `DefaultMale` and `DefaultFemale`
+{324.5, 749.5, 999.5}, `DeerProject` {449.5, 832.5}, `GiantProject`
+{189.5, 324.5, 414.5}.
 
 ## 4. Field semantics
 
@@ -286,36 +306,31 @@ Units are those of RACE `MOVT` / `SpeedOverrides` (game units/s).
 
 ### 4.4 y — speed out
 
-The speed the actor ends up moving at: the animation the graph plays in answer to
-that request, at the rate its generator plays it. What that means for the curve's
-shape is §5.
+The speed the actor moves at: the root-motion speed of the animation the graph
+selects, times that clip generator's `PlaybackSpeed`. Curve shape is §5.1.
 
-It never exceeds what the project's clips can deliver (I8), and the clip
-generator's `PlaybackSpeed` is part of that bound rather than a detail — without
-it the bound does not hold:
+`y` is bounded by what the project's clips can deliver (I9). The playback factor is
+required for the bound to hold, not a refinement:
 
-| Bound | Exceeded by | Hit exactly |
-| --- | ---: | ---: |
-| fastest clip root-motion speed | 4/46 | 8 |
-| that **x `ClipGeneratorEntry.PlaybackSpeed`** | **0/46** | **9** |
+    bound                                        exceeded by   hit exactly
+    fastest clip root-motion speed                    4 / 46             8
+    that x ClipGeneratorEntry.PlaybackSpeed           0 / 46             9
 
-## 5. Table contents and regeneration
+## 5. Construction
 
 ### 5.1 Data model
 
-One record holds the locomotion response of one `(state, direction)` pair:
+A record is the locomotion response of one `(state, direction)` pair.
 
-    x   requested speed        query key, game units/s, 0.5 grid
-    y   delivered speed        root-motion speed of the animation the graph
-                               selects, multiplied by its clip generator's
-                               PlaybackSpeed
+    x   requested speed    query key; game units/s; 0.5 grid
+    y   delivered speed    root-motion speed of the animation the graph selects,
+                           times that clip generator's PlaybackSpeed
 
-The graph selects from a fixed set of locomotion clips and blends between
-adjacent ones. The response is therefore piecewise: linear between clips,
-saturated above the fastest, and pinned to a single clip below the slowest. The
-record stores that response as a point list, not the clip set it derives from.
+The graph selects from a fixed clip set and blends adjacent clips, so the response
+is piecewise: pinned to one clip below the slowest, linear between clips, saturated
+above the fastest. The record stores the response, not the clip set behind it.
 
-Worked example. `ChickenProject` has five clips with non-zero root motion:
+`ChickenProject` has five clips with non-zero root motion:
 
     clip                 raw speed   playback   delivered
     Forward_WalkSlow         34.71      0.014         0.486
@@ -324,161 +339,118 @@ Worked example. `ChickenProject` has five clips with non-zero root motion:
     TurnCannedL90Flee       107.00      1.0         107.00
     Forward_Run             251.94      1.6         403.10
 
-Its curve for direction 0.00, in full:
+Its direction-0.00 record in full:
 
     x        0.0   31.5   33.5   34.0   35.0  101.5  152.0  195.5  233.0  252.5  324.5
     y      0.486   3.99   8.79  12.60  34.03 114.70 190.55 270.56 354.20 403.10 403.10
 
-The two extremes are single clips and match to the precision stored: the first
-point is `Forward_WalkSlow` (34.71 x 0.014 = 0.48594) and the last two are
-`Forward_Run` (251.94 x 1.6 = 403.104), the final pair being the saturated region
-required by I8. Interior points are blends and match no clip individually.
+Endpoints are single clips, to stored precision: 34.71 x 0.014 = 0.48594 and
+251.94 x 1.6 = 403.104, the repeated last pair being the saturated region (I9).
+Interior points are blends and match no clip individually.
 
-`y` is unordered with respect to `x`. It exceeds `x` wherever the selected clip is
-played above its authored rate, and exceeds it by a large factor on actors whose
-slowest locomotion clip is fast:
+`y` is unordered with respect to `x`. It exceeds `x` where the selected clip plays
+above its authored rate, and by large factors where the actor's slowest locomotion
+clip is fast:
 
     DragonProject          x   3.0  ->  y 384.00
     Dragon_Priest          x   1.0  ->  y  80.00
     SlaughterfishProject   x   1.0  ->  y 162.06
 
-### 5.2 Point placement
+### 5.2 Series structure
 
-Points are samples of the response, retained at its breakpoints. Two measurements
-establish this:
+**`x` is a consequence of `y`.** Points are retained at response breakpoints, so
+each direction keeps its own positions. Overlap of x positions across an entry's 19
+records:
 
-    interior knots                                    15034
+    Jaccard      entries
+    0.0 - 0.1         53
+    0.1 - 0.4         11
+    0.5 - 0.9         19
+    1.0                3
+
+`RieklingProject` key 0: 400 distinct x positions across 19 records, 1 in common.
+The three at 1.0 are `AtronachStormProject`, `WispProject` and `WitchlightProject`,
+where every y is zero. Only `max(x)` is shared (I8); the minimum is not (§3).
+
+**Retention is by breakpoint, not by grid position.** Two measurements:
+
+    interior points                                   15034
       within 0.5% of the chord between neighbours     20.2%
       median offset from that chord                    5.1%
 
-    step-size coefficient of variation, median over the 1321
-    records holding 5 or more points
-      along y                                         0.654
-      along x                                         1.009
+    step-size coefficient of variation, median over the
+    1321 records holding 5 or more points
+      along y                                        0.654
+      along x                                        1.009
 
-Retention follows the output axis, and no point is redundant. There is no closed
-form: regeneration requires evaluating the graph.
+No point is redundant and spacing follows the output axis. Median 9.8 points per
+record against a sweep of up to 650 positions.
 
 ### 5.3 Generation algorithm
 
-    for each state s:
-        for (d = 0.0f; d < 0.95f; d += 0.05f):          /* 19 iterations */
+    for each sampled state s:
+        for (d = 0.0f; d < 0.95f; d += 0.05f):        /* 19 iterations */
             for (x = 0.0f; x < top(s); x += 0.5f):
                 graph.Direction = d
                 graph.Speed     = x
                 graph.Step()
                 y = graph.locomotion_speed()
-            retain the (x, y) pairs at response breakpoints
+            retain (x, y) at response breakpoints
         emit entry { key = s, records = 19 curves }
 
-`top(s)` is the per-entry upper bound and is not recoverable (§5.4). Note that the
-retained points do **not** reach down to x = 0 uniformly: across the 1,634 records
-the lowest retained x takes 21 distinct values (0.0 on 329 records, 0.5 on 1,070,
-and up to 3.5 on others), and within a single entry the 19 records usually disagree
-on it — 62 of the 86 entries have two distinct minima, some have six or eight.
-Only the top is shared. So the loop bounds above describe the sweep; what lands in
-the file is what survives retention.
+`top(s)`, the retention rule, the evaluator and the set of sampled states are
+inputs, not derivable: §5.4.
 
-Constraints on the output, each verified against every entry in the shipped file:
+Output must satisfy I1-I9 (§3). x is in the units RACE `MOVT` records use.
 
-    C1  Accumulate the direction; do not compute it. Stored values are
-        bit-identical to d += 0.05f (86/86 entries) and bit-different from
-        0.05f * i and i / 20.0f, which diverge from i = 7:
+### 5.4 Missing inputs
 
-            i    stored        0.05f * i     accumulated
-            7    0.350000024   0.349999994   0.350000024
-            18   0.900000155   0.900000036   0.900000155
+§2 and §4 suffice to read and rewrite a table. Producing one needs four inputs, none
+present in the game files.
 
-    C2  The direction loop is half-open: it terminates at 0.90, 0.95 is never
-        sampled, and inputs in [0.95, 1.0) resolve against the 0.90 curve.
+    #  input                        shape              status
+    1  behaviour graph evaluator    code               blocker
+    2  top(s), sweep upper bound    1 float per entry  authored; default 324.5
+    3  point-retention rule         1 algorithm        closed experiment
+    4  set of sampled states        list of state ids  authored
 
-    C3  x lies on the 0.5 grid at every point (18302/18302) and is
-        non-decreasing within a record (1634/1634).
+**1 — Evaluator.** The inner loop is "step the graph, read the resulting locomotion
+speed". The table is that measurement and has no closed form (§5.2). Requires
+driving `hkbBehaviorGraph` far enough to resolve which animation plays at a given
+`(state, direction, speed)` and at what rate.
 
-    C4  All 19 records of an entry share one exact max(x) (86/86). They do not
-        share a minimum (see above).
+**2 — Sweep upper bound.** Exposed only as `max(x)`, distribution in §3. The seven
+non-default values were searched against `MOVT` speeds, race records,
+every numeric field of both, clip root motion, root motion times playback rate,
+clip travel distances, durations, behaviour-graph float literals, and a regression
+on each state's own animations. Every test is enriched on the twelve non-default
+entries and at chance across all 86 — a large candidate pool, not a mechanism.
 
-    C5  max(y) does not exceed max over the project's clips of
-        (root_speed * PlaybackSpeed) (46/46 projects).
+**3 — Retention rule.** Unknown, and the only gap with a checkable answer. Given y
+on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshold,
+error-bounded decimation) are scored against the shipped file by whether they
+reproduce its exact point sets in all 1,634 records.
 
-x is expressed in the units RACE `MOVT` records use.
+**4 — Sampled states.** One entry per sampled locomotion state. Not every state is
+sampled: the canines carry a two-state forward locomotion machine and hold one
+entry each (§4.1). A state count does not give an entry count.
 
-### 5.4 What is missing to author a project from scratch
+With those four, the rest follows: key from §4.1, direction values from I4, grid and
+shared ceiling from I6-I8, output bound from I9.
 
-Everything in §2 and §4 is sufficient to read a table and to rewrite one. Four
-things are needed to produce one, and none is in the game files.
+### 5.5 Authoring
 
-**1. A behaviour graph evaluator.** The inner loop of §5.3 is "step the graph and
-read the resulting locomotion speed". The whole table is that measurement; there is
-no closed form (§5.2). This is the large one — it means driving `hkbBehaviorGraph`
-with its clip generators, blend trees and state machines, at least far enough to
-resolve which animation plays at a given `(state, direction, speed)` and at what
-rate.
-
-**2. The upper bound of the speed sweep, per entry.** The file exposes it only as
-`max(x)`, and the eight values in use are:
-
-    max(x)   189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
-    entries      1     74      1      2      1      2      1      4
-
-324.5 covers 74 of the 86 entries. The other seven values were searched against
-`MOVT` speeds, race records, every numeric field of both, clip root motion, clip
-root motion times playback rate, clip travel distances, durations, behaviour-graph
-float literals, and a regression on the state's own animations. Each test is
-enriched on the twelve hand-set entries and at chance across all 86 — the profile
-of a large candidate pool, not a mechanism. Treat the bound as an authored input
-with a default.
-
-**3. The point-retention rule.** The sweep produces a value at every 0.5 step; the
-file keeps a median of 9.8 points per record. What decides a breakpoint is unknown —
-only that 80% of retained interior points sit more than 0.5% off the chord between
-their neighbours (§5.2), so the rule is not "keep every nth sample".
-
-This is the tractable gap. Given y on the full grid, candidate rules — Douglas-Peucker
-at some tolerance, a curvature threshold, error-bounded decimation — can be scored
-directly against the shipped file by whether they reproduce its exact point sets in
-all 1,634 records. That is a closed experiment; the other three inputs are not.
-
-Note that x cannot be laid down before y. Across an entry's 19 direction records the
-x positions are mostly **not** shared:
-
-    Jaccard of x positions within an entry     entries
-    0.0 - 0.1                                       53
-    0.1 - 0.4                                       11
-    0.5 - 0.9                                       19
-    1.0 (identical)                                  3
-
-`RieklingProject` key 0 holds 400 distinct x positions across its 19 records with
-one in common. The entries at the top of that distribution are the ones whose
-response is simple enough to bend in the same places for every direction —
-`AtronachStormProject`, `WispProject` and `WitchlightProject` are identical across
-all 19 because every y is zero. So the x series is a consequence of the y series,
-per direction, and only the upper bound is shared (C4).
-
-**4. Which states get sampled.** An entry exists per sampled locomotion state, and
-not every state is sampled: the canines carry a two-state forward locomotion
-machine and have one entry each (§4.1). A state count does not give an entry count.
-
-Given those four, everything else follows: the key from §4.1, the direction values
-from C1, the grid and the shared ceiling from C3 and C4, and the output bound from
-I8.
-
-### 5.5 Authoring view
-
-The numbers are not authored. Four inputs determine them, and an animator changes
-the table by changing one of these and regenerating:
+The table is measured, so it is changed by changing what is measured:
 
     input                              controls
-    ---------------------------------  ------------------------------------------
     locomotion clip root motion        the y range: what the actor can deliver
     ClipGeneratorEntry.PlaybackSpeed   scales each clip's contribution to y
     RACE MOVT / SpeedOverrides         what the game requests at runtime, in x
-    the sweep's upper bound            how far along x the table covers
+    top(s)                             how far along x the table covers
 
-To make an actor move faster, add or replace a faster clip, or raise its
-generator's `PlaybackSpeed`, then regenerate. Editing `y` in the file alone
-desynchronises the table from the animations it describes, and the result violates
-I8.
+To make an actor faster: add or replace a faster clip, or raise its generator's
+`PlaybackSpeed`, then regenerate. Editing `y` in the file desynchronises the table
+from the animations it describes and can violate I9.
 
 ## 6. Known corruption
 
@@ -502,11 +474,9 @@ all in the Falmer's own cache. The exporter wrote the start of a string into a
 
 ## 7. Open
 
-The format is fully specified. What is missing is four of the generator's inputs,
-set out in §5.4: a behaviour graph evaluator, the per-entry upper bound of the
-speed sweep, the point-retention rule, and which states get sampled. None is
-recoverable from the shipped files, so a table can be read, rewritten and validated
-from them, but not synthesised.
+Format and semantics are settled. Four generator inputs are not: see §5.4. A table
+can be read, rewritten and validated from the shipped files; it cannot be
+synthesised from them.
 
 ## 8. Method note
 
