@@ -341,7 +341,15 @@ public sealed partial class AnimationExchange
                 if (events.Count > 0) HkxAnimationFile.WriteAnnotations(target, events, target);
             }
 
-            if (options.ImportRootMotion && !motion.IsEmpty)
+            // Whether it moves, not whether it has keys. A Skyrim clip's root
+            // track exists on every animation and sits still on almost all of
+            // them -- the travel is the cache's, not the animation's -- so
+            // "carries keys" is true of the whole set and says nothing. Taking
+            // that as motion writes a movement block for every animation in the
+            // project, each recording a travel of zero: the chicken came back
+            // with forty of them where the game gives it one, a cache that
+            // parses and is not the cache that was read.
+            if (options.ImportRootMotion && motion.HasMovement)
                 project.SetRootMotion(slot, motion.ToCache());
 
             if (options.ClipName is { Length: > 0 } clipName && project.Clip(clipName) is null)
