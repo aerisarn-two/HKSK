@@ -180,7 +180,12 @@ plus the race's own `SpeedOverrides` with forward, back, left, right × walk, ru
 
 The control draws the same number of speeds uniformly from each project's own
 range and measures them against the same knots, so the **5× enrichment** is not
-an artefact of dense knots. The clearest single case is the deer, whose race says
+an artefact of dense knots. A permutation test says the same more strongly: keep
+every project's knots and its number of speeds, but shuffle the *values* between
+projects, and the hit rate falls from 48.8% to **15.2% ± 1.8%** over 300 trials —
+the real pairing is **18.9 standard deviations above the null and no shuffle came
+near it**. The association is to the right project, not to the scale of the
+numbers. The clearest single case is the deer, whose race says
 `ForwardRun = 833.0` and whose curve ends at **832.5** — one half-unit step below.
 The chicken's `ForwardWalk = 34.71` sits between its knots at 34.0 and 35.0, and
 the y value jumps from 12.60 to 34.03 across that pair, which is where a walk
@@ -195,6 +200,34 @@ own root-motion speeds either: the chicken's clips run at 34.71, 74.78, 107.00 a
 So: x is a speed in the same units the RACE records use, and the race's
 thresholds are among the points the table keeps. What generates the others is open.
 
+## x is not a time axis
+
+Worth writing down because the curves invite it: they start near zero, rise, and
+flatten, which is the shape of an acceleration profile. If x were time within a
+clip and y the speed at that moment, the data would look much like this. It is
+not, and five things say so.
+
+- **An entry's 19 direction records share one exact x ceiling.** All 86 non-empty
+  entries, no exceptions. Different directions are different clips of different
+  lengths; a per-clip time axis could not agree to the half unit.
+- **The ceilings do not track clip lengths.** The chicken, hare and bear all stop
+  at 324.5 while their longest clips run 6.67 s, 6.67 s and 3.83 s — 10.8 s each
+  if x were frames at 30.
+- **43 of the 49 projects share exactly 324.5.** Unrelated creatures agreeing on a
+  time limit is implausible; agreeing on a default sweep limit is not.
+- **Race speeds land on the knots at 18.9σ** (above). A speed in game units has
+  no reason to fall on a time axis.
+- **The modifier has no time input.** Its parameters are `(m_state, m_direction,
+  m_goalSpeed) → m_speedOut`. Direction selects the record and state selects the
+  entry, so `m_goalSpeed` is what indexes within a record: three levels of
+  nesting, three inputs, and no slot left for time.
+
+Under the goal-speed reading the same curve shape means "what you get when you
+ask for x", and the plateau is saturation rather than terminal velocity. y is also
+poorly suited to being an acceleration: the player's per-state maxima are 22.56,
+132.89, 307.96, 370.37 and 395.94, which are speed magnitudes matching a
+sneak/walk/run/sprint ladder, and the output variable is named `m_speedOut`.
+
 ## What is still open
 
 - **Which of x and y is the input.** The lookup is goal speed in, speed out, and
@@ -202,7 +235,13 @@ thresholds are among the points the table keeps. What generates the others is op
   answers 395.94 to a 324.5 ceiling, so y exceeds x and "the speed you will get"
   cannot be the whole story. It may be a playback rate, or a speed in a second
   frame of reference.
-- **What sets an entry's ceiling** (324.5 on most, up to 999.5 on the player).
+- **What sets an entry's ceiling** (324.5 on 74 of the 88 entries; also 189.5,
+  414.5, 424.5, 449.5, 749.5, 832.5, 999.5). Not the race: 23 entries keep 324.5
+  while their race allows more, the dragon's 7,400 included. Not the graph's
+  `Speed` variable bound either — those are **stripped from compiled `.hkx`**
+  (`m_wordMinVariableValues` and `m_wordMaxVariableValues` are empty in every
+  graph read), they survive only in the one authoring `.hkb` that shipped, and
+  that file declares 384 where its own curve stops at 324.5.
 - **What generates the knots** between the race thresholds.
 - **Why direction stops at 0.90.**
 
