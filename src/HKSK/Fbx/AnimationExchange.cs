@@ -330,8 +330,13 @@ public sealed partial class AnimationExchange
             // is replaced, so tracks written in the reader's order are played on the
             // bones the template names for those positions: an animation that loads,
             // runs, and moves the wrong legs.
+            //
+            // The count matters as much as the order. A scene may hold more nodes
+            // than the rig has bones -- a creature's whole skeleton.nif does, with
+            // its collision bodies among the bones -- and an animation has as many
+            // tracks as the file being rewritten, not as many as the scene.
             HkFbx.Skeleton rig = Rig(project) ?? skeleton;
-            HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, BindingOf(template));
+            HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, ShapeOf(template));
 
             // The travel belongs to the cache, not to the animation, so it comes
             // off the root bone before the animation is compressed. Always --
@@ -499,19 +504,25 @@ public sealed partial class AnimationExchange
         catch (Exception e) when (e is not OutOfMemoryException) { return null; }
     }
 
-    /// <summary>Which rig bone each of a packfile's tracks drives.</summary>
+    /// <summary>
+    /// How many transform tracks a packfile holds, and which rig bone each drives.
+    /// </summary>
     /// <remarks>
-    /// Empty where the file carries no binding, which is most of them and means
-    /// track i drives bone i.
+    /// The binding is empty on most files, which means track i drives bone i. The
+    /// count is not derivable from that and is the thing that matters: it is how
+    /// many tracks the file being written must end up with, whatever the scene
+    /// happens to hold.
     /// </remarks>
-    private static IReadOnlyList<short> BindingOf(string template)
+    private static (IReadOnlyList<short> Binding, int Tracks) ShapeOf(string template)
     {
         try
         {
-            (_, IReadOnlyList<short> trackToBone, _) = HkxAnimationFile.ReadAnimation(template);
-            return trackToBone;
+            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
+                HkxAnimationFile.ReadAnimation(template);
+
+            return (trackToBone, spline.TransformTrackCount);
         }
-        catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+        catch (Exception e) when (e is not OutOfMemoryException) { return ([], 0); }
     }
 
     /// <summary>
@@ -531,11 +542,12 @@ public sealed partial class AnimationExchange
     /// </remarks>
     private static HkFbx.SampledAnimation InOrderOf(
         HkFbx.SampledAnimation animation, HkFbx.Skeleton read, HkFbx.Skeleton rig,
-        IReadOnlyList<short> binding)
+        (IReadOnlyList<short> Binding, int Tracks) shape)
     {
-        if (rig.Count == 0 || animation.TrackCount == 0) return animation;
-        if (binding.Count > 0 && binding.Count != animation.TrackCount) return animation;
-        if (binding.Count == 0 && rig.Count != animation.TrackCount) return animation;
+        (IReadOnlyList<short> binding, int tracks) = shape;
+
+        if (rig.Count == 0 || animation.TrackCount == 0 || tracks == 0) return animation;
+        if (binding.Count > 0 && binding.Count != tracks) return animation;
 
         var trackOf = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -546,10 +558,10 @@ public sealed partial class AnimationExchange
             if (bone >= 0 && bone < read.Count) trackOf.TryAdd(read.Bones[bone].Name, track);
         }
 
-        var order = new int[animation.TrackCount];
-        bool moved = false;
+        var order = new int[tracks];
+        bool moved = tracks != animation.TrackCount;
 
-        for (int track = 0; track < order.Length; track++)
+        for (int track = 0; track < tracks; track++)
         {
             int bone = binding.Count > 0 ? binding[track] : track;
 
@@ -561,13 +573,18 @@ public sealed partial class AnimationExchange
 
         if (!moved) return animation;
 
-        var transforms = new HkFbx.BoneTransform[animation.Transforms.Length];
+        var transforms = new HkFbx.BoneTransform[animation.FrameCount * tracks];
 
         for (int frame = 0; frame < animation.FrameCount; frame++)
-            for (int track = 0; track < order.Length; track++)
-                transforms[frame * order.Length + track] = animation[frame, order[track]];
+            for (int track = 0; track < tracks; track++)
+                transforms[frame * tracks + track] = animation[frame, order[track]];
 
-        return animation with { Transforms = transforms, TrackToBone = binding };
+        return animation with
+        {
+            TrackCount = tracks,
+            Transforms = transforms,
+            TrackToBone = binding,
+        };
     }
 
     private static HkFbx.SampledAnimation WithoutRootMotion(
