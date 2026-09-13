@@ -1,310 +1,285 @@
-# The third cache file: speeddatasinglefile.txt
+# speeddatasinglefile.txt — speed sampler database
 
-The animation cache is three files, not two. Beside `animationdatasinglefile.txt`
-and `animationsetdatasinglefile.txt` the game ships
-**`meshes/speeddatasinglefile.txt`** — 162,527 bytes, named `.txt`, and **binary
-after the first 1,943 bytes**. HKSK does not read it and nothing else appears to
-either.
+    Status:    format CONFIRMED (byte-exact round trip); semantics part INFERRED
+    Source:    Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
+    Consumer:  BSSpeedSamplerModifier via BSSpeedSamplerDBManager
+    Gate:      bUseSpeedSampler:Animation, compiled default 1 (ON)
+    Reader:    none. HKSK does not implement this file yet.
 
-This is what it holds. The grammar below was verified by reading the whole file
-and writing it back: **the result is byte-identical to the shipped file**, so the
-structure is not a guess that happens to fit the start.
+Third file of the animation cache, after `animationdatasinglefile.txt` and
+`animationsetdatasinglefile.txt`. Named `.txt`; binary after byte 1943.
 
-## Where the engine says it comes in
+Holds, per project, a precomputed table answering
+`(state, direction, goal speed) -> speed`.
 
-Four strings in `SkyrimSE.exe` settle what this is for:
+## 1. Engine interface
 
-```
-bUseSpeedSampler:Animation          the INI setting that turns it on, [Animation]
-Meshes/SpeedDataSingleFile.txt      the merged file, as shipped
-MESHES/SPEEDDATA/                   a split per-project form the game never ships
-BSSpeedSamplerDBManager             a singleton database, behind BSISpeedSamplerDB
-BSSpeedSamplerModifier              the behaviour node that queries it
-goalSpeed
-```
+Strings in `SkyrimSE.exe`:
 
-Two things worth taking from that list. The engine knows a **split form** under
-`MESHES/SPEEDDATA/`, the same arrangement as `animationdata/` and
-`animationsetdata/` — and unlike those two, no split file ships: searching every
-BSA for `.spd` or any path containing `speed` returns the merged file and nothing
-else.
+| String | Meaning |
+| --- | --- |
+| `bUseSpeedSampler:Animation` | INI gate, `[Animation]` section |
+| `Meshes/SpeedDataSingleFile.txt` | merged form, as shipped |
+| `MESHES/SPEEDDATA/` | split per-project form; **not shipped** |
+| `BSSpeedSamplerDBManager` | singleton, `BSTSingletonSDM` w/ static buffer |
+| `BSISpeedSamplerDB` | abstract interface over the above |
+| `BSSpeedSamplerModifier` | hkbModifier subclass, the caller |
+| `goalSpeed` | |
 
-And the setting is **on by default**, so this data is live. That is worth stating
-carefully, because it is easy to assume the opposite of a file nothing reads. No
-INI shipped with the game mentions `bUseSpeedSampler` — none of `Skyrim_Default.ini`,
-`Low/Medium/High/Ultra.ini` even has an `[Animation]` section — so the value is the
-one compiled into the executable, and that is **1**.
+`BSSpeedSamplerModifier` occurs in 42 compiled graphs / 30 distinct graph names.
 
-Read out of `SkyrimSE.exe` rather than assumed. Each INI setting is a 32-byte
-record `{vtable, value, name, pad}`, so the default sits eight bytes before the
-pointer to the name string. The offset is not a guess either: all 21 `b*:Animation`
-settings share one vtable, and their values split the way defaults should — the
-debug and dead-platform ones are 0 (`bDrawAnimPoseInVDB`, `bDisplayMarkWarning`,
-`bUseSPUGenerate`, `bEnableHavokHit`, `bAlwaysDriveRagdoll`) and the working ones
-are 1 (`bFootIK`, `bAnimInterpEnable`, `bHumanoidFootIKEnable`,
-`bMultiThreadBoneUpdate`). `bUseSpeedSampler` is among the 1s.
+Parameters, from `bcbehavior.hkb` (the one authoring file that shipped):
 
-This is static analysis, not a runtime observation: the sampler also needs a
-`BSSpeedSamplerModifier` wired into the graph and enabled, which 42 of the game's
-graphs have.
+    m_enable      bool            = true
+    m_state       hkFloatVariable -> iState
+    m_direction   hkFloatVariable -> Direction      range [0, 1]
+    m_goalSpeed   hkFloatVariable -> Speed          range [0, 384] (this graph)
+    m_speedOut    hkFloatVariable -> out
 
-The consumer is a behaviour node. `BSSpeedSamplerModifier` appears in 42 of the
-game's compiled behaviour graphs (30 distinct names, several shared between
-actors), and the authoring form — `bcbehavior.hkb`, the one text
-copy that shipped by accident — gives its parameters outright:
+Three inputs; the file nests three deep. Variable ranges exist only in `.hkb`:
+`m_wordMinVariableValues` / `m_wordMaxVariableValues` are empty (count 0) in all
+8 compiled graphs inspected, while `m_variableInitialValues` is fully populated.
 
-```
-m_enable     bool
-m_state      float variable  ->  iState
-m_direction  float variable  ->  Direction
-m_goalSpeed  float variable  ->  Speed
-m_speedOut   float variable  ->  (the answer)
-```
+### 1.1 INI default
 
-So the node is a lookup: **(state, direction, goal speed) → speed**. The file is
-that lookup table, and its three levels of nesting are those three inputs.
+No shipped INI names the setting; `Skyrim_Default.ini` and the four quality
+presets have no `[Animation]` section. Value is the compiled default.
 
-## The format
+Each INI setting is a 32-byte record; the value precedes the name pointer:
 
-```
-file    := dirlist, block × count                      blocks are in dirlist order
-dirlist := "<count>\r\n", count × "<Project>Data\<Project>.spd\r\n"
-block   := int32 version, int32 nEntries, entry × nEntries
-entry   := int32 key, int32 nRecords, record × nRecords
-record  := float direction, int32 nPoints, (float x, float y) × nPoints
-```
+    offset  field
+    +0      vtable          0x141775178 for all bool settings
+    +8      value           <- default
+    +16     const char*     name
+    +24     pad             0xEFBEADDE
 
-Everything after the dirlist is little-endian 32-bit words. `version` is 1 in all
-49 blocks.
+`bUseSpeedSampler` value = **1**.
 
-| | |
-| --- | ---: |
-| Projects (dirlist entries, and blocks) | 49 |
-| Entries | 88 |
-| Records | 1,634 |
-| Points | 18,302 |
-| Dirlist / binary split | 1,943 / 160,584 bytes |
+Offset validated over all 21 `b*:Animation` settings sharing that vtable:
+debug/dead-platform read 0 (`bDrawAnimPoseInVDB`, `bDisplayMarkWarning`,
+`bUseSPUGenerate`, `bEnableHavokHit`, `bAlwaysDriveRagdoll`, `bInitiallyLoadAllClips`),
+functional read 1 (`bFootIK`, `bAnimInterpEnable`, `bHumanoidFootIKEnable`,
+`bMultiThreadBoneUpdate`).
 
-Entries per project are 1, 2, 3, 4, 6 or 14. Records per entry are **always 19**,
-except two malformed entries that declare 0 — see the last section.
+## 2. On-disk format
 
-### direction
+Little-endian. Dirlist is CRLF ASCII; everything after it is 32-bit words.
 
-The 19 records of an entry are tagged `0.00, 0.05, 0.10 … 0.90`, always in that
-order, always complete. That this is the graph's `Direction` variable is not a
-guess:
+    file    := dirlist block[count]                  /* blocks in dirlist order */
 
-- the `.hkb` declares `Direction` as a float with **MinValue 0, MaxValue 1**, so
-  the 19 records sample its range at 0.05;
-- and the curves are **mirror-symmetric about 0.5**. Over the 688 pairs
-  (0.10, 0.90), (0.15, 0.85) … (0.45, 0.55) in the file, 127 are bit-identical
-  and 499 more agree within 2% — **91% mirrored**. The player's run state is the
-  clearest case, where the halves are exactly equal:
+    dirlist := "<count>\r\n"
+               count x "<Project>Data\<Project>.spd\r\n"
 
-```
-key=0   direction 0.40 → 272.96      direction 0.60 → 272.96
-        direction 0.45 → 259.44      direction 0.55 → 259.44
-        peaks at 0.25 and 0.75, trough across 0.45–0.55
-```
+    struct block {                                   /* one per project */
+            u32     version;                         /* == 1 */
+            u32     n_entries;
+            entry   entries[n_entries];
+    };
 
-A left-right symmetry about 0.5 with peaks at the quarter points is a compass:
-0.0 ahead, 0.25 and 0.75 the two sides, 0.5 behind. It also explains why the
-sampling stops at 0.90 rather than 0.95 — 0.95 would mirror 0.05.
+    struct entry {                                   /* one per state */
+            u32     key;                             /* state id */
+            u32     n_records;                       /* == 19, or 0 if malformed */
+            record  records[n_records];
+    };
 
-Nothing yet explains why 0.05 is sampled and its mirror 0.95 is not.
+    struct record {                                  /* one per direction */
+            f32     direction;                       /* 0.00 .. 0.90 step 0.05 */
+            u32     n_points;
+            struct { f32 x; f32 y; } points[n_points];
+    };
 
-### key — the state
+Sizes: `sizeof(record) = 8 + 8 * n_points`. No padding, no alignment beyond 4.
 
-`m_state` reads a variable called `iState`, and the keys behave like state
-numbers. The player has **14 entries**, keyed 0–10 and 15–17, and their ceilings
-differ by an order of magnitude, which is what a set of locomotion states looks
-like:
+    dirlist                1943 bytes
+    binary               160584 bytes  (40146 words)
+    total                162527 bytes
 
-| key | max speed reached | reads as |
-| ---: | ---: | --- |
-| 5 | 22.56 | barely moving |
-| 15 | 29.47 | |
-| 2 | 132.89 | walk |
-| 3, 16 | 155.21 | |
-| 0 | 307.96 | run |
-| 4, 6, 7, 8, 9, 17 | ~321 | |
-| 1 | 370.37 | |
-| 10 | 395.94 | fastest |
+    projects (= blocks)      49
+    entries                  88
+    records                1634        /* 86 valid entries x 19 */
+    points                18302
 
-For creatures the keys do something different and more interesting: the ten
-species that **share `quadrupedbehavior.hkx`** get distinct keys in multiples of
-ten — cow 10, deer 20 and 21, dog 30, goat 40, horker 50, horse 60, mammoth 70,
-sabre cat 80, skeever 90, wolf 100 — while the bear, which shares the same graph,
-keeps 0. A shared graph needs a way to ask for its own species' table, and that
-is what the key is.
+Read-then-write reproduces the file **byte for byte**.
 
-### x and y — the curve
+## 3. Invariants
 
-Each record is a monotonic lookup curve. Two properties hold across all 18,302
-points in the file without exception:
+Measured over the whole file. A reader may assert these; a writer must hold them.
 
-- **x is always a multiple of 0.5.** Every point, every record, every project.
-- **x is non-decreasing** within a record.
+| # | Invariant | Observed |
+| --- | --- | ---: |
+| I1 | `version == 1` | 49/49 blocks |
+| I2 | `n_entries in {1,2,3,4,6,14}` | 49/49 |
+| I3 | `n_records == 19` | 86/88 entries (2 are 0, §6) |
+| I4 | `direction[i] == 0.05 * i`, in order, complete | 86/86 entries |
+| I5 | `x mod 0.5 == 0` | 18302/18302 points |
+| I6 | `x` non-decreasing within a record | 1634/1634 records |
+| I7 | all 19 records of an entry share one exact `max(x)` | 86/86 entries |
+| I8 | `max(y) <= max over clips of (root_speed * PlaybackSpeed)` | 46/46 projects |
 
-x therefore reads as a swept input — the table was built by stepping a speed in
-half-unit increments — and y as what came back. y is not constrained: it is an
-ordinary float, it is usually increasing, and it flattens into plateaus where
-asking for more delivers no more. The bear has a long one:
+`y` is **not** monotonic; do not assume it.
 
-```
-x   172.5  173.0  173.5  174.0  174.5  175.0  175.5
-y   108.36 108.36 108.37 108.37 108.38 108.38 108.38
-```
+Observed `max(x)` per entry (the ceiling):
 
-The x ceiling is **per entry, not per project**: 324.5 on 74 of the 88 entries,
-and 189.5, 414.5, 424.5, 449.5, 749.5, 832.5 or 999.5 on the rest. Four projects
-hold entries that disagree with each other — the player (324.5, 749.5, 999.5),
-the deer (449.5, 832.5) and the giant (189.5, 324.5, 414.5). Whatever sets the
-ceiling is a property of the state, not of the creature.
+    189.5   414.5   424.5   449.5   749.5   832.5   999.5    324.5
+        1       1       2       1       2       1       4       74     entries
 
-## Checked against the RACE records
+Entries within one project may disagree: DefaultMale and DefaultFemale
+{324.5, 749.5, 999.5}, DeerProject {449.5, 832.5}, GiantProject {189.5, 324.5, 414.5}.
 
-A race names its behaviour graph, and the graph's file stem is the project name,
-so the join is exact: `Actors\Deer\DeerProject.hkx` → `DeerProject`. **47 of the
-49 projects** are named by at least one race this way.
+## 4. Field semantics
 
-The speeds a race configures — `MOVT` records through `BaseMovementDefault*`,
-plus the race's own `SpeedOverrides` with forward, back, left, right × walk, run
-— land on the curve's knots far more often than chance:
+### 4.1 direction — CONFIRMED
 
-| | knots hit | control |
-| --- | ---: | ---: |
-| All race speeds, within 0.5 | 36.4% | 13.0% |
-| Race speeds at or below the entry's ceiling, within 0.5 | **48.8%** | 9.8% |
-| …within 1.0 | 56.7% | 13.7% |
+The graph's `Direction` variable, range [0,1], sampled at 0.05.
 
-The control draws the same number of speeds uniformly from each project's own
-range and measures them against the same knots, so the **5× enrichment** is not
-an artefact of dense knots. A permutation test says the same more strongly: keep
-every project's knots and its number of speeds, but shuffle the *values* between
-projects, and the hit rate falls from 48.8% to **15.2% ± 1.8%** over 300 trials —
-the real pairing is **18.9 standard deviations above the null and no shuffle came
-near it**. The association is to the right project, not to the scale of the
-numbers. The clearest single case is the deer, whose race says
-`ForwardRun = 833.0` and whose curve ends at **832.5** — one half-unit step below.
-The chicken's `ForwardWalk = 34.71` sits between its knots at 34.0 and 35.0, and
-the y value jumps from 12.60 to 34.03 across that pair, which is where a walk
-blend would hand over.
+Evidence: curves are mirror-symmetric about 0.5. Over the 688 pairs
+(0.10,0.90) (0.15,0.85) ... (0.45,0.55): 127 bit-identical, 499 within 2%,
+62 differ — **91.0% mirrored**. Player run state, exact:
 
-**The converse is false and worth stating.** Only 1–40% of the knots are near any
-race speed, so the race thresholds are a *subset* of the breakpoints rather than
-their source. Something finer determines the rest, and it is not the animations'
-own root-motion speeds either: the chicken's clips run at 34.71, 74.78, 107.00 and
-251.94, and 74.78 and 107.00 are nowhere near a knot.
+    direction 0.40 -> 272.96      direction 0.60 -> 272.96
+    direction 0.45 -> 259.44      direction 0.55 -> 259.44
 
-So: x is a speed in the same units the RACE records use, and the race's
-thresholds are among the points the table keeps. What generates the others is open.
+Peaks at 0.25 / 0.75, trough at 0.45-0.55: a compass with 0.0 ahead, 0.5 behind.
+Consistent with sampling stopping at 0.90 (0.95 would mirror 0.05).
 
-## x is not a time axis
+### 4.2 key — state id, CONFIRMED by behaviour
 
-Worth writing down because the curves invite it: they start near zero, rise, and
-flatten, which is the shape of an acceleration profile. If x were time within a
-clip and y the speed at that moment, the data would look much like this. It is
-not, and five things say so.
+`m_state` reads `iState`. Player: 14 entries, keys 0-10 and 15-17, forming a
+speed ladder:
 
-- **An entry's 19 direction records share one exact x ceiling.** All 86 non-empty
-  entries, no exceptions. Different directions are different clips of different
-  lengths; a per-clip time axis could not agree to the half unit.
-- **The ceilings do not track clip lengths.** The chicken, hare and bear all stop
-  at 324.5 while their longest clips run 6.67 s, 6.67 s and 3.83 s — 10.8 s each
-  if x were frames at 30.
-- **43 of the 49 projects share exactly 324.5.** Unrelated creatures agreeing on a
-  time limit is implausible; agreeing on a default sweep limit is not.
-- **Race speeds land on the knots at 18.9σ** (above). A speed in game units has
-  no reason to fall on a time axis.
-- **The modifier has no time input.** Its parameters are `(m_state, m_direction,
-  m_goalSpeed) → m_speedOut`. Direction selects the record and state selects the
-  entry, so `m_goalSpeed` is what indexes within a record: three levels of
-  nesting, three inputs, and no slot left for time.
+    key   max y    ceiling
+      5    22.56     324.5
+     15    29.47     324.5
+      2   132.89     324.5
+      3   155.21     999.5
+     16   155.21     999.5
+      0   307.96     324.5
+      9   320.84     324.5      \
+      8   320.99     324.5       |  one cluster, not one value
+      4   321.03     324.5       |  (6 and 17 also 321.03)
+      7   321.10     324.5      /
+      1   370.37     324.5
+     10   395.94     749.5
 
-Under the goal-speed reading the same curve shape means "what you get when you
-ask for x", and the plateau is saturation rather than terminal velocity. y is also
-poorly suited to being an acceleration: the player's per-state maxima are 22.56,
-132.89, 307.96, 370.37 and 395.94, which are speed magnitudes matching a
-sneak/walk/run/sprint ladder, and the output variable is named `m_speedOut`.
+Species sharing `quadrupedbehavior.hkx` are keyed in multiples of ten, which is
+how a shared graph selects its own table:
 
-## y is precomputed from the animations
+    Bear 0   Cow 10   Deer 20,21   Dog 30   Goat 40   Horker 50
+    Horse 60   Mammoth 70   SabreCat 80   Skeever 90   Wolf 100
 
-The table holds answers, not inputs. `m_speedOut` is bounded by what the project's
-own clips can actually deliver, and the bound is exact:
+### 4.3 x — goal speed, INFERRED (strong)
 
-| | exceeds the bound | hits it exactly | worst ratio |
+Structural: the modifier takes exactly three inputs. `state` selects the entry,
+`direction` selects the record, so `goalSpeed` is what indexes within one. No
+fourth input exists.
+
+Statistical: race movement speeds fall on x knots far past chance (§5).
+
+Units: same as RACE `MOVT` / `SpeedOverrides` (game units/s).
+
+### 4.4 y — precomputed speed out, CONFIRMED by bound I8
+
+`y` never exceeds what the project's clips can deliver at their authored rate:
+
+| Bound | Exceeded by | Hit exactly | Worst ratio |
 | --- | ---: | ---: | ---: |
-| maxY vs the fastest clip's root-motion speed | 4 of 46 | 8 | 1.600 |
-| maxY vs that **× the clip generator's `PlaybackSpeed`** | **0 of 46** | **9** | **1.000** |
+| fastest clip root-motion speed | 4/46 | 8 | 1.600 |
+| that **x `ClipGeneratorEntry.PlaybackSpeed`** | **0/46** | **9** | **1.000** |
 
-Read the second row carefully, because it is the whole finding. Across the 46
-projects with a non-empty curve, the largest speed the table ever returns **never
-exceeds** the fastest achievable clip speed, and nine projects sit on it to within
-0.2%. The playback factor is what makes that true rather than nearly true: without
-it the chicken and the hare overshoot by exactly **1.600**, and applying their
-clip generators' rate turns both into 1.000.
+The playback factor is required, not cosmetic:
 
-```
-ChickenProject   maxY 403.10   fastest clip 251.94   x playback 403.10   ratio 1.000
-HareProject      maxY 320.62   fastest clip 200.39   x playback 320.62   ratio 1.000
-```
+    ChickenProject   max y 403.10   fastest clip 251.94   x playback 403.10   1.000
+    HareProject      max y 320.62   fastest clip 200.39   x playback 320.62   1.000
 
-A quantity bounded by root motion times playback rate, hit exactly where the
-state's fastest clip is a locomotion clip and short of it elsewhere, is a
-**precomputed sample of the graph's own output**. That is what the file is: not a
-description of the animations, and not a curve the sampler integrates, but the
-answers it would otherwise have to work out.
+A value capped by `root_motion * playback_rate`, equal to it where the state's
+fastest clip is locomotion and below it elsewhere, is a sample of the graph's
+output — i.e. the file stores answers, not source data.
 
-It also names the thing. A "speed sampler" samples the graph to learn what speed
-each request produces; this file is that sampling, done once by a tool and shipped.
-Whether the engine can instead do it at runtime — a computed path selected against
-the database path — is consistent with everything here and with the interface being
-called `BSISpeedSamplerDB` rather than a concrete class, but it is **not
-demonstrated**: the shipped executable is Steam-wrapped, its `.text` is encrypted
-at rest, and the branch cannot be read without unwrapping it.
+## 5. Cross-check against RACE
 
-## What is still open
+Join: a race's `BehaviorGraph` path stem is the project name
+(`Actors\Deer\DeerProject.hkx` -> `DeerProject`). 47/49 projects are named this
+way by at least one race. The two that are not are `DefaultFemale` and
+`FirstPerson`: races point at `Actors\Character\DefaultMale.hkx`, and no RACE
+record names the female or first-person graph in that field.
 
-- **Why y exceeds x.** x is the goal and y the answer, but the player's fastest
-  state answers 395.94 against a 324.5 ceiling, so the table returns more than it
-  was asked for. The bound above says y is a real speed the animations can reach,
-  so this is not a unit error; something scales the request.
-- **What sets an entry's ceiling** (324.5 on 74 of the 88 entries; also 189.5,
-  414.5, 424.5, 449.5, 749.5, 832.5, 999.5). Not the race: 23 entries keep 324.5
-  while their race allows more, the dragon's 7,400 included. Not the graph's
-  `Speed` variable bound either — those are **stripped from compiled `.hkx`**
-  (`m_wordMinVariableValues` and `m_wordMaxVariableValues` are empty in every
-  graph read), they survive only in the one authoring `.hkb` that shipped, and
-  that file declares 384 where its own curve stops at 324.5.
-- **What generates the knots** between the race thresholds.
-- **Why direction stops at 0.90.**
+Speeds taken from `BaseMovementDefault{Walk,Run,Sprint,Sneak,Swim,Fly}` -> `MOVT`
+and from the race's own `MovementTypes[].Overrides` (forward/back/left/right x
+walk/run).
 
-## The file is not clean
+| Test | Hit | Control |
+| --- | ---: | ---: |
+| all race speeds within 0.5 of a knot | 36.4% | 13.0% |
+| speeds <= entry ceiling, within 0.5 | **48.8%** | 9.8% |
+| same, within 1.0 | 56.7% | 13.7% |
 
-`FalmerProjectData` declares four entries and two of them are junk:
+Permutation test (keep each project's knots and its number of speeds, shuffle the
+values between projects, n=300): null 15.2% +/- 1.8%; real 48.8% = **+18.9 sd**,
+0/300 trials reached it. The association is project-specific, not scale-driven.
 
-| key | as hex | records |
-| ---: | --- | ---: |
-| 1 | | 19 |
-| 2 | | 19 |
-| -2147483648 | `0x80000000` | 0 |
-| 1651406194 | `0x626F6172` — ASCII `boar` | 0 |
+Converse is FALSE: only 1-40% of inner knots lie near any race speed. Race
+thresholds are a subset of the breakpoints. Clip root-motion speeds do not explain
+the remainder either (chicken clips at 74.78 and 107.00 are not near a knot).
 
-Both carry `nRecords = 0`, which is why the file still parses and why the game
-never notices: they cost eight bytes, describe nothing, and no lookup will ever
-ask for a state numbered `0x80000000`. A key holding the letters of `boar` is an
-exporter writing a string where an integer belongs. **A reader must tolerate an
-entry with no records**, and a writer should not reproduce these.
+Notable: DeerProject race `ForwardRun = 833.0`, entry ceiling `832.5`.
+But the ceiling is not `min(cap, race_max)`: 23 entries keep 324.5 while their
+race allows more (bear 638, chaurus flyer 725, dragon 7400).
 
-## Why it matters
+## 6. Known corruption
 
-A mod that adds a creature, changes a race's movement speeds, or renumbers a
-shared behaviour graph's species keys has a third cache file to keep consistent,
-and nothing currently reads or writes it.
+`FalmerProjectData` declares 4 entries, 2 malformed:
 
-Since the setting is on by default, a project whose speed data is missing or stale
-is asking the sampler questions the table cannot answer — for every creature whose
-graph carries the modifier. That is the opposite of the conclusion this document
-first reached, and the reason it was worth reading the default out of the binary
-instead of inferring it from a file nobody parses.
+In file order:
+
+    key            hex           bytes (LE)   n_records
+    -2147483648    0x80000000                         0     /* INT_MIN */
+    1              0x00000001                        19
+    2              0x00000002                        19
+    1651406194     0x626E7572    "runb"               0
+
+Both malformed keys carry `n_records == 0`, so they occupy 8 bytes and describe
+nothing; no lookup will request state `0x80000000`.
+
+`0x626E7572` is not a number. Its bytes as stored are the ASCII `runb` — the first
+four characters of a clip name, and `runbackward`, `runbackwardleft` and
+`runbackwardright` are all in the Falmer's own cache. The exporter wrote the head of
+a string into a `u32` key field.
+
+**A reader MUST tolerate `n_records == 0`.** A writer SHOULD NOT reproduce these.
+
+## 7. Rejected: x as a time axis
+
+The curves rise from near zero and flatten, which resembles an acceleration
+profile. It is not one.
+
+| # | Against |
+| --- | --- |
+| R1 | I7: all 19 direction records of an entry share one exact ceiling. Different directions are different clips of different lengths. |
+| R2 | Ceilings do not track clip length. Chicken/hare/bear all stop at 324.5; longest clips 6.67 / 6.67 / 3.83 s (10.8 s each if x were frames @30). |
+| R3 | 43 of 49 unrelated projects share exactly 324.5. |
+| R4 | Race speeds land on knots at +18.9 sd (§5). A speed has no reason to fall on a time axis. |
+| R5 | The modifier has no time input (§4.3). |
+
+y is also unsuited to being an acceleration: per-state maxima are speed magnitudes
+matching a sneak/walk/run/sprint ladder (§4.2), and the output variable is
+`m_speedOut`.
+
+## 8. Open
+
+| # | Question | Ruled out |
+| --- | --- | --- |
+| O1 | What sets an entry's ceiling. | Not race max (23 counterexamples). Not the graph's `Speed` bound — stripped from compiled `.hkx`; the one shipped `.hkb` says 384 where its curve stops at 324.5. |
+| O2 | What generates the knots between race thresholds. | Not clip root-motion speeds. |
+| O3 | Why `y > x` (player answers 395.94 to a 324.5 ceiling). | Not a unit error — I8 shows y is a reachable speed. |
+| O4 | Why direction stops at 0.90. | |
+| O5 | Whether a computed path exists, selected against the DB by the INI gate. | **Not testable statically.** The shipped exe is Steam-wrapped (`.bind` section); `.text` is encrypted at rest — 0 RIP-relative references to the setting object, and disassembling the modifier's vtable slots returns noise. Consistent with `BSISpeedSamplerDB` being an interface, but undemonstrated. |
+
+## 9. Consequences for tooling
+
+The gate defaults ON, so this data is live for every actor whose graph carries the
+modifier. A mod that adds a creature, alters a race's movement speeds, or
+renumbers a shared graph's species keys leaves this file stale, and nothing
+currently reads or writes it.
+
+Implementing §2 is sufficient to read and rewrite the file losslessly; §4 is
+sufficient to interpret it; O1 and O2 are required to *generate* one from scratch.

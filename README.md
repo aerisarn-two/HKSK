@@ -260,11 +260,12 @@ The cache is three files, not two. Beside the animation data and the animation s
 data the game ships **`meshes/speeddatasinglefile.txt`** — binary after a text
 dirlist, 49 projects, and read by nothing: HKSK does not parse it yet.
 
-**`docs/speed-data.md`** is the format, decoded and verified by writing it back
-byte-identically, along with what the engine and the RACE records say it means: a
-`(state, direction, goal speed) → speed` table for `BSSpeedSamplerModifier`, gated
-on `bUseSpeedSampler` — which the executable defaults to **1**, so the data is
-live and not, as it first appeared, dormant.
+**`docs/speed-data.md`** is the specification: the four-level layout, the eight
+invariants a reader may assert, what each field is and how firmly, the cross-check
+against the RACE records, and the open questions with what has been ruled out.
+It is a `(state, direction, goal speed) → speed` table for
+`BSSpeedSamplerModifier`, gated on `bUseSpeedSampler` — which the executable
+defaults to **1**, so the data is live and not, as it first appeared, dormant.
 
 ## Paired animations
 
