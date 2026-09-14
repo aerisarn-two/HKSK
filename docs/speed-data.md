@@ -733,9 +733,10 @@ above it discards live response. The file has one of each:
 So `min(x)` is a claim that the response is flat below it — true for the deer, false
 for the giant.
 
-**The 0.5 grid is quantisation, not resolution.** About 11 of ~650 swept positions
-survive per record and the consumer interpolates between them, so the grid only fixes
-where a breakpoint may land, to within half a unit. The y error that introduces is
+**The 0.5 grid is quantisation, not resolution.** About 11 of the swept positions
+survive per record — some 650 of them at the default bound — and the consumer
+interpolates between them, so the grid only fixes where a breakpoint may land, to
+within half a unit. The y error that introduces is
 bounded by `0.5 x slope`, about 0.43 units at the median slope of 0.86.
 
 Point counts per record in the shipped file, terminal duplicate included:
@@ -748,14 +749,30 @@ median 206, range 38 to 1037.
 
 ## 9. What is still unknown
 
-**`top(s)`, the sweep upper bound.** Authored, not derived. Exposed only as `max(x)`,
-which takes eight values:
+**`top(s)`, the sweep upper bound.** Authored, not derived. It is the exclusive bound
+of the generator's loop, so the file exposes it only as `max(x) = top(s) - 0.5`:
 
-    189.5   324.5   414.5   424.5   449.5   749.5   832.5   999.5
-        1      74       1       2       1       2       1       4    entries
+    top(s)     190    325    415    425    450    750    833   1000
+    max(x)   189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
+    entries      1     74      1      2      1      2      1      4
 
-324.5 is the default on 74 of 86 entries, and it is 650 half-unit steps — a grid
-length, not a speed, applied unchanged to creatures whose speeds span 61.84 to 802.29.
+**`top(s)` is a speed**, in the same game units as everything else on the x axis, and
+two of the eight are demonstrably copied from a movement type: `DeerProject` key 21 is
+833, exactly `Deer_DefaultRun_MT.ForwardRun`, and `GiantProject` key 2 is 415, exactly
+`GiantCombatRun_MT.ForwardRun`.
+
+The deer settles which side is authored. 833 is a speed that exists elsewhere in the
+game data; its loop iteration count, 1666, is not a number anyone would type. So the
+bound is authored as a speed and the count is derived from it. (The other seven counts
+are all divisible by ten, so they would be unremarkable as typed constants — the deer
+is the only entry that discriminates.)
+
+325 is the default on 74 of 86 entries and its origin is unknown. It is a plausible
+place for one: across the 86 resolvable entries it exceeds the `ForwardWalk` of 81 and
+falls below the `ForwardRun` of 52, sitting at the 67th percentile of all walk and run
+values and at 88% of the player's own run. But that is where the number lands, not where
+it came from, and it is applied unchanged to creatures whose speeds span 61.84 to
+802.29.
 
 Pools searched and exhausted, so they are not searched again:
 
