@@ -148,8 +148,21 @@ public sealed class SpeedSampler
                 if (arms.Count >= 2) compasses.Add((blender.m_name ?? "", arms));
             }
 
+        // Which compasses a tagging generator puts under each iState value.
+        var tagged = new SortedDictionary<int, SortedSet<string>>();
+        var byName = compasses.Select(c => c.Item1).ToHashSet();
+        foreach (BehaviorFile behavior in project.Behaviors)
+            foreach (BSiStateTaggingGenerator tagging in behavior.File.All<BSiStateTaggingGenerator>())
+                foreach (string found in CompassesUnder(tagging.m_pDefaultGenerator, byName, []))
+                {
+                    if (!tagged.TryGetValue(tagging.m_iStateToSetAs, out SortedSet<string>? set))
+                        tagged[tagging.m_iStateToSetAs] = set = [];
+                    set.Add(found);
+                }
+
         return new SpeedSampler
         {
+            TaggedCompasses = tagged.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)[.. t.Value]),
             SamplerOutput = output,
             SpeedVariable = speed,
             GoalSpeedVariable = goal,
@@ -208,6 +221,20 @@ public sealed class SpeedSampler
     }
 
     /// <summary>
+    /// The compasses a <c>BSiStateTaggingGenerator</c> puts under each iState
+    /// value, which is the graph saying so itself.
+    /// </summary>
+    /// <remarks>
+    /// A tagging generator sets <c>iState</c> to <see cref="int"/> while its
+    /// subtree is active, so the compasses under it are the ones that state's
+    /// records were sampled from. Eight projects carry them.
+    /// <c>BSIStateManagerModifier</c> says the same thing a different way, binding
+    /// each entry's <c>iStateToSetAs</c> to an <c>iState_&lt;MOVT&gt;</c> variable
+    /// rather than storing the number.
+    /// </remarks>
+    public required IReadOnlyDictionary<int, IReadOnlyList<string>> TaggedCompasses { get; init; }
+
+    /// <summary>
     /// The compass serving a locomotion state, or null when the project's
     /// compasses do not separate on it.
     /// </summary>
@@ -231,6 +258,12 @@ public sealed class SpeedSampler
     public IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassFor(int key)
     {
         if (Compasses.Count == 0) return null;
+
+        // The graph first, where it says: a tagging generator that sets iState to
+        // this key has the answering compass somewhere beneath it.
+        if (TaggedCompasses.TryGetValue(key, out IReadOnlyList<string>? tagged) && tagged.Count == 1)
+            foreach ((string name, var arms) in Compasses)
+                if (name == tagged[0]) return arms;
 
         var movements = States.FirstOrDefault(s => s.Key == key).MovementTypes ?? [];
         if (movements.Count == 0) return null;
@@ -260,6 +293,34 @@ public sealed class SpeedSampler
             .ToList();
 
         return ranked.Count == 1 || ranked[0].Score > ranked[1].Score ? ranked[0].Arms : null;
+    }
+
+    /// <summary>Every named compass reachable below a node.</summary>
+    private static IEnumerable<string> CompassesUnder(object? node, HashSet<string> wanted, HashSet<object> seen, int depth = 0)
+    {
+        if (node is null || depth > 14 || !seen.Add(node)) yield break;
+
+        switch (node)
+        {
+            case hkbBlenderGenerator blender:
+                if (wanted.Contains(blender.m_name ?? "")) { yield return blender.m_name!; yield break; }
+                foreach (hkbBlenderGeneratorChild? child in blender.m_children ?? [])
+                    foreach (string found in CompassesUnder(child?.m_generator, wanted, seen, depth + 1)) yield return found;
+                break;
+            case hkbStateMachine machine:
+                foreach (hkbStateMachineStateInfo? state in machine.m_states ?? [])
+                    foreach (string found in CompassesUnder(state?.m_generator, wanted, seen, depth + 1)) yield return found;
+                break;
+            case BSiStateTaggingGenerator tagging:
+                foreach (string found in CompassesUnder(tagging.m_pDefaultGenerator, wanted, seen, depth + 1)) yield return found;
+                break;
+            case hkbModifierGenerator modifier:
+                foreach (string found in CompassesUnder(modifier.m_generator, wanted, seen, depth + 1)) yield return found;
+                break;
+            case BSCyclicBlendTransitionGenerator cyclic:
+                foreach (string found in CompassesUnder(cyclic.m_pBlenderGenerator, wanted, seen, depth + 1)) yield return found;
+                break;
+        }
     }
 
     /// <summary>Splits a node or movement-type name into comparable tokens.</summary>

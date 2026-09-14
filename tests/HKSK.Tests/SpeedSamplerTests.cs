@@ -182,16 +182,21 @@ public sealed class SpeedSamplerTests
     /// Two things have to line up. The state picks the compass, through the
     /// movement type naming it (<see cref="SpeedSampler.CompassFor"/>); the
     /// heading picks the arm, and where it falls between two arms it is a blend of
-    /// both (<see cref="SpeedSampler.Sample"/>). Only the second is structural --
-    /// nothing in the graph writes <c>iState</c> for most creatures, so the
-    /// movement type's name is the only join to the family.
+    /// both (<see cref="SpeedSampler.Sample"/>).
+    /// </para>
+    /// <para>
+    /// The state is asked of the graph first: a <c>BSiStateTaggingGenerator</c>
+    /// that sets <c>iState</c> to the key has the answering compass beneath it,
+    /// which places 209 of these records with no name matching at all -- including
+    /// every one the player has. Only where no tagging generator covers the key
+    /// does this fall back to the movement type's name.
     /// </para>
     /// <para>
     /// <strong>Why not all 1634.</strong> 152 records belong to the eight projects
     /// that do not use the table; 342 belong to projects with no compass, which
     /// turn rather than strafe and whose side and back records come from a turn
-    /// axis §6 does not model; and the rest need a family the names do not
-    /// separate. What is left is 589 records and 7634 points.
+    /// axis §6 does not model; and the rest need a family neither the graph nor the
+    /// names separate. What is left is 741 records and 9458 points.
     /// </para>
     /// </remarks>
     [CorpusFact]
@@ -227,10 +232,10 @@ public sealed class SpeedSamplerTests
 
         errors.Sort();
         Assert.Equal(1634, records);
-        Assert.Equal(589, resolved);
-        Assert.Equal(7634, errors.Count);
+        Assert.Equal(741, resolved);
+        Assert.Equal(9458, errors.Count);
         Assert.InRange(errors[errors.Count / 2], 0d, 0.002d);        // median under 0.2%
-        Assert.True(errors.Count(e => e < 0.0005) >= 3500,
+        Assert.True(errors.Count(e => e < 0.0005) >= 4400,
                     $"only {errors.Count(e => e < 0.0005)} points within 0.05%");
     }
 
@@ -288,6 +293,62 @@ public sealed class SpeedSamplerTests
             "GiantProject", "HagravenProject", "SphereCenturion", "SteamProject",
             "TrollProject", "VampireBruteProject", "VampireLord",
         ], clean.OrderBy(n => n, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// The graph names the family itself, for the states a tagging generator
+    /// covers.
+    /// </summary>
+    /// <remarks>
+    /// <c>iState_&lt;MOVT&gt;</c> variables are constants; the game writes
+    /// <c>iState</c> from the actor's movement type and the graph compares the two.
+    /// Where a <c>BSiStateTaggingGenerator</c> sets <c>iState</c> to a key, the
+    /// compasses beneath it are that key's, and no name has to be read: the
+    /// falmer's 1 is its bow family and 2 its plain locomotion, and the player's 2,
+    /// 6, 7 and 9 are sneak, one-handed, two-handed and magic.
+    /// </remarks>
+    [CorpusFact]
+    public void TheGraphNamesTheFamilyForTheStatesItTags()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        SpeedSampler falmer = Assert.IsType<SpeedSampler>(
+            SpeedSampler.FromProject((ActorProject)cache.OpenActor("FalmerProject")!));
+        Assert.Equal(["Bow_DirectionalBlend"], falmer.TaggedCompasses[1]);
+        Assert.Equal(["MT_DirectionalBlend"], falmer.TaggedCompasses[2]);
+
+        SpeedSampler player = Assert.IsType<SpeedSampler>(
+            SpeedSampler.FromProject((ActorProject)cache.OpenActor("DefaultFemale")!));
+        Assert.Equal(["Sneak_Direction_Blend"], player.TaggedCompasses[2]);
+        Assert.Equal(["H2H_1HM_Direction_Blend"], player.TaggedCompasses[6]);
+        Assert.Equal(["2HM_Direction_Blend"], player.TaggedCompasses[7]);
+        Assert.Equal(["Magic_Direction_Blend"], player.TaggedCompasses[9]);
+
+        // and the key the graph cannot separate stays unseparated rather than guessed
+        Assert.Equal(2, player.TaggedCompasses[8].Count);
+
+        // the player's records are rebuilt off that, and off nothing else
+        var errors = new List<double>();
+        foreach (SpeedEntry entry in cache.SpeedData!.Block("DefaultFemale")!.Entries)
+        {
+            if (!player.TaggedCompasses.TryGetValue((int)entry.Key, out IReadOnlyList<string>? tagged)
+                || tagged.Count != 1) continue;
+
+            var arms = Assert.IsAssignableFrom<IReadOnlyList<(float Direction, SpeedLadder Ladder)>>(
+                player.CompassFor((int)entry.Key));
+
+            foreach (SpeedRecord record in entry.Records)
+                foreach (SpeedPoint point in record.Points)
+                    if (point.Y > 0f)
+                        errors.Add(Math.Abs(
+                            SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset)
+                            - point.Y) / point.Y);
+        }
+
+        errors.Sort();
+        Assert.Equal(912, errors.Count);
+        Assert.InRange(errors[errors.Count / 2], 0d, 0.001d);          // median under 0.1%
+        Assert.InRange(errors[(int)(errors.Count * 0.9)], 0d, 0.01d);  // p90 under 1%
     }
 
     /// <summary>

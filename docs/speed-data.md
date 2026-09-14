@@ -1236,25 +1236,42 @@ offset in x, no scale, constant across the corpus — but not explained. It is e
 from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
 The tool that wrote the file is not shipped, so this may stay a measured constant.
 
-**Which family a state belongs to.** This is the largest remaining error, and it is the
-only part of the walk from a project to a record that is not structural. The tree says
-which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); it does
-not say which *family* a state belongs to, because for most creatures nothing in the
-graph writes `iState` at all — the engine sets it from the actor's movement type. Only
-seven projects carry a `BSiStateTaggingGenerator` and only three a
-`BSIStateManagerModifier`, so neither generalises.
+**Which family a state belongs to.** This is the largest remaining error. The tree says
+which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); the
+family is the part it only sometimes says.
 
-What does generalise is the movement type's own name, which §3.1 already recovers from
-the `iState_<MOVT>` variables:
+**How the graph sees a state at all.** The `iState_<MOVT>` variables are constants —
+their initial value is the key and nothing writes them. The *game* writes `iState`,
+from the actor's current movement type, and the graph compares the two. That comparison
+is visible where it is made: the shared quadruped behaviour carries eight
+`hkbExpressionCondition`s reading `iState != 50` and `iState == 50`, separating the
+horker, whose key is 50, from the other quadrupeds that share the file.
+
+Where a `BSiStateTaggingGenerator` sets `iState` to a key, the compasses beneath it are
+that key's, and nothing needs to be read from a name:
+
+    FalmerProject     1 -> Bow_DirectionalBlend        2 -> MT_DirectionalBlend
+    DefaultFemale     2 -> Sneak_Direction_Blend       6 -> H2H_1HM_Direction_Blend
+                      7 -> 2HM_Direction_Blend         9 -> Magic_Direction_Blend
+
+Eight projects carry tagging generators and three a `BSIStateManagerModifier`, which
+says the same thing a different way — binding each entry's `iStateToSetAs` to an
+`iState_<MOVT>` variable rather than storing the number. Between them they pin 209
+records, including every one the player has, which no other route reaches: key 8 stays
+unpinned because its subtree holds both the bow and the crossbow compass, and that is
+reported as unseparated rather than guessed.
+
+For the rest, what generalises is the movement type's own name, which §3.1 already
+recovers from the `iState_<MOVT>` variables:
 
     GiantProject      key 2 = GiantCombatRun     -> CombatDirectionalBlend_RUN
     DraugrProject     key 5 = DraugrGreatSword   -> 2GS_Direction_Blend
     SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
 
 Matching on the tokens the two names share, once the creature's own name is removed,
-places 589 of the 1634 records. Ten projects have every record placed and rebuilt to
-better than a tenth of a percent at the 90th percentile. Where two compasses tie, the
-answer is no compass rather than a guess.
+takes the total to 741 of the 1634 records. Ten projects have every record placed and
+rebuilt to better than a tenth of a percent at the 90th percentile. Where two compasses
+tie, the answer is no compass rather than a guess.
 
 Records that change ladder partway up their range are a second case — `FalmerProject`
 key 2 leaves the walk blender at x=100.5 and is answered by the run blender above it —
@@ -1341,8 +1358,9 @@ and not zero, which would model a creature that cannot move.
 sampler, reads the variables off it, and returns the states the project declares
 (key and movement-type name, from its `iState_<MOVT>` variables), every ladder the
 sampler's answer drives, and the compasses those ladders hang under, so a heading
-resolves to an arm without reading a node name. `CompassFor(key)` picks the family
-from the movement type naming that state, and `Sample(arms, direction, x)` answers a
+resolves to an arm without reading a node name. `CompassFor(key)` picks the family — from the
+tagging generator that sets `iState` to that key where there is one, and from the
+movement type naming the state otherwise — and `Sample(arms, direction, x)` answers a
 heading, blending the two arms bracketing it when it falls between them — which is
 15 of every 19 headings, since the file samples at 0.05 and the arms sit at 0.125
 (§3.2). Rounding to the nearest arm instead is twenty times worse. It returns null for the eight
