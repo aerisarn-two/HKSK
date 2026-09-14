@@ -189,7 +189,12 @@ public sealed class SpeedSamplerTests
     /// that sets <c>iState</c> to the key has the answering compass beneath it,
     /// which places 209 of these records with no name matching at all -- including
     /// every one the player has. Only where no tagging generator covers the key
-    /// does this fall back to the movement type's name.
+    /// does this fall back to the movement type's name. Where a name occurs in
+    /// several of a project's graphs, the file decides: Bethesda split the player's
+    /// graph along the lines the game switches on, so
+    /// <c>bow_direction_behavior</c> holds the drawn-bow locomotion that answers
+    /// <c>NPCBowDrawn</c> while the <c>1hm_locomotion</c> copy of the same name
+    /// answers <c>NPCBow</c>, and the two are different curves.
     /// </para>
     /// <para>
     /// <strong>Why not all 1634.</strong> 152 records belong to the eight projects
@@ -232,10 +237,10 @@ public sealed class SpeedSamplerTests
 
         errors.Sort();
         Assert.Equal(1634, records);
-        Assert.Equal(741, resolved);
-        Assert.Equal(9458, errors.Count);
+        Assert.Equal(817, resolved);
+        Assert.Equal(10288, errors.Count);
         Assert.InRange(errors[errors.Count / 2], 0d, 0.002d);        // median under 0.2%
-        Assert.True(errors.Count(e => e < 0.0005) >= 4400,
+        Assert.True(errors.Count(e => e < 0.0005) >= 4900,
                     $"only {errors.Count(e => e < 0.0005)} points within 0.05%");
     }
 
@@ -314,28 +319,26 @@ public sealed class SpeedSamplerTests
 
         SpeedSampler falmer = Assert.IsType<SpeedSampler>(
             SpeedSampler.FromProject((ActorProject)cache.OpenActor("FalmerProject")!));
-        Assert.Equal(["Bow_DirectionalBlend"], falmer.TaggedCompasses[1]);
-        Assert.Equal(["MT_DirectionalBlend"], falmer.TaggedCompasses[2]);
+        Assert.Equal(["Bow_DirectionalBlend"], falmer.TaggedCompasses[1].Select(c => c.Name));
+        Assert.Equal(["MT_DirectionalBlend"], falmer.TaggedCompasses[2].Select(c => c.Name));
 
         SpeedSampler player = Assert.IsType<SpeedSampler>(
             SpeedSampler.FromProject((ActorProject)cache.OpenActor("DefaultFemale")!));
-        Assert.Equal(["Sneak_Direction_Blend"], player.TaggedCompasses[2]);
-        Assert.Equal(["H2H_1HM_Direction_Blend"], player.TaggedCompasses[6]);
-        Assert.Equal(["2HM_Direction_Blend"], player.TaggedCompasses[7]);
-        Assert.Equal(["Magic_Direction_Blend"], player.TaggedCompasses[9]);
+        Assert.Equal(["Sneak_Direction_Blend"], player.TaggedCompasses[2].Select(c => c.Name).Distinct());
+        Assert.Equal(["H2H_1HM_Direction_Blend"], player.TaggedCompasses[6].Select(c => c.Name).Distinct());
+        Assert.Equal(["2HM_Direction_Blend"], player.TaggedCompasses[7].Select(c => c.Name).Distinct());
+        Assert.Equal(["Magic_Direction_Blend"], player.TaggedCompasses[9].Select(c => c.Name).Distinct());
 
-        // and the key the graph cannot separate stays unseparated rather than guessed
-        Assert.Equal(2, player.TaggedCompasses[8].Count);
+        // key 8 is NPCBow and its tag reaches both the bow and the crossbow
+        // compass; the name breaks that tie
+        Assert.Equal(["Bow_Direction_Blend", "CrossBow_Direction_Blend"],
+                     player.TaggedCompasses[8].Select(c => c.Name).Distinct().Order());
 
         // the player's records are rebuilt off that, and off nothing else
         var errors = new List<double>();
         foreach (SpeedEntry entry in cache.SpeedData!.Block("DefaultFemale")!.Entries)
         {
-            if (!player.TaggedCompasses.TryGetValue((int)entry.Key, out IReadOnlyList<string>? tagged)
-                || tagged.Count != 1) continue;
-
-            var arms = Assert.IsAssignableFrom<IReadOnlyList<(float Direction, SpeedLadder Ladder)>>(
-                player.CompassFor((int)entry.Key));
+            if (player.CompassFor((int)entry.Key) is not { } arms) continue;
 
             foreach (SpeedRecord record in entry.Records)
                 foreach (SpeedPoint point in record.Points)
@@ -346,7 +349,7 @@ public sealed class SpeedSamplerTests
         }
 
         errors.Sort();
-        Assert.Equal(912, errors.Count);
+        Assert.Equal(1327, errors.Count);
         Assert.InRange(errors[errors.Count / 2], 0d, 0.001d);          // median under 0.1%
         Assert.InRange(errors[(int)(errors.Count * 0.9)], 0d, 0.01d);  // p90 under 1%
     }
@@ -434,28 +437,4 @@ public sealed class SpeedSamplerTests
         Assert.InRange(errors[^1], 0d, 0.001d);                  // worst under 0.1%
     }
 
-    /// <summary>The ladder for a heading, when the tree leaves exactly one.</summary>
-    private static SpeedLadder? Sole(SpeedSampler sampler, float direction)
-    {
-        var candidates = new List<SpeedLadder>();
-
-        if (sampler.Compasses.Count > 0)
-        {
-            foreach ((string _, var arms) in sampler.Compasses)
-                foreach ((float heading, SpeedLadder ladder) in arms)
-                    if (MathF.Abs(heading - direction) <= 1e-4f) candidates.Add(ladder);
-        }
-        else if (direction == 0f)
-        {
-            candidates.AddRange(sampler.Ladders.Select(l => l.Ladder));
-        }
-
-        var distinct = candidates
-            .Where(c => c.Rungs.Count > 0)
-            .GroupBy(c => string.Join("|", c.Rungs.Select(r => $"{r.Weight}:{r.Animation}")))
-            .Select(g => g.First())
-            .ToList();
-
-        return distinct.Count == 1 ? distinct[0] : null;
-    }
 }

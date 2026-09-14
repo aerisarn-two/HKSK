@@ -1256,10 +1256,23 @@ that key's, and nothing needs to be read from a name:
 
 Eight projects carry tagging generators and three a `BSIStateManagerModifier`, which
 says the same thing a different way — binding each entry's `iStateToSetAs` to an
-`iState_<MOVT>` variable rather than storing the number. Between them they pin 209
-records, including every one the player has, which no other route reaches: key 8 stays
-unpinned because its subtree holds both the bow and the crossbow compass, and that is
-reported as unseparated rather than guessed.
+`iState_<MOVT>` variable rather than storing the number. The tag reaches *nodes*, not
+names, and that matters: where it leaves more than one the movement type chooses among
+those nodes, and widening back to every compass sharing their name undoes it.
+
+**The file is part of the answer.** Bethesda split a graph along the lines the game
+switches on, so which file a blend lives in is a label the tree does not otherwise
+carry. The player has eighteen, several of them one locomotion family each:
+
+    mt_behavior                       1hm_locomotion
+    bow_direction_behavior            crossbow_direction_behavior
+    magic_readied_direction_behavior  sprintbehavior            horsebehavior
+
+`Bow_Direction_Blend` is defined three times with two different ladder sets under it,
+and the file separates them: the copy in `bow_direction_behavior` is the drawn-bow
+locomotion and answers `NPCBowDrawn` (key 3) and `NPCBowDrawnQuickShot` (key 16) to
+0.012%, while the `1hm_locomotion` copy is the bow merely equipped and answers `NPCBow`
+(key 8) to 0.062%. Taking either for the other is a 43% error.
 
 For the rest, what generalises is the movement type's own name, which §3.1 already
 recovers from the `iState_<MOVT>` variables:
@@ -1269,7 +1282,7 @@ recovers from the `iState_<MOVT>` variables:
     SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
 
 Matching on the tokens the two names share, once the creature's own name is removed,
-takes the total to 741 of the 1634 records. Ten projects have every record placed and
+takes the total to 817 of the 1634 records. Ten projects have every record placed and
 rebuilt to better than a tenth of a percent at the 90th percentile. Where two compasses
 tie, the answer is no compass rather than a guess.
 
@@ -1359,8 +1372,8 @@ sampler, reads the variables off it, and returns the states the project declares
 (key and movement-type name, from its `iState_<MOVT>` variables), every ladder the
 sampler's answer drives, and the compasses those ladders hang under, so a heading
 resolves to an arm without reading a node name. `CompassFor(key)` picks the family — from the
-tagging generator that sets `iState` to that key where there is one, and from the
-movement type naming the state otherwise — and `Sample(arms, direction, x)` answers a
+tagging generator that sets `iState` to that key where there is one, narrowed by the
+movement type and by the behaviour file where a name is defined more than once — and `Sample(arms, direction, x)` answers a
 heading, blending the two arms bracketing it when it falls between them — which is
 15 of every 19 headings, since the file samples at 0.05 and the arms sit at 0.125
 (§3.2). Rounding to the nearest arm instead is twenty times worse. It returns null for the eight

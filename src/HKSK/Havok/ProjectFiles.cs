@@ -111,12 +111,28 @@ public sealed class CharacterFile(HavokFile? file, hkbCharacterData data)
 /// their own idles in the named one. Any clip lookup therefore has to span every
 /// behaviour the project lists, not just the character's own.
 /// </remarks>
-public sealed class BehaviorFile(HavokFile file)
+public sealed class BehaviorFile(HavokFile file, string? path = null)
 {
     public HavokFile File { get; } = file;
+
+    /// <summary>Where this graph was read from, when it was read from disk.</summary>
+    public string? Path { get; } = path;
+
+    /// <summary>
+    /// The file's own name, without directory or extension.
+    /// </summary>
+    /// <remarks>
+    /// Worth having because Bethesda split a graph along the lines the game
+    /// switches on, so the name is a label the tree does not otherwise carry: the
+    /// player keeps one locomotion family per file -- <c>mt_behavior</c>,
+    /// <c>1hm_locomotion</c>, <c>bow_direction_behavior</c>,
+    /// <c>crossbow_direction_behavior</c>, <c>magic_readied_direction_behavior</c>
+    /// -- so which file a blend lives in says which family it serves.
+    /// </remarks>
+    public string? Name { get; } = path is null ? null : System.IO.Path.GetFileNameWithoutExtension(path);
 
     /// <summary>Every clip generator this graph defines.</summary>
     public IReadOnlyList<hkbClipGenerator> Clips { get; } = file.All<hkbClipGenerator>().ToList();
 
-    public static BehaviorFile Load(string path) => new(HavokFile.Load(path));
+    public static BehaviorFile Load(string path) => new(HavokFile.Load(path), path);
 }

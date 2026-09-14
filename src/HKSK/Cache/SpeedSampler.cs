@@ -20,6 +20,26 @@ public readonly record struct SpeedState(int Key, IReadOnlyList<string> Movement
 }
 
 /// <summary>
+/// One compass: a blend whose children are speed ladders, so its child weights
+/// are headings rather than speeds.
+/// </summary>
+/// <param name="Name">The blender's node name.</param>
+/// <param name="File">
+/// The behaviour file it was defined in, without directory or extension.
+/// Bethesda split the player's graph along the lines the game switches on --
+/// <c>mt_behavior</c>, <c>1hm_locomotion</c>, <c>bow_direction_behavior</c>,
+/// <c>crossbow_direction_behavior</c> -- so where a name occurs in several files
+/// with different ladders under it, the file says which copy is the locomotion
+/// one and which is a variant.
+/// </param>
+/// <param name="Arms">The ladders, by the heading each answers.</param>
+public readonly record struct SpeedCompass(
+    string Name, string? File, IReadOnlyList<(float Direction, SpeedLadder Ladder)> Arms, hkbBlenderGenerator Node)
+{
+    public override string ToString() => $"{Name} ({File}) x{Arms.Count}";
+}
+
+/// <summary>
 /// A project's side of <c>speeddatasinglefile.txt</c>: the node that reads the
 /// table, the states it can be read for, and the blends its answer drives.
 /// </summary>
@@ -84,7 +104,7 @@ public sealed class SpeedSampler
     /// cardinal record picks the child sitting at its direction; §5.2's convention
     /// is 0.00 forward, 0.25 right, 0.50 back, 0.75 left.
     /// </remarks>
-    public required IReadOnlyList<(string Name, IReadOnlyList<(float Direction, SpeedLadder Ladder)> Arms)> Compasses { get; init; }
+    public required IReadOnlyList<SpeedCompass> Compasses { get; init; }
 
     /// <summary>Reads a project's sampler, or null when it has none.</summary>
     public static SpeedSampler? FromProject(ActorProject project)
@@ -132,7 +152,7 @@ public sealed class SpeedSampler
             if (ladders.Count > 0) { speed = candidate; break; }
         }
 
-        var compasses = new List<(string, IReadOnlyList<(float, SpeedLadder)>)>();
+        var compasses = new List<SpeedCompass>();
         foreach (BehaviorFile behavior in project.Behaviors)
             foreach (hkbBlenderGenerator blender in behavior.File.All<hkbBlenderGenerator>())
             {
@@ -145,24 +165,29 @@ public sealed class SpeedSampler
                     if (under is not null) arms.Add((child!.m_weight, driven[under]));
                 }
 
-                if (arms.Count >= 2) compasses.Add((blender.m_name ?? "", arms));
+                if (arms.Count >= 2) compasses.Add(new SpeedCompass(blender.m_name ?? "", behavior.Name, arms, blender));
             }
 
-        // Which compasses a tagging generator puts under each iState value.
-        var tagged = new SortedDictionary<int, SortedSet<string>>();
-        var byName = compasses.Select(c => c.Item1).ToHashSet();
+        // Which compasses a tagging generator puts under each iState value. The
+        // node matters and not just its name: a project can define one name in
+        // several graphs with different ladders under it, and the tag reaches one
+        // of them in particular.
+        var tagged = new SortedDictionary<int, List<SpeedCompass>>();
+        var byNode = new Dictionary<hkbBlenderGenerator, SpeedCompass>();
+        foreach (SpeedCompass c in compasses) byNode[c.Node] = c;
+
         foreach (BehaviorFile behavior in project.Behaviors)
             foreach (BSiStateTaggingGenerator tagging in behavior.File.All<BSiStateTaggingGenerator>())
-                foreach (string found in CompassesUnder(tagging.m_pDefaultGenerator, byName, []))
+                foreach (hkbBlenderGenerator found in CompassesUnder(tagging.m_pDefaultGenerator, byNode, []))
                 {
-                    if (!tagged.TryGetValue(tagging.m_iStateToSetAs, out SortedSet<string>? set))
-                        tagged[tagging.m_iStateToSetAs] = set = [];
-                    set.Add(found);
+                    if (!tagged.TryGetValue(tagging.m_iStateToSetAs, out List<SpeedCompass>? list))
+                        tagged[tagging.m_iStateToSetAs] = list = [];
+                    if (!list.Any(c => ReferenceEquals(c.Node, found))) list.Add(byNode[found]);
                 }
 
         return new SpeedSampler
         {
-            TaggedCompasses = tagged.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)[.. t.Value]),
+            TaggedCompasses = tagged.ToDictionary(t => t.Key, t => (IReadOnlyList<SpeedCompass>)[.. t.Value]),
             SamplerOutput = output,
             SpeedVariable = speed,
             GoalSpeedVariable = goal,
@@ -183,10 +208,10 @@ public sealed class SpeedSampler
     /// </remarks>
     public SpeedLadder? Cardinal(float direction, string? compass = null)
     {
-        foreach ((string name, var arms) in Compasses)
+        foreach (SpeedCompass c in Compasses)
         {
-            if (compass is not null && name != compass) continue;
-            foreach ((float d, SpeedLadder ladder) in arms)
+            if (compass is not null && c.Name != compass) continue;
+            foreach ((float d, SpeedLadder ladder) in c.Arms)
                 if (MathF.Abs(d - direction) <= 1e-4f) return ladder;
         }
 
@@ -232,7 +257,7 @@ public sealed class SpeedSampler
     /// each entry's <c>iStateToSetAs</c> to an <c>iState_&lt;MOVT&gt;</c> variable
     /// rather than storing the number.
     /// </remarks>
-    public required IReadOnlyDictionary<int, IReadOnlyList<string>> TaggedCompasses { get; init; }
+    public required IReadOnlyDictionary<int, IReadOnlyList<SpeedCompass>> TaggedCompasses { get; init; }
 
     /// <summary>
     /// The compass serving a locomotion state, or null when the project's
@@ -260,13 +285,24 @@ public sealed class SpeedSampler
         if (Compasses.Count == 0) return null;
 
         // The graph first, where it says: a tagging generator that sets iState to
-        // this key has the answering compass somewhere beneath it.
-        if (TaggedCompasses.TryGetValue(key, out IReadOnlyList<string>? tagged) && tagged.Count == 1)
-            foreach ((string name, var arms) in Compasses)
-                if (name == tagged[0]) return arms;
+        // this key has the answering compass somewhere beneath it. Where it leaves
+        // more than one the tag still narrows the field, and the movement type
+        // only has to break the tie -- the player's key 8 is NPCBow under a tag
+        // reaching both the bow and the crossbow compass, and "CrossBow" carries a
+        // token "NPCBow" does not.
+        // Where the graph tags this key, those nodes are the candidates and the
+        // name only chooses among them. Widening back to every compass of the same
+        // name undoes the tag: the player's key 8 is NPCBow, whose tag reaches the
+        // bow and crossbow compasses of 1hm_locomotion, and the copy in
+        // bow_direction_behavior -- the drawn-bow locomotion, which answers key 3 --
+        // is a different curve entirely.
+        TaggedCompasses.TryGetValue(key, out IReadOnlyList<SpeedCompass>? tagged);
+        List<SpeedCompass> candidates = tagged is { Count: > 0 } ? [.. tagged] : [.. Compasses];
+
+        if (candidates.Count == 1) return candidates[0].Arms;
 
         var movements = States.FirstOrDefault(s => s.Key == key).MovementTypes ?? [];
-        if (movements.Count == 0) return null;
+        if (movements.Count == 0) return Pick(candidates);
 
         // Every movement type of a creature carries its name, so the tokens they
         // all share are noise here.
@@ -283,42 +319,86 @@ public sealed class SpeedSampler
         foreach (string movement in movements) wanted.UnionWith(Tokenise(movement));
         if (shared is not null) wanted.ExceptWith(shared);
 
-        var ranked = Compasses
-            .Select(c =>
+        // A name can occur in several of a project's graphs -- the player defines
+        // Bow_Direction_Blend in three -- so rank names, not nodes, or identical
+        // copies tie with each other and look ambiguous.
+        var ranked = candidates
+            .GroupBy(c => c.Name)
+            .Select(g =>
             {
-                HashSet<string> tokens = Tokenise(c.Name);
-                return (c.Arms, Score: tokens.Count(t => wanted.Contains(t)) * 10 - tokens.Count(t => !wanted.Contains(t)));
+                HashSet<string> tokens = Tokenise(g.Key);
+                return (Name: g.Key, Copies: g.ToList(),
+                        Score: tokens.Count(t => wanted.Contains(t)) * 10 - tokens.Count(t => !wanted.Contains(t)));
             })
             .OrderByDescending(c => c.Score)
             .ToList();
 
-        return ranked.Count == 1 || ranked[0].Score > ranked[1].Score ? ranked[0].Arms : null;
+        if (ranked.Count == 0) return null;
+        if (ranked.Count > 1 && ranked[0].Score <= ranked[1].Score) return null;
+
+        return Pick(ranked[0].Copies);
     }
 
-    /// <summary>Every named compass reachable below a node.</summary>
-    private static IEnumerable<string> CompassesUnder(object? node, HashSet<string> wanted, HashSet<object> seen, int depth = 0)
+    /// <summary>
+    /// One compass out of the copies a project defines under the same name.
+    /// </summary>
+    /// <remarks>
+    /// Copies that play the same thing are the same answer. Where they differ, the
+    /// file decides: the player defines <c>Bow_Direction_Blend</c> three times with
+    /// two different ladder sets under it, and the one in
+    /// <c>bow_direction_behavior</c> is the bow locomotion while the others are the
+    /// blocking and the shared-weapon variants. A file whose name matches the
+    /// compass's is that compass's own file.
+    /// </remarks>
+    private static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? Pick(List<SpeedCompass> copies)
+    {
+        if (copies.Count == 0) return null;
+
+        var distinct = copies
+            .GroupBy(c => string.Join(";", c.Arms.OrderBy(a => a.Direction)
+                .Select(a => $"{a.Direction}:{string.Join(",", a.Ladder.Rungs.Select(r => $"{r.Weight}/{r.Animation}"))}")))
+            .ToList();
+
+        if (distinct.Count == 1) return distinct[0].First().Arms;
+
+        // The copy living in the file named for it.
+        var own = copies
+            .Where(c => c.File is not null)
+            .Select(c => (c, Shared: Tokenise(c.Name).Intersect(Tokenise(c.File!)).Count()))
+            .OrderByDescending(t => t.Shared)
+            .ToList();
+
+        if (own.Count == 0 || own[0].Shared == 0) return null;
+        if (own.Count > 1 && own[1].Shared == own[0].Shared) return null;
+
+        return own[0].c.Arms;
+    }
+
+    /// <summary>Every compass reachable below a node.</summary>
+    private static IEnumerable<hkbBlenderGenerator> CompassesUnder(
+        object? node, Dictionary<hkbBlenderGenerator, SpeedCompass> wanted, HashSet<object> seen, int depth = 0)
     {
         if (node is null || depth > 14 || !seen.Add(node)) yield break;
 
         switch (node)
         {
             case hkbBlenderGenerator blender:
-                if (wanted.Contains(blender.m_name ?? "")) { yield return blender.m_name!; yield break; }
+                if (wanted.ContainsKey(blender)) { yield return blender; yield break; }
                 foreach (hkbBlenderGeneratorChild? child in blender.m_children ?? [])
-                    foreach (string found in CompassesUnder(child?.m_generator, wanted, seen, depth + 1)) yield return found;
+                    foreach (var found in CompassesUnder(child?.m_generator, wanted, seen, depth + 1)) yield return found;
                 break;
             case hkbStateMachine machine:
                 foreach (hkbStateMachineStateInfo? state in machine.m_states ?? [])
-                    foreach (string found in CompassesUnder(state?.m_generator, wanted, seen, depth + 1)) yield return found;
+                    foreach (var found in CompassesUnder(state?.m_generator, wanted, seen, depth + 1)) yield return found;
                 break;
             case BSiStateTaggingGenerator tagging:
-                foreach (string found in CompassesUnder(tagging.m_pDefaultGenerator, wanted, seen, depth + 1)) yield return found;
+                foreach (var found in CompassesUnder(tagging.m_pDefaultGenerator, wanted, seen, depth + 1)) yield return found;
                 break;
             case hkbModifierGenerator modifier:
-                foreach (string found in CompassesUnder(modifier.m_generator, wanted, seen, depth + 1)) yield return found;
+                foreach (var found in CompassesUnder(modifier.m_generator, wanted, seen, depth + 1)) yield return found;
                 break;
             case BSCyclicBlendTransitionGenerator cyclic:
-                foreach (string found in CompassesUnder(cyclic.m_pBlenderGenerator, wanted, seen, depth + 1)) yield return found;
+                foreach (var found in CompassesUnder(cyclic.m_pBlenderGenerator, wanted, seen, depth + 1)) yield return found;
                 break;
         }
     }
