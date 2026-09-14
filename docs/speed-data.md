@@ -2,7 +2,7 @@
 
     Status:   format CONFIRMED (byte-exact round trip)
               semantics CONFIRMED
-              curve computable in closed form (§6)
+              curve computable in closed form, vector-valued (§6)
               one input still authored: the sweep bound (§9)
     Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
@@ -229,8 +229,9 @@ binding is `BSSpeedSamplerModifier.state`, and no state machine syncs to it:
 `iSyncSprintState`, `currentDefaultState`, `iIsInSneak` and `iCrossbowState`.
 `iState` is not among them.
 
-So matching key sets against state machine ids finds nothing, and should not be
-attempted:
+So matching key sets against *state machine* ids finds nothing, and should not be
+attempted — but note that a different node, `BSiStateTaggingGenerator`, does carry the
+association, and §5.3 uses it:
 
     DefaultMale     keys [0..10,15,16,17]   0 of 5 machines match
     DraugrProject   keys [0,3,4,5,6,7]      0 exact
@@ -487,6 +488,31 @@ and the ladders have different tops — for the player's bow, forward 155.21, le
 134.43, right 130.04, backward 113.94. A heading-independent scalar would index
 `Bow_LeftBlend` against numbers its children were never placed on.
 
+#### The compass itself is one blender above them
+
+The eight are children of a single `hkbBlenderGenerator` named `*_DirectionalBlend`,
+and their child weights are positions on the `Direction` axis:
+
+    MT_DirectionalBlend    flags=0x31   syncMaster=-1   cyclic[0.000, 1.000]
+        child[0] w=0.000   ForwardBlend            child[4] w=0.500   BackwardsBlend
+        child[1] w=0.125   ForwardRightBlend       child[5] w=0.625   BackwardsLeftBlend
+        child[2] w=0.250   RightBlend              child[6] w=0.750   LeftBlend
+        child[3] w=0.375   BackwardsRightBlend     child[7] w=0.875   ForwardLeftBlend
+
+`flags=0x31` is `FLAG_SYNC | FLAG_IS_PARAMETRIC_BLEND_CYCLIC | FLAG_FORCE_DENSE_POSE`,
+and `cyclic[0,1]` is what makes the compass wrap: a heading of 0.9 blends child[7] at
+0.875 with child[0] at 0.000 ≡ 1.000. It carries **no variable binding at all** — the
+engine writes `m_blendParameter` directly — which is why searching the graph for a
+blender bound to `Direction` finds nothing.
+
+So the nesting is: direction outside, speed inside. Evaluate each of the two bracketing
+compass children at x, then mix those two results by the heading — as a sync blend
+again, vector travel over duration (§6). The clip vectors are an exact compass: for the
+Falmer's bow family the bearings are 0, 45, 90, 135, 180, -135, -90 and -45 degrees.
+
+The wrapper above it is a `BSCyclicBlendTransitionGenerator`, and above that the state
+node of §5.3.
+
 **Quadrupeds: one gait blender, turning instead of strafing.** A single speed blender
 whose children are turn blenders. No compass family, so its side and back records
 come from the gait blender combined with the turn axis — a structure §6 does not model.
@@ -525,10 +551,27 @@ states across the 49 projects:
 
 **The machine ids are not `iState` values.** `Melee_Direction_Behavior` runs 0-12
 while the player's key set is 0-10 and 15-17, and `id 7 -> Bow_*` sits against
-`iState 8 = NPC_Bow_MT`. Same fact as §3.1: game code drives the two independently
-and nothing in the shipped data joins them.
+`iState 8 = NPC_Bow_MT`. So a state machine's ids are the wrong thing to match against.
 
-So the join is by name, and it works — take the family token out of the state's
+#### BSiStateTaggingGenerator is the join
+
+The graph does say which subtree belongs to which `iState`, in a node type that is not
+a state machine at all. Climbing out of the Falmer's walk compass:
+
+    ForwardBlend
+        hkbBlenderGenerator<MT_DirectionalBlend>              .m_children
+        BSCyclicBlendTransitionGenerator<1HM_DirectionalBlendCyclic_Walk>
+        BSiStateTaggingGenerator<Walk_iStateGen>              .m_pDefaultGenerator
+
+`BSiStateTaggingGenerator` is a Bethesda node whose whole purpose is to tag its subtree
+with a state id. **An earlier revision of this document said that nothing in the shipped
+data joins `iState` to the graph, and that the family match below is a convention rather
+than a reference. That was wrong**, and it was wrong because the search looked at
+`hkbStateMachine.m_syncVariableIndex` and at nothing else. The reference exists; reading
+it is the correct way to find a state's subtree, and the name match below is the fallback
+for when you have not.
+
+So the fallback join is by name — take the family token out of the state's
 `iState_<MOVT>` name and match it to the blender prefix:
 
     NPC_BowDrawn, NPC_Bow  -> Bow_        NPC_Sneaking -> Sneak_
@@ -537,8 +580,9 @@ So the join is by name, and it works — take the family token out of the state'
     NPC_Blocking           -> 1HM_        NPC_Default  -> MT_
 
 then pick within the family by the record's compass direction. **This is a convention,
-not a reference.** `NPC_Bleedout_MT` and `NPC_Drunk_MT` carry no family token and
-cannot be placed this way.
+and it fails where a name carries no family token** — `NPC_Bleedout_MT` and
+`NPC_Drunk_MT` cannot be placed this way. Prefer `BSiStateTaggingGenerator`, which is a
+reference rather than a guess and does not have that failure mode.
 
 ### 5.4 MOVT, root motion and PlaybackSpeed
 
@@ -625,16 +669,28 @@ the record they override. Reading the record is correct.
 
 The blend is time-synchronised: Havok interpolates the children's root-motion
 **translation** and their **duration** as two independent linear ramps, and the
-delivered speed is their quotient. Order the children by weight into rungs
+delivered speed is the magnitude of the first over the second. Order the children by
+weight into rungs
 
-    rung i  =  (w_i, travel_i, dur_i)        dur_i = clip duration / PlaybackSpeed
+    rung i  =  (w_i, V_i, dur_i)     V_i a Vector3    dur_i = clip duration / PlaybackSpeed
 
 then for x between rungs a and b
 
     u     = (x - w_a) / (w_b - w_a)
-    y(x)  = (travel_a + u*(travel_b - travel_a)) / (dur_a + u*(dur_b - dur_a))
+    V(x)  = V_a + u*(V_b - V_a)                       /* vector */
+    d(x)  = dur_a + u*(dur_b - dur_a)
+    y(x)  = |V(x)| / d(x)
 
-clamped to `travel/dur` of the first rung below `w_0` and the last above `w_n`.
+clamped to `|V|/dur` of the first rung below `w_0` and the last above `w_n`.
+
+**The travel is a vector and must stay one.** `ClipMovement.Translations` holds
+`Vector3` keys and the displacement is the last of them. Collapsing it to a magnitude
+before interpolating is wrong wherever a blend mixes two headings, because
+`|lerp(V_a, V_b)| < lerp(|V_a|, |V_b|)` for any two vectors that are not parallel.
+The compass children sit 45° apart (§5.2), so the error is `cos(22.5°) = 0.9239` at
+the midpoint — a flat 8% overestimate. Measured on the Falmer, treating travel as a
+scalar puts the 15 mixed-heading records at a 6.0% median error with **none** inside
+1%; as a vector, 0.28% median with 112 of 129 inside 1%.
 
 A quotient of two linear functions is a Mobius transform, so each segment is a
 hyperbolic arc, not a chord — which is why the curves look like acceleration ramps,
@@ -642,7 +698,7 @@ and why every chord-based model came in short and never over. The hare's ladder 
 the size of it; its slowest rung plays `walkforward` at 0.058, stretching 0.833 s to
 14.368 s:
 
-    rung   weight   travel      dur     speed
+    rung   weight   |travel|    dur     speed        /* forward only, so V is collinear */
        1     5.00    52.26   14.368      3.64
        2    89.18    52.26    0.833     62.71
        3   244.44   100.19    0.3125   320.62
@@ -701,11 +757,42 @@ possible. Against a linear chord the same records score 10-25%.
 The misses are blender **identification**, not the form: they concentrate on
 `NPC_Bleedout_MT` and `NPC_Drunk_MT`, which §5.3 cannot place.
 
-**Scope.** Verified on the four cardinal directions only, which is 173 of the file's
-1634 records. The 15 intermediate directions mix two adjacent compass blenders and
-need a two-blender model that is not measured. Quadruped side and back records have no
-compass family at all. 171 of the 344 cardinal records could not be assigned a blender,
-mostly for that reason.
+#### A curve may cross a gait transition
+
+One `iState` value does not always mean one ladder. `FalmerProject` key 2 is
+`Falmer_1HM_Walk`, and its curve is the **walk** family below that movement type's
+`ForwardWalk` and the **run** family above it:
+
+    x=100.0   shipped  91.66   walk ladder  92.30   0.71%
+    x=100.5   shipped 169.92   <- the crossover, matching neither
+    x=101.0   shipped 179.49   run ladder  179.49   0.00%
+    x=184.5   shipped 181.42   run ladder  181.44   0.01%
+    x=324.5   shipped 298.61   run ladder  298.66   0.02%
+
+The threshold is `ForwardWalk` = 100.44 and the two families are `*Blend` and
+`*Blend_Run`. A generator that evaluates one ladder over the whole sweep saturates at
+175.81 and is 41% low by the top of the range. Which states cross and where is not
+surveyed; this is one measured instance.
+
+#### Verified on
+
+    FalmerProject key 1, all 19 records, 164 points   /* no gait transition */
+      median error                     0.276%
+      within 1%                       144 / 164
+      outliers                         20, all at point index 0-3
+
+    the whole file, four cardinal records per entry, no fitting
+      family + direction leave one candidate           122 records
+        median error < 1%                              105
+
+**Scope and residual.** The 20 outliers are all in the first four points of a curve —
+the steep region at and below the floor rung, where the model clamps to the floor child
+and the shipped data does something slightly different. Both signs occur (15 of 20 have
+the model high), so it is not a settling lag. Unresolved.
+
+Quadruped side and back records have no compass family at all and are not covered:
+171 of the 344 cardinal records could not be assigned a blender, mostly for that
+reason.
 
 ## 7. Authoring a creature
 
@@ -871,9 +958,18 @@ tractable experiment, because §6 can produce the dense curve to score candidate
 (Douglas-Peucker at a tolerance, curvature threshold, error-bounded decimation) against
 the shipped file's 1634 exact point sets.
 
-**Unverified rather than unknown:** the 15 intermediate directions, quadruped side and
-back records, the two player states §5.3 cannot place, and the eight non-hovering
-projects that bind no sampler blender.
+**The floor-rung region.** Below and just above a ladder's lowest rung the model clamps
+to the floor child and the shipped data does not quite agree — 20 of the Falmer's 164
+points, all at point index 0-3, by up to 16%. Both signs occur, so it is not a lag.
+Candidates not yet separated: partial weighting of the lowest child below its position,
+or something in `FLAG_IS_PARAMETRIC_BLEND_CYCLIC` being set on the speed blenders with a
+`cyclic[0,1]` range against children at 5 and 100.44 — which is nonsensical unless the
+flag is inert, `FLAG_PARAMETRIC_BLEND` never being set.
+
+**Unverified rather than unknown:** quadruped side and back records, which have no
+compass family, the two player states §5.3's name fallback cannot place, and the eight
+non-hovering projects that bind no sampler blender. The 15 intermediate directions were
+here until the travel was treated as a vector (§6); they are now measured.
 
 **One measured anomaly.** `DeerProject` key 21 stores y = 391.50 at x = 400 where the
 blend, clamped below its bottom rung of 416.50, should deliver 416.67. There is nothing
