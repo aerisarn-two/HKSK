@@ -176,6 +176,44 @@ public sealed partial class SkyrimCache
         return _index.GetValueOrDefault(projectStem.ToLowerInvariant());
     }
 
+    /// <summary>
+    /// The folder holding a project's packfile, which is the folder its
+    /// character, behaviour and animation files are resolved against.
+    /// </summary>
+    /// <remarks>
+    /// Not one folder per project: <c>actors/canine</c> holds the dog and the
+    /// wolf, <c>actors/character</c> holds both player sexes, and
+    /// <c>actors/draugr</c> holds the draugr and the draugr skeleton. 49 projects
+    /// live in 46 folders.
+    /// </remarks>
+    public string? FindProjectFolder(string projectStem) =>
+        FindProjectFile(projectStem) is { } file ? Path.GetDirectoryName(file) : null;
+
+    /// <summary>
+    /// Every project the speed table names, located on disk.
+    /// </summary>
+    /// <remarks>
+    /// The speed table names its blocks the way the animation cache names its
+    /// projects -- <c>DefaultMale</c>, <c>HMDaedra</c>, <c>ChickenProject</c> --
+    /// and the packfile is that name with <c>.hkx</c> on it, so the two line up
+    /// without translation for all 49 in the shipped game. This is the step that
+    /// says so rather than assuming it: a name that does not resolve comes back
+    /// with nulls instead of throwing, so a caller can report the gap.
+    /// </remarks>
+    public IReadOnlyList<ProjectLocation> LocateSpeedProjects()
+    {
+        if (SpeedData is null) return [];
+
+        var found = new List<ProjectLocation>();
+        foreach (string name in SpeedData.ProjectNames)
+        {
+            string? file = FindProjectFile(name);
+            found.Add(new ProjectLocation(name, file, file is null ? null : Path.GetDirectoryName(file)));
+        }
+
+        return found;
+    }
+
     private Dictionary<string, string>? _index;
 
     // There is no manifest, so the tree is indexed once by file stem.
