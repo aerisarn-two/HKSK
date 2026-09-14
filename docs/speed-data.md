@@ -787,10 +787,34 @@ from 83 to 557. Applying `x_effective = x - 0.04` is worth two orders of magnitu
       FalmerProject:1     0.0405      0.0012%     0.1989%
       median over 15      0.0400
 
-**The lag is not actually constant, and that is the blocker.** It drifts within a
-segment — 0.0410 at u = 0.63 down to 0.0389 at u = 0.98, visible in the table above —
-and the per-entry fits spread from 0.027 to 0.0735. A fixed offset approximates
-something dynamic. Measured against the shipped floats with the correction applied:
+**What the offset is, measured.** Over 82 interior points across ten ladders:
+
+    median 0.040313   quartiles 0.038745 .. 0.041075
+
+It is constant **in x**, not in the blend parameter: coefficient of variation 0.094
+against 0.381 for the alternative, across segment spans from 30 to 134. It is flat
+across segments of one ladder — the dog reads 0.04075 at x = 198 and 0.04075 at
+x = 424.5, over a two-fold range in x — with a droop confined to the floor segment,
+0.0410 at u = 0.63 falling to 0.0369 at u = 0.99.
+
+**What it is not.** Ruled out, so the search is not repeated:
+
+    proportional to x            offset would grow with x; it is flat over 2x in x
+    constant in the parameter u  CV 0.381 vs 0.094 for x; x wins clearly
+    a scale error on y           dy/y is 0.00104 at one end and 0.00604 at the other
+    the MOVT value vs the weight  Falmer 100.44 against 100.442 moves u by 2e-5,
+                                  the wrong way and twenty times too small
+    hkbDampingModifier on Speed   the graphs do carry PID damping -- kP=0.2 kI=0.015
+                                  kD=-0.1 on SpeedDamped -- but the locomotion
+                                  blenders bind the sampler output, not SpeedDamped,
+                                  and kP=0.2 on a 0.5 ramp gives a lag near 2.0,
+                                  fifty times too large
+    5/128 = 0.0390625            outside the measured quartiles
+    1/30, one frame at 30 Hz     0.0333, well outside
+
+**It remains unidentified.** Something in the generator fed the blend a parameter
+0.0403 below the x it recorded, the same amount for every creature regardless of ladder
+scale. Measured against the shipped floats with the correction applied:
 
     132 points, single-family entries
       bit-exact                      1
