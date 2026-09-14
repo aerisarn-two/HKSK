@@ -835,10 +835,31 @@ across the 107 behaviour graphs the 49 projects reach is a round authored value 
 0.03333334, one frame at 30 Hz. None is near 0.0403. `bcbehavior.hkb`, the single
 authoring-side file in the game data, has 0.033, 0.035 and 0.035019 and nothing closer.
 
-The Havok 2010.2 SDK does not settle it either: it ships no Behavior component, so
-`hkbBlenderGenerator` exists there only in the reflection patch tables and its blending
-code is not present. The single `0.04f` in the whole SDK is a comment on quaternion
-packing error (`|q.length4()-1.0f| < 0.04f`), unrelated.
+The Havok 2010.2 SDK does not settle it either. It ships no Behavior component — the
+libraries are hkBase, hkaAnimation, hkp*, hkg*, hks* and no hkbBehavior — so
+`hkbBlenderGenerator` exists there only in the reflection patch tables and the code that
+turns a blend parameter into child weights is not present to read. The single `0.04f` in
+the whole SDK is a comment on quaternion packing error (`|q.length4()-1.0f| < 0.04f`).
+
+The layer beneath it is present, `hkaSampleAndCombineUtils`, and it documents the two
+knobs that would fit a threshold explanation. Both default to zero and both are job
+parameters set at runtime rather than stored in any `.hkx`, so what Bethesda passed
+cannot be read — but neither can produce the measured shape:
+
+    hkReal m_minimumWeight;           ///< Weight below which animations are ignored
+    hkReal m_frameSteppingTolerance;  ///< Tolerance to which animations snap to the
+                                      ///  nearest frame rather than interpolate
+
+A weight cutoff **clips** a segment's ends rather than shifting it: below the cutoff one
+child is dropped and the output equals the other exactly. The shipped curve is still
+blending at u = 0.995 — the Falmer's forward record reads 99.783 where the top child
+alone would give 100.463 — and only reaches the top child at saturation. If
+`m_minimumWeight` were anywhere near 0.04 the last points of every segment would already
+read the top child exactly, and they do not.
+
+Frame stepping snaps the sampled time to a frame boundary. Over a cycle the travel is
+unchanged, so it quantises the pose without biasing total displacement, and cannot
+produce a one-signed speed offset.
 
 So the constant lives in the generator's own code, which did not ship. It is measurable
 from the output and not recoverable from the inputs, and that is where the search ends
