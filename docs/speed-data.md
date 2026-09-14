@@ -1282,7 +1282,23 @@ recovers from the `iState_<MOVT>` variables:
     SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
 
 Matching on the tokens the two names share, once the creature's own name is removed,
-takes the total to 817 of the 1634 records. Ten projects have every record placed and
+takes the total to 874 of the 1634 records. Two normalisations are needed, because the
+two sides were written by different people: a movement type says what the actor is
+doing and a node says what it plays, so they differ by inflection — `NPCSneaking`
+against `Sneak_Direction_Blend`, `NPCMagicCasting` against `MagicCast_Direction_Blend`
+— and **`MT` is the movement type itself**, so an `MT_` blend is the default one.
+`SphereDefault` is answered by `MT_Direction_Blend` and the player's `NPCDefault` by
+the one in `mt_behavior`, to 0.013%.
+
+**Read the states from the root graph, not from every graph.** A sub-graph carries its
+own copy of the `iState_<MOVT>` variables and the copies do not always agree:
+
+    iState_NPCSneaking    0_master = 2   1hm_locomotion, bow_direction_behavior = 0
+    iState_NPCSprinting   0_master = 1   1hm_behavior = 2
+
+Merging them puts one movement type under two keys and makes the state look ambiguous
+when it is not — which is what hid the player's plain locomotion. The character file
+names the graph that counts, in `hkbCharacterStringData.m_behaviorFilename`. Ten projects have every record placed and
 rebuilt to better than a tenth of a percent at the 90th percentile. Where two compasses
 tie, the answer is no compass rather than a guess.
 

@@ -237,10 +237,10 @@ public sealed class SpeedSamplerTests
 
         errors.Sort();
         Assert.Equal(1634, records);
-        Assert.Equal(817, resolved);
-        Assert.Equal(10288, errors.Count);
+        Assert.Equal(874, resolved);
+        Assert.Equal(10894, errors.Count);
         Assert.InRange(errors[errors.Count / 2], 0d, 0.002d);        // median under 0.2%
-        Assert.True(errors.Count(e => e < 0.0005) >= 4900,
+        Assert.True(errors.Count(e => e < 0.0005) >= 5500,
                     $"only {errors.Count(e => e < 0.0005)} points within 0.05%");
     }
 
@@ -334,6 +334,15 @@ public sealed class SpeedSamplerTests
         Assert.Equal(["Bow_Direction_Blend", "CrossBow_Direction_Blend"],
                      player.TaggedCompasses[8].Select(c => c.Name).Distinct().Order());
 
+        // No tagging generator covers the plain movement type, and the file is what
+        // finds it: MT is the movement type, so an MT_ blend is the default one,
+        // and the player's lives in mt_behavior.
+        SpeedCompass mt = player.Compasses.Single(c =>
+            ReferenceEquals(c.Arms, player.CompassFor(0)));
+        Assert.Equal("MT_Direction_Blend", mt.Name);
+        Assert.Equal("mt_behavior", mt.File);
+        Assert.DoesNotContain(0, player.TaggedCompasses.Keys);
+
         // the player's records are rebuilt off that, and off nothing else
         var errors = new List<double>();
         foreach (SpeedEntry entry in cache.SpeedData!.Block("DefaultFemale")!.Entries)
@@ -349,7 +358,7 @@ public sealed class SpeedSamplerTests
         }
 
         errors.Sort();
-        Assert.Equal(1327, errors.Count);
+        Assert.Equal(1814, errors.Count);
         Assert.InRange(errors[errors.Count / 2], 0d, 0.001d);          // median under 0.1%
         Assert.InRange(errors[(int)(errors.Count * 0.9)], 0d, 0.01d);  // p90 under 1%
     }

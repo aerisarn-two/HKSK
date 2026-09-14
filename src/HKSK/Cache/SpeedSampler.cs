@@ -45,6 +45,16 @@ public readonly record struct SpeedCompass(
 /// </summary>
 /// <remarks>
 /// <para>
+/// <strong>This reports what the graph says and infers nothing.</strong>
+/// <see cref="SpeedDataFile"/> is the table itself, read and written as
+/// <see cref="AnimationDataFile"/> and <see cref="AnimationSetDataFile"/> are;
+/// this is the other side of the same join, read the same way. Which compass a
+/// given state's records were sampled from is not something the graph settles for
+/// most creatures, and guessing it is a caller's business -- one that knows, or
+/// is told, should not have to route around a guess made here.
+/// </para>
+/// <remarks>
+/// <para>
 /// <c>BSSpeedSamplerModifier</c> is the only thing in the game that reads a speed
 /// table. It sits in the root modifier list and is bound to four variables --
 /// state, direction and goalSpeed in, the sampled speed out -- and that output
@@ -105,6 +115,20 @@ public sealed class SpeedSampler
     /// is 0.00 forward, 0.25 right, 0.50 back, 0.75 left.
     /// </remarks>
     public required IReadOnlyList<SpeedCompass> Compasses { get; init; }
+
+    /// <summary>
+    /// The compasses a <c>BSiStateTaggingGenerator</c> puts under each iState
+    /// value, which is the graph saying so itself.
+    /// </summary>
+    /// <remarks>
+    /// A tagging generator sets <c>iState</c> to <see cref="int"/> while its
+    /// subtree is active, so the compasses under it are the ones that state's
+    /// records were sampled from. Eight projects carry them.
+    /// <c>BSIStateManagerModifier</c> says the same thing a different way, binding
+    /// each entry's <c>iStateToSetAs</c> to an <c>iState_&lt;MOVT&gt;</c> variable
+    /// rather than storing the number.
+    /// </remarks>
+    public required IReadOnlyDictionary<int, IReadOnlyList<SpeedCompass>> TaggedCompasses { get; init; }
 
     /// <summary>Reads a project's sampler, or null when it has none.</summary>
     public static SpeedSampler? FromProject(ActorProject project)
@@ -245,135 +269,6 @@ public sealed class SpeedSampler
         return top > 1.001f;
     }
 
-    /// <summary>
-    /// The compasses a <c>BSiStateTaggingGenerator</c> puts under each iState
-    /// value, which is the graph saying so itself.
-    /// </summary>
-    /// <remarks>
-    /// A tagging generator sets <c>iState</c> to <see cref="int"/> while its
-    /// subtree is active, so the compasses under it are the ones that state's
-    /// records were sampled from. Eight projects carry them.
-    /// <c>BSIStateManagerModifier</c> says the same thing a different way, binding
-    /// each entry's <c>iStateToSetAs</c> to an <c>iState_&lt;MOVT&gt;</c> variable
-    /// rather than storing the number.
-    /// </remarks>
-    public required IReadOnlyDictionary<int, IReadOnlyList<SpeedCompass>> TaggedCompasses { get; init; }
-
-    /// <summary>
-    /// The compass serving a locomotion state, or null when the project's
-    /// compasses do not separate on it.
-    /// </summary>
-    /// <remarks>
-    /// A key is an <c>iState</c> value and names a movement type (§3.1), and the
-    /// movement type is what says which family a record was sampled for: a
-    /// <c>GiantProject</c> key of 2 is <c>GiantCombatRun</c> and the compass is
-    /// <c>CombatDirectionalBlend_RUN</c>; a <c>DraugrProject</c> key of 5 is
-    /// <c>DraugrGreatSword</c> and the compass is <c>2GS_Direction_Blend</c>.
-    /// Matching is on the tokens the two names share once the creature's own name
-    /// -- carried by every one of its movement types, so it distinguishes nothing
-    /// -- is removed.
-    ///
-    /// This is a name match and it is the one place here that is. The tree says
-    /// which blends the sampler drives and which arm answers a heading; it does
-    /// not say which family a state belongs to, because nothing in the graph
-    /// writes <c>iState</c> for most creatures -- the engine sets it from the
-    /// actor's movement type. So the movement type's name is the join, and where
-    /// two compasses tie on it this returns null rather than guessing.
-    /// </remarks>
-    public IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassFor(int key)
-    {
-        if (Compasses.Count == 0) return null;
-
-        // The graph first, where it says: a tagging generator that sets iState to
-        // this key has the answering compass somewhere beneath it. Where it leaves
-        // more than one the tag still narrows the field, and the movement type
-        // only has to break the tie -- the player's key 8 is NPCBow under a tag
-        // reaching both the bow and the crossbow compass, and "CrossBow" carries a
-        // token "NPCBow" does not.
-        // Where the graph tags this key, those nodes are the candidates and the
-        // name only chooses among them. Widening back to every compass of the same
-        // name undoes the tag: the player's key 8 is NPCBow, whose tag reaches the
-        // bow and crossbow compasses of 1hm_locomotion, and the copy in
-        // bow_direction_behavior -- the drawn-bow locomotion, which answers key 3 --
-        // is a different curve entirely.
-        TaggedCompasses.TryGetValue(key, out IReadOnlyList<SpeedCompass>? tagged);
-        List<SpeedCompass> candidates = tagged is { Count: > 0 } ? [.. tagged] : [.. Compasses];
-
-        if (candidates.Count == 1) return candidates[0].Arms;
-
-        var movements = States.FirstOrDefault(s => s.Key == key).MovementTypes ?? [];
-        if (movements.Count == 0) return Pick(candidates);
-
-        // Every movement type of a creature carries its name, so the tokens they
-        // all share are noise here.
-        HashSet<string>? shared = null;
-        foreach (SpeedState state in States)
-            foreach (string movement in state.MovementTypes)
-            {
-                HashSet<string> tokens = Tokenise(movement);
-                if (shared is null) shared = tokens;
-                else shared.IntersectWith(tokens);
-            }
-
-        var wanted = new HashSet<string>();
-        foreach (string movement in movements) wanted.UnionWith(Tokenise(movement));
-        if (shared is not null) wanted.ExceptWith(shared);
-
-        // A name can occur in several of a project's graphs -- the player defines
-        // Bow_Direction_Blend in three -- so rank names, not nodes, or identical
-        // copies tie with each other and look ambiguous.
-        var ranked = candidates
-            .GroupBy(c => c.Name)
-            .Select(g =>
-            {
-                HashSet<string> tokens = Tokenise(g.Key);
-                return (Name: g.Key, Copies: g.ToList(),
-                        Score: tokens.Count(t => wanted.Contains(t)) * 10 - tokens.Count(t => !wanted.Contains(t)));
-            })
-            .OrderByDescending(c => c.Score)
-            .ToList();
-
-        if (ranked.Count == 0) return null;
-        if (ranked.Count > 1 && ranked[0].Score <= ranked[1].Score) return null;
-
-        return Pick(ranked[0].Copies);
-    }
-
-    /// <summary>
-    /// One compass out of the copies a project defines under the same name.
-    /// </summary>
-    /// <remarks>
-    /// Copies that play the same thing are the same answer. Where they differ, the
-    /// file decides: the player defines <c>Bow_Direction_Blend</c> three times with
-    /// two different ladder sets under it, and the one in
-    /// <c>bow_direction_behavior</c> is the bow locomotion while the others are the
-    /// blocking and the shared-weapon variants. A file whose name matches the
-    /// compass's is that compass's own file.
-    /// </remarks>
-    private static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? Pick(List<SpeedCompass> copies)
-    {
-        if (copies.Count == 0) return null;
-
-        var distinct = copies
-            .GroupBy(c => string.Join(";", c.Arms.OrderBy(a => a.Direction)
-                .Select(a => $"{a.Direction}:{string.Join(",", a.Ladder.Rungs.Select(r => $"{r.Weight}/{r.Animation}"))}")))
-            .ToList();
-
-        if (distinct.Count == 1) return distinct[0].First().Arms;
-
-        // The copy living in the file named for it.
-        var own = copies
-            .Where(c => c.File is not null)
-            .Select(c => (c, Shared: Tokenise(c.Name).Intersect(Tokenise(c.File!)).Count()))
-            .OrderByDescending(t => t.Shared)
-            .ToList();
-
-        if (own.Count == 0 || own[0].Shared == 0) return null;
-        if (own.Count > 1 && own[1].Shared == own[0].Shared) return null;
-
-        return own[0].c.Arms;
-    }
-
     /// <summary>Every compass reachable below a node.</summary>
     private static IEnumerable<hkbBlenderGenerator> CompassesUnder(
         object? node, Dictionary<hkbBlenderGenerator, SpeedCompass> wanted, HashSet<object> seen, int depth = 0)
@@ -401,17 +296,6 @@ public sealed class SpeedSampler
                 foreach (var found in CompassesUnder(cyclic.m_pBlenderGenerator, wanted, seen, depth + 1)) yield return found;
                 break;
         }
-    }
-
-    /// <summary>Splits a node or movement-type name into comparable tokens.</summary>
-    private static HashSet<string> Tokenise(string name)
-    {
-        string[] parts = System.Text.RegularExpressions.Regex.Split(
-            name, @"(?<!^)(?=[A-Z][a-z])|[^A-Za-z0-9]+|(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])");
-
-        // words every locomotion blender carries, which separate nothing
-        HashSet<string> noise = ["blend", "direction", "directional", "locomotion", "mt", ""];
-        return [.. parts.Select(p => p.ToLowerInvariant()).Where(p => p.Length > 0 && !noise.Contains(p))];
     }
 
     /// <summary>
@@ -474,10 +358,33 @@ public sealed class SpeedSampler
         }
     }
 
+    /// <summary>
+    /// The states a project declares, read from the root behaviour graph.
+    /// </summary>
+    /// <remarks>
+    /// <strong>The root graph, not every graph.</strong> A sub-graph carries its
+    /// own copy of the <c>iState_&lt;MOVT&gt;</c> variables and the copies do not
+    /// always agree: the player's <c>iState_NPCSneaking</c> is 2 in
+    /// <c>0_master</c> and 0 in <c>1hm_locomotion</c>,
+    /// <c>bow_direction_behavior</c> and two others, and its
+    /// <c>iState_NPCSprinting</c> is 1 in <c>0_master</c> and 2 in
+    /// <c>1hm_behavior</c>. Merging them puts one movement type under two keys and
+    /// makes the state look ambiguous when it is not. The character file names the
+    /// graph that counts.
+    /// </remarks>
     private static IReadOnlyList<SpeedState> ReadStates(ActorProject project)
     {
+        string? rootName = project.Character?.BehaviorFilename is { } filename
+            ? Path.GetFileNameWithoutExtension(filename.Replace('\\', '/'))
+            : null;
+
         var states = new SortedDictionary<int, List<string>>();
-        foreach (BehaviorFile behavior in project.Behaviors)
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // the root first, so its answer stands where a sub-graph disagrees
+        foreach (BehaviorFile behavior in project.Behaviors
+                     .OrderByDescending(b => rootName is not null
+                         && string.Equals(b.Name, rootName, StringComparison.OrdinalIgnoreCase)))
         {
             IList<string> names = VariableNames(behavior);
             var initial = behavior.File.All<hkbBehaviorGraphData>()
@@ -487,7 +394,10 @@ public sealed class SpeedSampler
             for (int i = 0; i < names.Count && i < initial.Count; i++)
             {
                 if (!names[i].StartsWith("iState_", StringComparison.OrdinalIgnoreCase)) continue;
+
                 string movt = names[i]["iState_".Length..];
+                if (!claimed.Add(movt)) continue;
+
                 if (!states.TryGetValue(initial[i].m_value, out List<string>? list))
                     states[initial[i].m_value] = list = [];
                 if (!list.Contains(movt)) list.Add(movt);
