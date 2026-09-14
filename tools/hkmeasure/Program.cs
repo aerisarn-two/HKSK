@@ -143,20 +143,53 @@ static class Probe
         blender.m_maxCyclicBlendParameter = 1f;
         blender.m_subtractLastChild = false;
 
+        // Per-child playback speed.  SphereCenturion's two lower rungs are the
+        // same clip at 0.026 and 1, not two clips, and sync has to compose with
+        // that -- so it is a separate axis from the clip's own duration.
+        var pb = new float[ac.m_bindings.Count];
+        for (int i = 0; i < pb.Length; i++) pb[i] = 1f;
+        string penv = Environment.GetEnvironmentVariable("PB");
+        if (penv != null)
+        {
+            string[] pp = penv.Split(',');
+            for (int i = 0; i < pb.Length && i < pp.Length; i++)
+                pb[i] = float.Parse(pp[i], CultureInfo.InvariantCulture);
+        }
+
+        // Rung positions.  Default 0,1; a floor-rung experiment wants the lowest
+        // rung above zero, e.g. WEIGHTS=5,192 as SphereCenturion's forward ladder.
+        var rungW = new float[ac.m_bindings.Count];
+        for (int i = 0; i < rungW.Length; i++) rungW[i] = i;
+        string wenv = Environment.GetEnvironmentVariable("WEIGHTS");
+        if (wenv != null)
+        {
+            string[] parts = wenv.Split(',');
+            for (int i = 0; i < rungW.Length && i < parts.Length; i++)
+                rungW[i] = float.Parse(parts[i], CultureInfo.InvariantCulture);
+        }
+        Console.WriteLine("[blend] rung weights " + string.Join(", ", Array.ConvertAll(rungW, F)));
+        // A clip played at p takes duration/p, so that is the rung's duration.
+        for (int i = 0; i < pb.Length; i++)
+        {
+            durs[i] /= pb[i];
+            clipSpeed[i] *= pb[i];
+            Console.WriteLine($"[blend] rung {i}: pb={F(pb[i])} d={durs[i]:G9} delivers={clipSpeed[i]:G9}");
+        }
+
         var clips = new List<hkbClipGenerator>();
         for (int i = 0; i < ac.m_bindings.Count; i++)
         {
             var clip = Root(new hkbClipGenerator());
             clip.m_name = "clip" + i;
             clip.m_animationName = "clip" + i;
-            clip.m_playbackSpeed = 1f;
+            clip.m_playbackSpeed = pb[i];
             clip.m_animationBindingIndex = -1;
             clip.m_mode = hkbClipGenerator.PlaybackMode.MODE_LOOPING;
             Methods.setAnimationBinding(clip, (IntPtr)ac.m_bindings[i]);
 
             var kid = Root(new hkbBlenderGeneratorChild());
             kid.m_generator = clip;
-            kid.m_weight = i;               // rungs at 0 and 1
+            kid.m_weight = rungW[i];
             kid.m_worldFromModelWeight = 1f;
             blender.m_children.Add(kid);
             clips.Add(clip);
@@ -227,14 +260,56 @@ static class Probe
         };
         Func<hkQsTransform> Where = () => Methods.getWorldFromModel(ch);
 
-        Console.WriteLine("x,delivered,predicted,error,u_effective,x-u,chord");
-        for (int s = 0; s <= steps; s++)
+        // Sweep bounds default to the rung span; XRANGE=lo,hi to go outside it,
+        // which is the whole point of a floor-rung measurement.
+        double xlo = rungW[0], xhi = rungW[rungW.Length - 1];
+        string xenv = Environment.GetEnvironmentVariable("XRANGE");
+        if (xenv != null)
         {
-            float x = (float)s / steps;
+            string[] xp = xenv.Split(',');
+            xlo = double.Parse(xp[0], CultureInfo.InvariantCulture);
+            xhi = double.Parse(xp[1], CultureInfo.InvariantCulture);
+        }
+
+        // Section 6 as this document states it: bracket x between two rungs,
+        // interpolate travel and duration separately, divide.  Outside the span
+        // it clamps to the end rung -- which is the claim under test here.
+        Func<double, double> Model = xx =>
+        {
+            int n = rungW.Length;
+            if (xx <= rungW[0]) return clipSpeed[0];
+            if (xx >= rungW[n - 1]) return clipSpeed[n - 1];
+            int k = 0;
+            while (k + 2 < n && rungW[k + 1] <= xx) k++;
+            double u = (xx - rungW[k]) / (rungW[k + 1] - rungW[k]);
+            double ta = clipSpeed[k] * durs[k], tb = clipSpeed[k + 1] * durs[k + 1];
+            return (ta + (tb - ta) * u) / (durs[k] + (durs[k + 1] - durs[k]) * u);
+        };
+
+        // XLIST=a,b,c samples exactly those x instead of an even sweep, so a
+        // shipped record's own points can be reproduced point for point.
+        double[] xs;
+        string lenv = Environment.GetEnvironmentVariable("XLIST");
+        if (lenv != null)
+        {
+            string[] lp = lenv.Split(',');
+            xs = new double[lp.Length];
+            for (int i = 0; i < lp.Length; i++) xs[i] = double.Parse(lp[i], CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            xs = new double[steps + 1];
+            for (int i = 0; i <= steps; i++) xs[i] = xlo + (xhi - xlo) * i / steps;
+        }
+
+        Console.WriteLine("x,delivered,model,err_pct,over_floor");
+        for (int st = 0; st < xs.Length; st++)
+        {
+            double x = xs[st];
 
             // activate() clones the node tree, so the blend parameter has to be
             // set on the template before the clone is taken.
-            blender.m_blendParameter = x;
+            blender.m_blendParameter = (float)x;
             Methods.deactivate(graph, ctx);
             Methods.activate(graph, ctx);
             for (int i = 0; i < clips.Count; i++)
@@ -245,16 +320,10 @@ static class Probe
             for (int i = 0; i < sample; i++) Step();
 
             double delivered = Math.Sqrt(accX * accX + accY * accY) / (sample * dt);
-            float chord = clipSpeed[0] + (clipSpeed[1] - clipSpeed[0]) * x;
-
-            // Section 6: y = |lerp(travel_a, travel_b, u)| / lerp(d_a, d_b, u).
-            // Invert it for the u the runtime actually used, so the residual
-            // between that and the nominal x is visible.
-            double ta = clipSpeed[0] * durs[0], tb = clipSpeed[1] * durs[1];
-            double pred = (ta + (tb - ta) * x) / (durs[0] + (durs[1] - durs[0]) * x);
-            double uEff = (delivered * durs[0] - ta) / ((tb - ta) - delivered * (durs[1] - durs[0]));
-            Console.WriteLine($"{F(x)},{delivered:F6},{pred:F6},{(delivered - pred):+0.000000;-0.000000}," 
-                            + $"{uEff:F8},{(x - uEff):+0.00000000;-0.00000000},{F(chord)}");
+            double model = Model(x);
+            double errPct = model == 0 ? 0 : (delivered - model) / model * 100.0;
+            Console.WriteLine($"{x:F4},{delivered:F6},{model:F6},{errPct:+0.0000;-0.0000},"
+                            + $"{delivered / clipSpeed[0]:F6}");
             Console.Out.Flush();
         }
 
