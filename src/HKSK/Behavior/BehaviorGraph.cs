@@ -177,7 +177,7 @@ public sealed class BehaviorGraph
             }
 
             // Pushed in reverse so the first child is popped first.
-            foreach ((string member, int index, IHavokObject child) in BehaviorEdges.Of(step.Node).Reverse())
+            foreach ((string member, int index, IHavokObject child) in HavokEdges.Of(step.Node).Reverse())
                 stack.Push(new BehaviorStep(child, step.File, step.Node, member, index, step.Depth + 1));
         }
     }

@@ -3,11 +3,11 @@ using System.Reflection;
 using HKX2;
 using Type = System.Type;
 
-namespace HKSK.Behavior;
+namespace HKSK.Havok;
 
 /// <summary>
-/// The child objects a Havok node holds, found by reflection rather than by a
-/// hand-written list of node types.
+/// The child objects a Havok object holds, found by reflection rather than by a
+/// hand-written list of types.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,7 +27,7 @@ namespace HKSK.Behavior;
 /// construction and stays correct when the type set grows.
 /// </para>
 /// </remarks>
-public static class BehaviorEdges
+public static class HavokEdges
 {
     private static readonly Dictionary<Type, PropertyInfo[]> Cached = [];
     private static readonly object Gate = new();
