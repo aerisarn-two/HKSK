@@ -227,4 +227,36 @@ public class SpeedLadderTests
 
         Assert.Equal(50f, ladder.Evaluate(50f), 4);
     }
+
+    /// <summary>
+    /// A blend without <c>FLAG_SYNC</c> mixes the motion its children already
+    /// produce, which is a straight line between the rungs.
+    /// </summary>
+    /// <remarks>
+    /// 21 of the corpus's sampler-driven ladders are unsynchronised and the
+    /// difference is not small. `ChaurusProject`'s backward ladder runs 4.94 at its
+    /// floor rung of 5 and 95.01 at its next of 95.09, the same clip at two playback
+    /// speeds; at x = 8.5 the synchronised form gives 5.13, the unsynchronised 8.44,
+    /// and the shipped table says 8.41876.
+    /// </remarks>
+    [Fact]
+    public void WithoutSyncTheBlendIsAStraightLineBetweenTheRungs()
+    {
+        SpeedRung[] rungs =
+        [
+            new(5f, new Vector3(0f, -142.513f, 0f), 28.8462f),
+            new(95.09f, new Vector3(0f, -142.513f, 0f), 1.5f),
+        ];
+
+        var synced = new SpeedLadder(rungs) { Synchronised = true };
+        var free = new SpeedLadder(rungs) { Synchronised = false };
+
+        // the rungs themselves are the same either way
+        Assert.Equal(synced.Evaluate(5f), free.Evaluate(5f), 3);
+        Assert.Equal(synced.Evaluate(95.09f), free.Evaluate(95.09f), 3);
+
+        // between them they are not
+        Assert.Equal(5.129f, synced.Evaluate(8.5f), 2);
+        Assert.Equal(8.441f, free.Evaluate(8.5f), 2);
+    }
 }

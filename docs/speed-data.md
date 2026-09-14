@@ -1244,20 +1244,67 @@ hides a bad end, and averaging over records hides whole records being wrong, so 
 score here is per curve: a curve passes when *every* point of it is within 2%. Counting
 that way, over the 1482 curves belonging to the 41 projects that read the table:
 
-    pass, every point within 2%                     651    43.9%
-    rebuilt and does not hold                       223    15.0%
+    pass, every point within 2%                     660    44.5%
+    rebuilt and does not hold                       214    14.4%
     no compass to rebuild from                      608    41.0%
 
-Six projects have every curve they own inside 2%, and the worst point of the worst of
-those curves is half a percent:
+Seven projects have every curve they own inside 2%, and the worst point of the worst
+of those curves is half a percent:
 
-    BallistaCenturion  DraugrSkeletonProject  SphereCenturion
-    SteamProject       TrollProject           VampireLord
+    BallistaCenturion  ChaurusProject  DraugrSkeletonProject  SphereCenturion
+    SteamProject       TrollProject    VampireLord
+
+#### Not every ladder is synchronised
+
+**21 of the 1059 sampler-driven ladders carry `flags = 0x10` — `FLAG_PARAMETRIC_BLEND`
+without `FLAG_SYNC`** — and §6's form does not apply to them. A synchronised blend puts
+its children on one clock, so travel and duration interpolate separately and the speed
+is the first over the second, which is the hyperbola of §6. Without sync the children
+run at their own rates and what blends is the motion they are already producing: a
+straight line between the rungs.
+
+`ChaurusProject`'s backward ladder is the clean case. Its floor rung sits at 5 and
+delivers 4.94, its next at 95.09 delivers 95.01, and they are the same clip at two
+playback speeds — exactly the shape §6.1 works through for `SphereCenturion`:
+
+    x = 8.5      synchronised      5.129
+                 unsynchronised    8.441
+                 shipped           8.419
+
+The record also has only four points across its whole range, which is the giveaway: a
+hyperbola that steep would have forced the sampler to retain a dozen, as
+`SphereCenturion`'s does. Branching on the flag takes the chaurus from 10 of 19 curves
+to 19 of 19.
 
 Most of the 608 are quadrupeds and single-gait creatures, which turn rather than
 strafe: they have no compass at all, so their side and back records come from a turn
-axis §6 does not model. The 223 that fail are the identification problem below, plus
-the three creatures whose ladders do not describe their tables.
+axis §6 does not model.
+
+**What the 214 failures are**, taken apart rather than averaged:
+
+    one record spanning two gaits      64   BenthicLurker key 1, Falmer key 2
+    the wrong compass chosen           85   Werewolf, Riekling, FirstPerson,
+                                            Slaughterfish, Mudcrab
+    a uniform factor of two            19   HMDaedra
+    the floor of the backward arc      35   Giant, AtronachFrost, Hagraven,
+                                            FrostbiteSpider, Spriggan, VampireBrute
+    the player's own residue           11   keys 3, 7, 9, 16
+
+A **gait-spanning** record is one curve answered by two compasses: `BenthicLurker` key 1
+runs from 5 to 320 while the compass chosen for it is the run family, whose floor rung
+is 213.8 — so the top matches exactly and everything below it is wrong. §6 models one
+ladder per record and this is the shape it cannot express.
+
+`HMDaedra` is **exactly half** at every point of all 19 curves — 2.4992 against a floor
+rung of 4.9984, saturating at 64 against a top rung of 128. The compass is sound (its
+nine arms blend to 128 at heading 0) and so is the ladder; the table simply records half
+of it. That is one number, applied uniformly, and it is not a blend question.
+
+The **backward-arc floor** failures are the §9 floor-rung anomaly, now localised: they
+are all at or near x = 0, all in the compass arc from 0.30 to 0.70, and shipped is always
+*higher* than the model — the giant reads 6.85 at x = 0 where its backward arm's floor
+rung delivers 5.00. Havok itself holds the floor child flat there (§6.1, measured), so
+this is something the sampler did and not something the blend does.
 
 **Which family a state belongs to.** This is the largest remaining error. The tree says
 which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); the

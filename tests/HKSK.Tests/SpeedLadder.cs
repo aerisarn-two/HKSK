@@ -54,6 +54,21 @@ public sealed class SpeedLadder
     /// <summary>The blender these rungs came from, when they came from one.</summary>
     public string? Name { get; init; }
 
+    /// <summary>Whether the blend synchronises its children's timing.</summary>
+    /// <remarks>
+    /// <c>FLAG_SYNC</c>, and it decides the shape of the whole response. A
+    /// synchronised blend puts its children on one clock, so the travel and the
+    /// duration interpolate separately and the speed is the first over the second
+    /// -- a hyperbola between two rungs of differing duration. Without it the
+    /// children run at their own rates and what blends is the motion they are
+    /// already producing, which is a straight line between the rungs.
+    ///
+    /// 1038 of the corpus's sampler-driven ladders are synchronised and 21 are not,
+    /// and the 21 are not a rounding difference: <c>ChaurusProject</c>'s backward
+    /// ladder reads 8.42 at x=8.5 where the synchronised form gives 5.13.
+    /// </remarks>
+    public bool Synchronised { get; init; } = true;
+
     public SpeedLadder(IEnumerable<SpeedRung> rungs)
     {
         ArgumentNullException.ThrowIfNull(rungs);
@@ -68,11 +83,44 @@ public sealed class SpeedLadder
     /// it to a length before interpolating overstates any blend that mixes
     /// headings, because |lerp(a,b)| &lt; lerp(|a|,|b|) unless a and b are parallel.
     /// </remarks>
-    public float Evaluate(float x)
+    public float Evaluate(float x) => Velocity(x).Length();
+
+    /// <summary>What the blend delivers at <paramref name="x"/>, as a vector.</summary>
+    /// <remarks>
+    /// The velocity, not the speed, because a caller composing two of these -- the
+    /// arms of a compass -- has to keep the heading until the last step.
+    /// </remarks>
+    public Vector3 Velocity(float x)
     {
-        (Vector3 travel, float duration) = Resolve(x);
-        return duration > 0f ? travel.Length() / duration : 0f;
+        if (Synchronised)
+        {
+            (Vector3 travel, float duration) = Resolve(x);
+            return duration > 0f ? travel / duration : Vector3.Zero;
+        }
+
+        // Unsynchronised: each rung is already producing its own motion, and what
+        // the blend mixes is that.
+        if (Rungs.Count == 0) return Vector3.Zero;
+        if (Rungs.Count == 1 || x <= Rungs[0].Weight) return VelocityOf(Rungs[0]);
+        if (x >= Rungs[^1].Weight) return VelocityOf(Rungs[^1]);
+
+        for (int i = 1; i < Rungs.Count; i++)
+        {
+            SpeedRung b = Rungs[i];
+            if (x > b.Weight) continue;
+
+            SpeedRung a = Rungs[i - 1];
+            float span = b.Weight - a.Weight;
+            if (span <= 0f) return VelocityOf(b);
+
+            return Vector3.Lerp(VelocityOf(a), VelocityOf(b), (x - a.Weight) / span);
+        }
+
+        return VelocityOf(Rungs[^1]);
     }
+
+    private static Vector3 VelocityOf(SpeedRung rung) =>
+        rung.Duration > 0f ? rung.Travel / rung.Duration : Vector3.Zero;
 
     /// <summary>
     /// The travel and duration the blend produces at <paramref name="x"/>, before
@@ -181,7 +229,11 @@ public sealed class SpeedLadder
                 Path.GetFileNameWithoutExtension(name.Replace('\\', '/'))));
         }
 
-        return new SpeedLadder(rungs) { Name = blender.m_name };
+        return new SpeedLadder(rungs)
+        {
+            Name = blender.m_name,
+            Synchronised = (blender.m_flags & 1) != 0,      // FLAG_SYNC
+        };
     }
 
     private static IEnumerable<hkbClipGenerator> ClipsUnder(object? node)

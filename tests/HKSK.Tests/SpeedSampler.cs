@@ -337,6 +337,11 @@ public sealed class SpeedSampler
         float span = to - from;
         float u = span > 0f ? (here - from) / span : 0f;
 
+        // An unsynchronised arm has no travel-and-duration pair to mix -- what it
+        // produces is a velocity already -- so a compass over one blends velocities.
+        if (!ordered[lower].Ladder.Synchronised || !ordered[upper].Ladder.Synchronised)
+            return Vector3.Lerp(ordered[lower].Ladder.Velocity(x), ordered[upper].Ladder.Velocity(x), u).Length();
+
         (Vector3 travelA, float durationA) = ordered[lower].Ladder.Resolve(x);
         (Vector3 travelB, float durationB) = ordered[upper].Ladder.Resolve(x);
 

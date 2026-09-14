@@ -194,8 +194,8 @@ public sealed class SpeedSamplerTests
     /// of both (<see cref="SpeedSampler.Sample"/>).
     /// </para>
     /// <para>
-    /// Of the 1482 curves in the 41 projects that read the table, 651 hold at 2%
-    /// end to end, 223 are rebuilt and do not hold, and 608 have no compass to
+    /// Of the 1482 curves in the 41 projects that read the table, 660 hold at 2%
+    /// end to end, 214 are rebuilt and do not hold, and 608 have no compass to
     /// rebuild from -- mostly quadrupeds, which turn rather than strafe, so their
     /// side and back records come from a turn axis §6 does not model.
     /// </para>
@@ -226,13 +226,13 @@ public sealed class SpeedSamplerTests
         }
 
         Assert.Equal(1482, curves);
-        Assert.Equal(651, pass);
-        Assert.Equal(223, fail);
+        Assert.Equal(660, pass);
+        Assert.Equal(214, fail);
         Assert.Equal(608, unresolved);
     }
 
     /// <summary>
-    /// Six projects have every curve they own rebuilt, end to end.
+    /// Seven projects have every curve they own rebuilt, end to end.
     /// </summary>
     /// <remarks>
     /// These are the ones whose families the graph separates cleanly, and they are
@@ -241,7 +241,7 @@ public sealed class SpeedSamplerTests
     /// The worst point of the worst of these curves is half a percent.
     /// </remarks>
     [CorpusFact]
-    public void SixProjectsRebuildEveryCurveTheyHave()
+    public void SevenProjectsRebuildEveryCurveTheyHave()
     {
         (SkyrimCache cache, List<string> projects) = Load();
 
@@ -273,8 +273,8 @@ public sealed class SpeedSamplerTests
 
         Assert.Equal(
         [
-            "BallistaCenturion", "DraugrSkeletonProject", "SphereCenturion",
-            "SteamProject", "TrollProject", "VampireLord",
+            "BallistaCenturion", "ChaurusProject", "DraugrSkeletonProject",
+            "SphereCenturion", "SteamProject", "TrollProject", "VampireLord",
         ], whole.OrderBy(n => n, StringComparer.Ordinal).ToArray());
 
         Assert.InRange(worst, 0d, 0.006d);
