@@ -26,4 +26,13 @@
     <PackageReference Include="Mopper.Native" Version="2.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The movement types are plugin records. HKSK reads Havok files and the
+      animation cache and does not open plugins; the rebuild needs MOVT as an
+      input, so the test supplies it the way se-cmd does.
+    -->
+    <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0" />
+  </ItemGroup>
+
 </Project>

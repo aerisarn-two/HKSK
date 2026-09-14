@@ -164,7 +164,16 @@ public sealed class SpeedLadder
     /// recorded there.
     /// </summary>
     /// <remarks>
-    /// Measured, not derived. <see cref="Evaluate"/> is the blend law exactly, so
+    /// <strong>Fitted, and the only fitted number here.</strong> The admissible
+    /// inputs are the behaviour graph, the movement types and the root motion, and
+    /// this is none of them: it was obtained by minimising the error against the
+    /// shipped file. It earns its place differently from a per-creature threshold
+    /// read off its own answer -- it is one global constant, the same for every
+    /// creature, and it is a property of the tool Bethesda sampled with rather than
+    /// of the data being described -- but it is fitted, and a rebuild that has to
+    /// supply it is not deriving the file from its inputs alone.
+    ///
+    /// <see cref="Evaluate"/> is the blend law exactly, so
     /// this is the whole of the difference between the law and the shipped file:
     /// fitting <c>x' = a*x + b</c> over the corpus gives <c>a = 1.000000</c> and
     /// <c>b = -0.040445</c>, a pure offset with no scale, constant across creatures
