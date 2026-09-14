@@ -860,6 +860,19 @@ across the 107 behaviour graphs the 49 projects reach is a round authored value 
 0.03333334, one frame at 30 Hz. None is near 0.0403. `bcbehavior.hkb`, the single
 authoring-side file in the game data, has 0.033, 0.035 and 0.035019 and nothing closer.
 
+**Havok's own blender is not the source.** The Behavior Tool documentation states the
+parametric blend exactly: the parameter maps linearly between child weights — "with the
+parameter set to 2.5 the pose generated would be a blend half-way between Clip 5 and
+Clip 6… because the weight of Clip 5 is 2 and the weight of Clip 6 is 3" — outside the
+range "the child node with the smallest or largest weight is used", and Cycle wraps the
+last child back to the first via the min and max weight. Plain linear interpolation, no
+smoothing, no offset, no threshold. There is nowhere in it for 0.0403 to come from.
+
+That documentation also independently confirms two things this file relies on: the
+ladder model of §6, and the compass wrap of §5.2 — the directional blender's
+`cyclic[0, 1]` against children at 0.000 to 0.875 is exactly the Cycle feature, with the
+0.875 child blending back into the 0.000 one.
+
 The Havok 2010.2 SDK does not settle it either. It ships no Behavior component — the
 libraries are hkBase, hkaAnimation, hkp*, hkg*, hks* and no hkbBehavior — so
 `hkbBlenderGenerator` exists there only in the reflection patch tables and the code that
