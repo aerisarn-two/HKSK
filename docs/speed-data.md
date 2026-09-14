@@ -492,6 +492,41 @@ netch, dragon, dragon priest, dwarven spider, ice wraith, slaughterfish, wisp,
 witchlight. For the storm atronach, wisp and witchlight that is consistent — their
 tables are all zero, because there is no locomotion blend to report on.
 
+#### The sampler is the join, and eight projects do not have one
+
+Reading the variable names off the sampler rather than matching them by regex turns
+the paragraph above into a sharper statement. The node binds four variables —
+`state`, `direction` and `goalSpeed` in, `speedOut` out — and **`speedOut` is what
+the ladders read**. So the node identifies its own ladders, with no guessing from
+node names, and the variable's index differing between a project's graphs stops
+mattering: a quadruped's ladders live in a shared `QuadrupedBehavior.hkx` where the
+same name has a different index, so the match has to be by name.
+
+`goalSpeed` is `Speed` in all 41. `speedOut` is `SpeedSampled`, `SampledSpeed` or
+`HorseSpeedSampled`, and two projects do not read it:
+
+    SlaughterfishProject   ladders read Speed         (the sampler's own input)
+    NetchProject           ladders read SpeedDamped
+
+**Eight of the 49 projects have no `BSSpeedSamplerModifier` at all**, established by
+reading all 654 behaviour files in the game rather than by walking projects — 42
+contain the node and they serve the other 41. Since the node is the only reader of a
+speed table, those eight cannot consult theirs however it is filled in:
+
+    flat zero, nothing to read       AtronachStormProject, ChaurusFlyer,
+                                     WispProject, WitchlightProject
+    a real curve nothing reads       AtronachFlame, DragonProject,
+                                     Dragon_Priest, IceWraithProject
+
+The second group is stale data: their blends are driven straight from `Speed`, and
+`AtronachFlame` still carries a 183-value curve and an unused `SpeedSampled`
+variable, which is what a graph rewired after its table was generated looks like.
+The correlation holds in the other direction with no exceptions: **no project that
+has a sampler has a flat table.**
+
+`DwarvenSpiderCenturionProject` is a third case — it has a sampler, but its compass
+children are clip generators, so it has no speed axis for the table to describe.
+
 ### 5.2 Blender topology
 
 Two topologies, and which one an actor uses decides what its 19 records mean.
@@ -1274,6 +1309,15 @@ is byte-exact against the shipped file. `Sample(project, state, direction, goalS
 answers the query the engine makes (§4.2), and returns `goalSpeed` unchanged for an
 absent project, state or curve — which is the engine's own behaviour with no database,
 and not zero, which would model a creature that cannot move.
+
+`HKSK.Cache.SpeedSampler` walks a project to its table: `FromProject` finds the
+sampler, reads the variables off it, and returns the states the project declares
+(key and movement-type name, from its `iState_<MOVT>` variables), every ladder the
+sampler's answer drives, and the compasses those ladders hang under, so a heading
+resolves to an arm without reading a node name. It returns null for the eight
+projects that have no sampler, which is the honest answer: the table is not part of
+how they move. Over the corpus that is 1038 ladders, 142 compasses, 996 arms and
+3416 rungs, every rung naming an animation and carrying its root motion.
 
 `HKSK.Cache.SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector
 travel and a duration — and `FromBlender` builds the ladder from a project's blender.

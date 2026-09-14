@@ -19,7 +19,8 @@ namespace HKSK.Cache;
 /// <param name="Weight">Position on the blend-parameter axis, in game units/s.</param>
 /// <param name="Travel">Root-motion displacement of the clip, as a vector.</param>
 /// <param name="Duration">Clip duration divided by its PlaybackSpeed.</param>
-public readonly record struct SpeedRung(float Weight, Vector3 Travel, float Duration)
+/// <param name="Animation">The clip this rung plays, when it came from a graph.</param>
+public readonly record struct SpeedRung(float Weight, Vector3 Travel, float Duration, string? Animation = null)
 {
     /// <summary>What this rung delivers on its own, in game units/s.</summary>
     public float Delivered => Duration > 0f ? Travel.Length() / Duration : 0f;
@@ -160,7 +161,8 @@ public sealed class SpeedLadder
             rungs.Add(new SpeedRung(
                 child.m_weight,
                 motion.Translations[^1].Value,
-                motion.Duration / clip.m_playbackSpeed));
+                motion.Duration / clip.m_playbackSpeed,
+                Path.GetFileNameWithoutExtension(name.Replace('\\', '/'))));
         }
 
         return new SpeedLadder(rungs) { Name = blender.m_name };
