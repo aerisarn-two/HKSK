@@ -1237,6 +1237,28 @@ offset in x, no scale, constant across the corpus — but not explained. It is e
 from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
 The tool that wrote the file is not shipped, so this may stay a measured constant.
 
+### How much of the file is actually rebuilt
+
+**A curve fits or it does not.** Averaging the error over the points of one record
+hides a bad end, and averaging over records hides whole records being wrong, so the
+score here is per curve: a curve passes when *every* point of it is within 2%. Counting
+that way, over the 1482 curves belonging to the 41 projects that read the table:
+
+    pass, every point within 2%                     651    43.9%
+    rebuilt and does not hold                       223    15.0%
+    no compass to rebuild from                      608    41.0%
+
+Six projects have every curve they own inside 2%, and the worst point of the worst of
+those curves is half a percent:
+
+    BallistaCenturion  DraugrSkeletonProject  SphereCenturion
+    SteamProject       TrollProject           VampireLord
+
+Most of the 608 are quadrupeds and single-gait creatures, which turn rather than
+strafe: they have no compass at all, so their side and back records come from a turn
+axis §6 does not model. The 223 that fail are the identification problem below, plus
+the three creatures whose ladders do not describe their tables.
+
 **Which family a state belongs to.** This is the largest remaining error. The tree says
 which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); the
 family is the part it only sometimes says.
@@ -1283,7 +1305,8 @@ recovers from the `iState_<MOVT>` variables:
     SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
 
 Matching on the tokens the two names share, once the creature's own name is removed,
-takes the total to 874 of the 1634 records. Two normalisations are needed, because the
+takes the total to 874 curves with a compass to rebuild from. Two normalisations are
+needed, because the
 two sides were written by different people: a movement type says what the actor is
 doing and a node says what it plays, so they differ by inflection — `NPCSneaking`
 against `Sneak_Direction_Blend`, `NPCMagicCasting` against `MagicCast_Direction_Blend`

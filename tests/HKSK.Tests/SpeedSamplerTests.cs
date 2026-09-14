@@ -173,194 +173,166 @@ public sealed class SpeedSamplerTests
         Assert.Equal(101, stationary);
     }
 
+    /// <summary>The tolerance a rebuilt curve has to hold, at every point.</summary>
+    /// <remarks>
+    /// A curve fits or it does not. Averaging the error over the points of one
+    /// record hides a bad end, and averaging over records hides whole records being
+    /// wrong, so neither is done here: a record passes only when every point of it
+    /// is inside this, and the counts below are counts of records.
+    /// </remarks>
+    private const double Tolerance = 0.02;
+
     /// <summary>
-    /// Step four: rebuild the table, over every record whose family the movement
-    /// type identifies.
+    /// Step four: rebuild the table, curve by curve, and count what holds.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Two things have to line up. The state picks the compass, through the
-    /// movement type naming it (<see cref="SpeedSampler.CompassFor"/>); the
-    /// heading picks the arm, and where it falls between two arms it is a blend of
-    /// both (<see cref="SpeedSampler.Sample"/>).
+    /// Two things have to line up. The state picks the compass -- from the tagging
+    /// generator that sets <c>iState</c> to the key where the graph has one, and
+    /// from the movement type's name where it does not (<see cref="FamilyGuess"/>);
+    /// the heading picks the arm, and where it falls between two arms it is a blend
+    /// of both (<see cref="SpeedSampler.Sample"/>).
     /// </para>
     /// <para>
-    /// The state is asked of the graph first: a <c>BSiStateTaggingGenerator</c>
-    /// that sets <c>iState</c> to the key has the answering compass beneath it,
-    /// which places 209 of these records with no name matching at all -- including
-    /// every one the player has. Only where no tagging generator covers the key
-    /// does this fall back to the movement type's name. Where a name occurs in
-    /// several of a project's graphs, the file decides: Bethesda split the player's
-    /// graph along the lines the game switches on, so
-    /// <c>bow_direction_behavior</c> holds the drawn-bow locomotion that answers
-    /// <c>NPCBowDrawn</c> while the <c>1hm_locomotion</c> copy of the same name
-    /// answers <c>NPCBow</c>, and the two are different curves.
-    /// </para>
-    /// <para>
-    /// <strong>Why not all 1634.</strong> 152 records belong to the eight projects
-    /// that do not use the table; 342 belong to projects with no compass, which
-    /// turn rather than strafe and whose side and back records come from a turn
-    /// axis §6 does not model; and the rest need a family neither the graph nor the
-    /// names separate. What is left is 741 records and 9458 points.
+    /// Of the 1482 curves in the 41 projects that read the table, 651 hold at 2%
+    /// end to end, 223 are rebuilt and do not hold, and 608 have no compass to
+    /// rebuild from -- mostly quadrupeds, which turn rather than strafe, so their
+    /// side and back records come from a turn axis §6 does not model.
     /// </para>
     /// </remarks>
     [CorpusFact]
-    public void TheTableRebuildsWhereTheMovementTypeIdentifiesTheFamily()
+    public void TheTableRebuildsCurveByCurve()
     {
         (SkyrimCache cache, List<string> projects) = Load();
 
-        int records = 0, resolved = 0;
-        var errors = new List<double>();
+        int curves = 0, pass = 0, fail = 0, unresolved = 0;
 
         foreach (string name in projects)
         {
             SpeedSampler? sampler = SpeedSampler.FromProject((ActorProject)cache.OpenActor(name)!);
+            if (sampler is null) continue;                 // never reads the table
 
             foreach (SpeedEntry entry in cache.SpeedData!.Block(name)!.Entries)
             {
-                var arms = sampler?.CompassFor((int)entry.Key);
+                var arms = sampler.CompassFor((int)entry.Key);
 
                 foreach (SpeedRecord record in entry.Records)
                 {
-                    records++;
-                    if (arms is null) continue;
-
-                    resolved++;
-                    foreach (SpeedPoint point in record.Points)
-                        if (point.Y > 0f)
-                            errors.Add(Math.Abs(
-                                SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset)
-                                - point.Y) / point.Y);
+                    curves++;
+                    if (arms is null) { unresolved++; continue; }
+                    if (Holds(arms, record)) pass++; else fail++;
                 }
             }
         }
 
-        errors.Sort();
-        Assert.Equal(1634, records);
-        Assert.Equal(874, resolved);
-        Assert.Equal(10894, errors.Count);
-        Assert.InRange(errors[errors.Count / 2], 0d, 0.002d);        // median under 0.2%
-        Assert.True(errors.Count(e => e < 0.0005) >= 5500,
-                    $"only {errors.Count(e => e < 0.0005)} points within 0.05%");
+        Assert.Equal(1482, curves);
+        Assert.Equal(651, pass);
+        Assert.Equal(223, fail);
+        Assert.Equal(608, unresolved);
     }
 
     /// <summary>
-    /// Ten projects rebuild every record they have, including the headings that
-    /// fall between compass arms.
+    /// Six projects have every curve they own rebuilt, end to end.
     /// </summary>
     /// <remarks>
-    /// These are the projects whose movement types separate their compasses
-    /// cleanly, and they are the measure of what the model is worth once
-    /// identification is out of the way: 19 headings each -- 57 for the giant,
-    /// three states -- of which only four ever land on an arm, so most of these
-    /// are two-arm blends. The bound is a tenth of a percent at the 90th
-    /// percentile, and the median across them is nearer a hundredth.
+    /// These are the ones whose families the graph separates cleanly, and they are
+    /// what the model is worth once identification is out of the way: 19 headings
+    /// each, of which only four land on a compass arm, so most are two-arm blends.
+    /// The worst point of the worst of these curves is half a percent.
     /// </remarks>
     [CorpusFact]
-    public void TenProjectsRebuildEveryRecordTheyHave()
+    public void SixProjectsRebuildEveryCurveTheyHave()
     {
         (SkyrimCache cache, List<string> projects) = Load();
 
-        var clean = new List<string>();
+        var whole = new List<string>();
+        double worst = 0;
 
         foreach (string name in projects)
         {
             SpeedSampler? sampler = SpeedSampler.FromProject((ActorProject)cache.OpenActor(name)!);
             if (sampler is null) continue;
 
-            int records = 0, resolved = 0;
-            var errors = new List<double>();
+            bool all = true;
+            double here = 0;
 
             foreach (SpeedEntry entry in cache.SpeedData!.Block(name)!.Entries)
             {
                 var arms = sampler.CompassFor((int)entry.Key);
                 foreach (SpeedRecord record in entry.Records)
                 {
-                    records++;
-                    if (arms is null) continue;
-                    resolved++;
-                    foreach (SpeedPoint point in record.Points)
-                        if (point.Y > 0f)
-                            errors.Add(Math.Abs(
-                                SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset)
-                                - point.Y) / point.Y);
+                    if (arms is null || !Holds(arms, record)) { all = false; break; }
+                    here = Math.Max(here, Worst(arms, record));
                 }
+
+                if (!all) break;
             }
 
-            if (records == 0 || resolved != records || errors.Count == 0) continue;
-            errors.Sort();
-            if (errors[(int)(errors.Count * 0.9)] < 0.01) clean.Add(name);
+            if (all) { whole.Add(name); worst = Math.Max(worst, here); }
         }
 
         Assert.Equal(
         [
-            "BallistaCenturion", "DraugrSkeletonProject", "FrostbiteSpiderProject",
-            "GiantProject", "HagravenProject", "SphereCenturion", "SteamProject",
-            "TrollProject", "VampireBruteProject", "VampireLord",
-        ], clean.OrderBy(n => n, StringComparer.Ordinal).ToArray());
+            "BallistaCenturion", "DraugrSkeletonProject", "SphereCenturion",
+            "SteamProject", "TrollProject", "VampireLord",
+        ], whole.OrderBy(n => n, StringComparer.Ordinal).ToArray());
+
+        Assert.InRange(worst, 0d, 0.006d);
     }
 
     /// <summary>
-    /// The graph names the family itself, for the states a tagging generator
-    /// covers.
+    /// The player's own curves, which no route reached before the graph was asked
+    /// which family a state belongs to.
     /// </summary>
     /// <remarks>
-    /// <c>iState_&lt;MOVT&gt;</c> variables are constants; the game writes
-    /// <c>iState</c> from the actor's movement type and the graph compares the two.
-    /// Where a <c>BSiStateTaggingGenerator</c> sets <c>iState</c> to a key, the
-    /// compasses beneath it are that key's, and no name has to be read: the
-    /// falmer's 1 is its bow family and 2 its plain locomotion, and the player's 2,
-    /// 6, 7 and 9 are sneak, one-handed, two-handed and magic.
+    /// Six of its fourteen states are tagged in the graph and two more are found by
+    /// name, <c>NPCDefault</c> among them -- the plain movement type, which lives in
+    /// <c>mt_behavior</c> and is the one the whole hunt was for.
     /// </remarks>
     [CorpusFact]
-    public void TheGraphNamesTheFamilyForTheStatesItTags()
+    public void ThePlayerRebuildsTheCurvesItsStatesIdentify()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
-
-        SpeedSampler falmer = Assert.IsType<SpeedSampler>(
-            SpeedSampler.FromProject((ActorProject)cache.OpenActor("FalmerProject")!));
-        Assert.Equal(["Bow_DirectionalBlend"], falmer.TaggedCompasses[1].Select(c => c.Name));
-        Assert.Equal(["MT_DirectionalBlend"], falmer.TaggedCompasses[2].Select(c => c.Name));
-
         SpeedSampler player = Assert.IsType<SpeedSampler>(
             SpeedSampler.FromProject((ActorProject)cache.OpenActor("DefaultFemale")!));
-        Assert.Equal(["Sneak_Direction_Blend"], player.TaggedCompasses[2].Select(c => c.Name).Distinct());
-        Assert.Equal(["H2H_1HM_Direction_Blend"], player.TaggedCompasses[6].Select(c => c.Name).Distinct());
-        Assert.Equal(["2HM_Direction_Blend"], player.TaggedCompasses[7].Select(c => c.Name).Distinct());
-        Assert.Equal(["Magic_Direction_Blend"], player.TaggedCompasses[9].Select(c => c.Name).Distinct());
 
-        // key 8 is NPCBow and its tag reaches both the bow and the crossbow
-        // compass; the name breaks that tie
-        Assert.Equal(["Bow_Direction_Blend", "CrossBow_Direction_Blend"],
-                     player.TaggedCompasses[8].Select(c => c.Name).Distinct().Order());
-
-        // No tagging generator covers the plain movement type, and the file is what
-        // finds it: MT is the movement type, so an MT_ blend is the default one,
-        // and the player's lives in mt_behavior.
-        SpeedCompass mt = player.Compasses.Single(c =>
-            ReferenceEquals(c.Arms, player.CompassFor(0)));
-        Assert.Equal("MT_Direction_Blend", mt.Name);
-        Assert.Equal("mt_behavior", mt.File);
-        Assert.DoesNotContain(0, player.TaggedCompasses.Keys);
-
-        // the player's records are rebuilt off that, and off nothing else
-        var errors = new List<double>();
+        int pass = 0, fail = 0, unresolved = 0;
         foreach (SpeedEntry entry in cache.SpeedData!.Block("DefaultFemale")!.Entries)
         {
-            if (player.CompassFor((int)entry.Key) is not { } arms) continue;
-
+            var arms = player.CompassFor((int)entry.Key);
             foreach (SpeedRecord record in entry.Records)
-                foreach (SpeedPoint point in record.Points)
-                    if (point.Y > 0f)
-                        errors.Add(Math.Abs(
-                            SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset)
-                            - point.Y) / point.Y);
+            {
+                if (arms is null) unresolved++;
+                else if (Holds(arms, record)) pass++;
+                else fail++;
+            }
         }
 
-        errors.Sort();
-        Assert.Equal(1814, errors.Count);
-        Assert.InRange(errors[errors.Count / 2], 0d, 0.001d);          // median under 0.1%
-        Assert.InRange(errors[(int)(errors.Count * 0.9)], 0d, 0.01d);  // p90 under 1%
+        Assert.Equal(141, pass);
+        Assert.Equal(11, fail);
+        Assert.Equal(114, unresolved);
+
+        // the movement type itself, and the file it lives in
+        SpeedCompass mt = player.Compasses.Single(c => ReferenceEquals(c.Arms, player.CompassFor(0)));
+        Assert.Equal("MT_Direction_Blend", mt.Name);
+        Assert.Equal("mt_behavior", mt.File);
+    }
+
+    /// <summary>Whether every point of a record is inside <see cref="Tolerance"/>.</summary>
+    private static bool Holds(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, SpeedRecord record) =>
+        Worst(arms, record) <= Tolerance;
+
+    /// <summary>The worst point of a record, relative.</summary>
+    private static double Worst(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, SpeedRecord record)
+    {
+        double worst = 0;
+        foreach (SpeedPoint point in record.Points)
+            if (point.Y > 0f)
+                worst = Math.Max(worst, Math.Abs(
+                    SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset)
+                    - point.Y) / point.Y);
+
+        return worst;
     }
 
     /// <summary>
@@ -384,8 +356,7 @@ public sealed class SpeedSamplerTests
         var arms = Assert.IsAssignableFrom<IReadOnlyList<(float Direction, SpeedLadder Ladder)>>(
             sampler.CompassFor((int)entry.Key));
 
-        double blended = 0, rounded = 0;
-        int between = 0;
+        int between = 0, blended = 0, rounded = 0;
 
         foreach (SpeedRecord record in entry.Records)
         {
@@ -395,18 +366,20 @@ public sealed class SpeedSamplerTests
 
             SpeedLadder nearest = arms.MinBy(a => MathF.Abs(a.Direction - record.Direction)).Ladder;
 
+            double worstRounded = 0;
             foreach (SpeedPoint point in record.Points)
-            {
-                if (point.Y <= 0f) continue;
-                float x = point.X - SpeedLadder.SamplerOffset;
-                blended += Math.Abs(SpeedSampler.Sample(arms, record.Direction, x) - point.Y) / point.Y;
-                rounded += Math.Abs(nearest.Evaluate(x) - point.Y) / point.Y;
-            }
+                if (point.Y > 0f)
+                    worstRounded = Math.Max(worstRounded,
+                        Math.Abs(nearest.Evaluate(point.X - SpeedLadder.SamplerOffset) - point.Y) / point.Y);
+
+            if (Holds(arms, record)) blended++;
+            if (worstRounded <= Tolerance) rounded++;
         }
 
+        // every one of them holds when blended, and none of them when rounded
         Assert.Equal(15, between);
-        Assert.True(blended * 20 < rounded,
-                    $"blending {blended:F4} is not decisively better than rounding {rounded:F4}");
+        Assert.Equal(15, blended);
+        Assert.Equal(0, rounded);
     }
 
     /// <summary>
@@ -437,13 +410,17 @@ public sealed class SpeedSamplerTests
         SpeedRecord record = cache.SpeedData!.Block("SphereCenturion")!
             .Entries[0].Records.First(r => r.Direction == 0f);
 
-        var errors = record.Points.Where(p => p.Y > 0f)
-            .Select(p => (double)Math.Abs(forward.Tabulate(p.X) - p.Y) / p.Y)
-            .OrderBy(e => e).ToList();
+        double worst = 0;
+        int points = 0;
+        foreach (SpeedPoint point in record.Points)
+        {
+            if (point.Y <= 0f) continue;
+            points++;
+            worst = Math.Max(worst, Math.Abs(forward.Tabulate(point.X) - point.Y) / point.Y);
+        }
 
-        Assert.Equal(12, errors.Count);
-        Assert.InRange(errors[errors.Count / 2], 0d, 0.0002d);   // median under 0.02%
-        Assert.InRange(errors[^1], 0d, 0.001d);                  // worst under 0.1%
+        Assert.Equal(12, points);
+        Assert.InRange(worst, 0d, 0.001d);                       // every point within 0.1%
     }
 
 }
