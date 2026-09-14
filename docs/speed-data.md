@@ -2,7 +2,7 @@
 
     Status:   format CONFIRMED (byte-exact round trip)
               semantics CONFIRMED
-              curve computable in closed form, vector-valued (§6)
+              curve computable in closed form to ~0.003%, not bit-exact (§6)
               one input still authored: the sweep bound (§9)
     Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
@@ -665,7 +665,8 @@ the record they override. Reading the record is correct.
 
 ## 6. Computing the curve
 
-**y has a closed form. No graph evaluation is required.**
+**y has a closed form accurate to about 0.003%. That is enough to author and to use a
+table; it is not enough to reproduce Bethesda's floats bit-for-bit.** §6.1 says why.
 
 The blend is time-synchronised: Havok interpolates the children's root-motion
 **translation** and their **duration** as two independent linear ramps, and the
@@ -756,6 +757,50 @@ possible. Against a linear chord the same records score 10-25%.
 
 The misses are blender **identification**, not the form: they concentrate on
 `NPC_Bleedout_MT` and `NPC_Drunk_MT`, which §5.3 cannot place.
+
+#### 6.1 The parameter lag, and why bit-exactness is out of reach
+
+The shipped values behave as though the blend saw a parameter slightly *below* the
+stored x. Solving each point back for the parameter that would produce it gives a
+near-constant offset:
+
+    x stored    implied parameter    lag
+      65.5           65.4590        0.0410
+      85.0           84.9593        0.0407
+      93.0           92.9599        0.0401
+      97.0           96.9605        0.0395
+      99.0           98.9611        0.0389
+
+Fitted independently on 15 entries across 13 creatures, the offset is **0.04**, and it
+is absolute rather than proportional — it does not scale with ladders topping anywhere
+from 83 to 557. Applying `x_effective = x - 0.04` is worth two orders of magnitude:
+
+    FalmerProject key 1, 164 points      median error    within 0.1%
+      no correction                          0.2765%         50
+      x - 0.04                               0.0064%        117
+
+    per-entry fits          lag      with lag    without
+      DogProject:30       0.0410      0.0001%     0.0186%
+      HorkerProject:50    0.0400      0.0003%     0.0379%
+      GiantProject:1      0.0410      0.0006%     0.0773%
+      FalmerProject:1     0.0405      0.0012%     0.1989%
+      median over 15      0.0400
+
+**The lag is not actually constant, and that is the blocker.** It drifts within a
+segment — 0.0410 at u = 0.63 down to 0.0389 at u = 0.98, visible in the table above —
+and the per-entry fits spread from 0.027 to 0.0735. A fixed offset approximates
+something dynamic. Measured against the shipped floats with the correction applied:
+
+    132 points, single-family entries
+      bit-exact                      1
+      within 1 ulp                   1
+      within 1e-4 relative          92
+
+float32 carries about 1.2e-7 relative precision while the residual sits at 1e-5 to
+1e-4, so the gap is arithmetic rather than rounding. **Byte-exact generation would need
+the graph stepped the way the generator stepped it.** The closed form replaces that for
+authoring a creature and for predicting what one will do; it does not replace it for
+reproducing the shipped file.
 
 #### A curve may cross a gait transition
 
@@ -952,6 +997,10 @@ Two hypotheses are tested and dead:
 their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of
 802.29 — and 37 of those are still rising when the sweep ends. Above the last point the
 query clamps, so those actors are indexed below the speed they are asked for.
+
+**Bit-exact values.** §6.1: the closed form reaches about 0.003% and the residual is a
+dynamic artefact of how the table was generated, not a refinement away. A byte-exact
+rebuild needs a graph evaluator; a correct one does not.
 
 **The point-retention rule.** Needed only for a byte-identical rebuild (§8). Now a
 tractable experiment, because §6 can produce the dense curve to score candidates
