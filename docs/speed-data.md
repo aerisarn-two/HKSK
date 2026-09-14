@@ -2,7 +2,7 @@
 
     Status:   format CONFIRMED (byte-exact round trip)
               semantics CONFIRMED
-              curve computable in closed form to ~0.003% (§6)
+              curve closed-form; exact at rungs, <1% between (§6.1)
               bit-exact impossible: cache rounds its inputs (§6.1)
               one input still authored: the sweep bound (§9)
     Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
@@ -418,7 +418,9 @@ binary rather than guessed:
 
 **No offset is applied to `goalSpeed` anywhere.** It is loaded at `0x58(%rbx)`, passed
 to the query untouched, and used directly in the subtraction — no `addss`, `subss` or
-`mulss` between. Whatever produces the 0.0403 of §6.1 is not in the runtime.
+`mulss` between. Earlier revisions hunted an offset here on the strength of a residual
+that turned out to be §6.1's duration law; nothing is applied to `goalSpeed` in any
+case.
 
 One layout note: in memory a point is `{ float y; float x; }`, the query searching `+4`
 and returning `+0`. On disk it is the other way round — the field at `+0` is the sorted
@@ -784,176 +786,54 @@ possible. Against a linear chord the same records score 10-25%.
 The misses are blender **identification**, not the form: they concentrate on
 `NPC_Bleedout_MT` and `NPC_Drunk_MT`, which §5.3 cannot place.
 
-#### 6.1 The parameter lag, and why bit-exactness is out of reach
+#### 6.1 The residual is the duration law, not a parameter offset
 
-The shipped values behave as though the blend saw a parameter slightly *below* the
-stored x. Solving each point back for the parameter that would produce it gives a
-near-constant offset:
+§6 interpolates the children's durations linearly. **That is wrong, and it accounts for
+essentially all of the difference between the closed form and the shipped values.**
 
-    x stored    implied parameter    lag
-      65.5           65.4590        0.0410
-      85.0           84.9593        0.0407
-      93.0           92.9599        0.0401
-      97.0           96.9605        0.0395
-      99.0           98.9611        0.0389
+The test is a segment whose two children have *equal* durations. There the duration law
+is inert — `d(u)` is that duration whatever the rule — so any error left must come from
+somewhere else. `SphereCenturion`'s forward ladder provides one, and its two segments
+sit side by side in a single record:
 
-Fitted independently on 15 entries across 13 creatures, the offset is **0.04**, and it
-is absolute rather than proportional — it does not scale with ladders topping anywhere
-from 83 to 557. Applying `x_effective = x - 0.04` is worth two orders of magnitude:
+    w=  5.00   |V|=192   d=38.46154      content   4.992    mt_forward @ 0.026
+    w=192.00   |V|=192   d= 1.00000      content 192.000    mt_forward @ 1
+    w=384.00   |V|=384   d= 1.00000      content 384.000    mt_fastforward @ 1
 
-    FalmerProject key 1, 164 points      median error    within 0.1%
-      no correction                          0.2765%         50
-      x - 0.04                               0.0064%        117
+    segment 1, durations 38.46 -> 1.0        shipped     model    rel err
+        x = 123.0                            12.9459   12.9531     0.0558%
+        x = 173.5                            40.7274   40.7982     0.1739%
+        x = 188.0                           106.1208  106.5887     0.4409%
+        x = 192.0                           190.5433  192.0000     0.7645%
 
-    per-entry fits          lag      with lag    without
-      DogProject:30       0.0410      0.0001%     0.0186%
-      HorkerProject:50    0.0400      0.0003%     0.0379%
-      GiantProject:1      0.0410      0.0006%     0.0773%
-      FalmerProject:1     0.0405      0.0012%     0.1989%
-      median over 15      0.0400
+    segment 2, durations 1.0 and 1.0
+        x = 324.5                           324.4792  324.5000     0.0064%
 
-**What the offset is, measured.** Over 82 interior points across ten ladders:
+The second segment is a pure identity under the model — equal durations and collinear
+travel give `y = x` — and it lands within 0.0064%, **a factor of 120 better** than the
+first segment reaches. Duration mismatch is what the error tracks.
 
-    median 0.040313   quartiles 0.038745 .. 0.041075
+**The `x - 0.0403` correction of earlier revisions was this error re-expressed as a
+parameter shift.** That is why it drifted within a segment, why per-entry fits ranged
+from 0.027 to 0.0735, why it was never found in the executable, the SDK, the authoring
+file or any of the 107 behaviour graphs, and why the same measurement on an
+equal-duration segment gives half the value. It was never a constant and never a
+mechanism. It is withdrawn.
 
-It is constant **in x**, not in the blend parameter: coefficient of variation 0.094
-against 0.381 for the alternative, across segment spans from 30 to 134. It is flat
-across segments of one ladder — the dog reads 0.04075 at x = 198 and 0.04075 at
-x = 424.5, over a two-fold range in x — with a droop confined to the floor segment,
-0.0410 at u = 0.63 falling to 0.0369 at u = 0.99.
+**What the correct duration rule is remains open.** The Behavior Tool documentation
+states how the *pose* blends — linearly between child weights — and says nothing about
+how a synchronised blend combines the children's durations. Solving the shipped data
+back for the blended duration gives values consistent with a small residual weight on
+the other child at the segment ends (about 2e-4 at the top of the Sphere's first
+segment), but no single rule has been fitted across entries yet.
 
-**What it is not.** Ruled out, so the search is not repeated:
-
-    proportional to x            offset would grow with x; it is flat over 2x in x
-    constant in the parameter u  CV 0.381 vs 0.094 for x; x wins clearly
-    a scale error on y           dy/y is 0.00104 at one end and 0.00604 at the other
-    the MOVT value vs the weight  Falmer 100.44 against 100.442 moves u by 2e-5,
-                                  the wrong way and twenty times too small
-    hkbDampingModifier on Speed   the graphs do carry PID damping -- kP=0.2 kI=0.015
-                                  kD=-0.1 on SpeedDamped -- but the locomotion
-                                  blenders bind the sampler output, not SpeedDamped,
-                                  and kP=0.2 on a 0.5 ramp gives a lag near 2.0,
-                                  fifty times too large
-    5/128 = 0.0390625            outside the measured quartiles
-    1/30, one frame at 30 Hz     0.0333, well outside
-    rounding of the inputs       six-significant-digit rounding moves the implied
-                                 offset by at most 7.5e-5, and producing the whole
-                                 0.0403 would need travel wrong by 0.32% or a
-                                 duration by 0.5-0.9% -- 500 to 1500x the quantum
-
-**It is upstream of the blend.** The dog's ladder crosses three segments using two
-different clips, with travel 89.45 and 154.29 and durations from 17.9 down to 0.53, and
-every segment reads the same offset:
-
-    5.0   -> 74.5    walkforward   travel  89.45   d 17.910 -> 0.857    0.03894
-    186.8 -> 287.3   trotforward   travel 154.29   d  1.231 -> 0.800    0.04080
-    287.3 -> 425.0   trotforward   travel 154.29   d  0.800 -> 0.533    0.04071
-
-No error in travel or duration can be common to unrelated clips; an error in the
-parameter can. Whatever it is happens to the number before the blend sees it, and
-before any clip data is touched.
-
-**And it is not stored anywhere that shipped.** Every float member in [0.030, 0.050]
-across the 107 behaviour graphs the 49 projects reach is a round authored value —
-`hkbClipTrigger.m_localTime` 0.03 to 0.05, `BSLookAtModifier` gains at 0.03 and 0.05,
-`hkbBlendingTransitionEffect.m_duration` 0.033 to 0.05, `hkbClipGenerator.m_enforcedDuration`
-0.03333334, one frame at 30 Hz. None is near 0.0403. `bcbehavior.hkb`, the single
-authoring-side file in the game data, has 0.033, 0.035 and 0.035019 and nothing closer.
-
-**Havok's own blender is not the source.** The Behavior Tool documentation states the
-parametric blend exactly: the parameter maps linearly between child weights — "with the
-parameter set to 2.5 the pose generated would be a blend half-way between Clip 5 and
-Clip 6… because the weight of Clip 5 is 2 and the weight of Clip 6 is 3" — outside the
-range "the child node with the smallest or largest weight is used", and Cycle wraps the
-last child back to the first via the min and max weight. Plain linear interpolation, no
-smoothing, no offset, no threshold. There is nowhere in it for 0.0403 to come from.
-
-That documentation also independently confirms two things this file relies on: the
-ladder model of §6, and the compass wrap of §5.2 — the directional blender's
-`cyclic[0, 1]` against children at 0.000 to 0.875 is exactly the Cycle feature, with the
-0.875 child blending back into the 0.000 one.
-
-The Havok 2010.2 SDK does not settle it either. It ships no Behavior component — the
-libraries are hkBase, hkaAnimation, hkp*, hkg*, hks* and no hkbBehavior — so
-`hkbBlenderGenerator` exists there only in the reflection patch tables and the code that
-turns a blend parameter into child weights is not present to read. The single `0.04f` in
-the whole SDK is a comment on quaternion packing error (`|q.length4()-1.0f| < 0.04f`).
-
-The layer beneath it is present, `hkaSampleAndCombineUtils`, and it documents the two
-knobs that would fit a threshold explanation. Both default to zero and both are job
-parameters set at runtime rather than stored in any `.hkx`, so what Bethesda passed
-cannot be read — but neither can produce the measured shape:
-
-    hkReal m_minimumWeight;           ///< Weight below which animations are ignored
-    hkReal m_frameSteppingTolerance;  ///< Tolerance to which animations snap to the
-                                      ///  nearest frame rather than interpolate
-
-A weight cutoff **clips** a segment's ends rather than shifting it: below the cutoff one
-child is dropped and the output equals the other exactly. The shipped curve is still
-blending at u = 0.995 — the Falmer's forward record reads 99.783 where the top child
-alone would give 100.463 — and only reaches the top child at saturation. If
-`m_minimumWeight` were anywhere near 0.04 the last points of every segment would already
-read the top child exactly, and they do not.
-
-Frame stepping snaps the sampled time to a frame boundary. Over a cycle the travel is
-unchanged, so it quantises the pose without biasing total displacement, and cannot
-produce a one-signed speed offset.
-
-So the constant lives in the generator's own code, which did not ship. It is measurable
-from the output and not recoverable from the inputs, and that is where the search ends
-unless the tool turns up.
-
-**It remains unidentified, and it may not be an offset at all.**
-
-What is certain is where the error is *not*. A saturated point evaluates `|V| / d` on a
-single rung with no interpolation, and there the model is exact — median error 0.00006%
-over 11 such points, below the cache's own rounding — while interior points sit at
-0.23285%, **3871 times worse**. Any clamping or quantisation of an input would show up
-equally at both. It does not. The inputs are right; the whole error is in the
-interpolation.
-
-That leaves two readings this data cannot separate:
-
-- the generator fed the blend a parameter 0.0403 below the x it recorded, or
-- **the interpolation law in §6 is slightly wrong**, and 0.0403 is what that
-  discrepancy looks like when expressed as a parameter shift.
-
-The second is not idle. The Behavior documentation states how the *pose* blends —
-linearly between child weights — and says nothing about how a synchronised blend
-combines the children's **durations**. That `d` interpolates linearly is this document's
-assumption, verified at segment endpoints and merely assumed between them. A different
-sync rule would produce exactly this: right at both ends of every segment, a fraction of
-a percent out in the middle.
-
-Treat `x - 0.0403` as an empirical correction that works, not as a discovered mechanism.
-Measured against the shipped floats with it applied:
-
-    132 points, single-family entries
-      bit-exact                      1
-      within 1 ulp                   1
-      within 1e-4 relative          92
-
-**Byte-exact generation from the shipped files is impossible, and not for want of a
-better model.** The inputs were rounded on their way into the cache.
-
-`animationdatasinglefile.txt` writes floats at six significant digits (`CacheText.Float`,
-`G6`), and root motion exists nowhere else — `hkaAnimation.m_extractedMotion` is null on
-every Skyrim clip, so the travel is in the cache or it is not anywhere. The Falmer's
-`bowwalkforward` is stored as `167.438`; the shipped saturated y of 100.463036 implies
-the generator used about 167.438357. That is a relative loss of **2.1e-6**, against the
-**1.2e-7** needed to land a float32 exactly — roughly eighteen times too coarse.
-
-The saturated points prove it on their own. At x = 324.5 there is no interpolation at
-all, just `|V| / d`, and the model is still 4.3e-6 out — the same order as the rounding
-and nothing to do with the blend.
-
-So the speed data was computed from higher-precision root motion that the shipped game
-no longer contains. A generator can reproduce the *curve*; it cannot reproduce the
-*bytes*, and no amount of refinement changes that.
-
-(The earlier reading, that this needed the graph stepped the way the generator stepped
-it, was wrong. The file is generated by a tool, and the residual is arithmetic on
-inputs, not a simulation artefact.)
+**Consequences for a generator.** The closed form is exact at the rungs and at
+saturation — a saturated point evaluates `|V| / d` with no interpolation and matches to
+0.00006% — and it is exact on any segment whose children share a duration. It is up to
+a fraction of a percent out between rungs of differing duration, which is most of them.
+That is accurate enough to author a creature and to predict what one will do, and not
+accurate enough to reproduce the shipped file — which the cache's own rounding rules out
+in any case (below).
 
 #### A curve may cross a gait transition
 
@@ -1158,9 +1038,10 @@ stores root motion at six significant digits and it is stored nowhere else, so t
 inputs are 2.1e-6 coarse against the 1.2e-7 a float32 needs (§6.1). The curve is
 reproducible; the bytes are not.
 
-**The 0.039 parameter offset** (§6.1) is real, constant in x across ladders spanning 30
-to 134, and worth two orders of magnitude — but unexplained. Something in the generator
-fed the blend a parameter that much below the x it recorded.
+**The duration rule for a synchronised blend** (§6.1). Linear interpolation of the
+children's durations is wrong, and it is what the closed form's remaining error is. The
+pose side is documented; the duration side is not, and no rule has been fitted across
+entries yet.
 
 **The point-retention rule.** Needed only for a byte-identical rebuild (§8). Now a
 tractable experiment, because §6 can produce the dense curve to score candidates
