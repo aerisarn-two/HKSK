@@ -8,7 +8,8 @@
     Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:     bUseSpeedSampler:Animation, compiled default 1 (ON)
-    Reader:   HKSK.Cache.SpeedDataFile -- read, write, and query
+    Reader:   HKSK.Cache.SpeedDataFile  -- read, write, and query
+              HKSK.Cache.SpeedLadder    -- the response curve of §6
 
 Third file of the animation cache, after `animationdatasinglefile.txt` and
 `animationsetdatasinglefile.txt`. Named `.txt`; binary after byte 1943.
@@ -737,6 +738,14 @@ the size of it; its slowest rung plays `walkforward` at 0.058, stretching 0.833 
     79.0        21.10         21.15          55.56
     85.0        34.56         34.70          59.77
     88.0        50.75         51.06          61.88
+
+`HKSK.Cache.SpeedLadder` implements this. `SpeedLadder.FromBlender` reads the rungs out
+of an `hkbBlenderGenerator` and resolves each child's clip through the cache;
+`Evaluate(x)` is the form above. The three properties that were each wrong at some point
+during this investigation — travel blending as a vector, duration blending separately,
+and the curve clamping at both ends — are pinned by tests that are exact by
+construction, plus one that reads `SphereCenturion`'s ladder out of the game and checks
+it against the shipped table.
 
 **This is the part of the file that is not authoring error** (§0), and it has two
 sources of very different character.

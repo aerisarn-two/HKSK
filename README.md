@@ -280,6 +280,22 @@ var cache = SkyrimCache.Load(meshes);
 float actual = cache.SpeedData!.Sample("DeerProject", state: 20, direction: 0f, goalSpeed: 300f);
 ```
 
+`SpeedLadder` computes the same curve from the animations instead of reading it, which
+is what a generator needs and what tells you whether a creature is authored correctly:
+
+```csharp
+var actor  = cache.OpenActor("SphereCenturion")!;
+var blend  = actor.Behaviors.SelectMany(b => b.File.All<hkbBlenderGenerator>())
+                            .First(b => b.m_name == "MT_Forward_Blend");
+var ladder = SpeedLadder.FromBlender(blend, actor);
+
+ladder.Evaluate(324.5f);        // what the creature does when asked for 324.5
+ladder.Rungs[1].Delivered;      // what that rung delivers, against its own weight
+```
+
+A rung's `Weight` is what the movement type claims and `Delivered` is what the clip
+does. Equal means correctly authored; the gap between them is what the table records.
+
 Generating one from scratch is not implemented: the sweep bound is still an
 authored input. **`docs/speed-data.md`** is the specification — the layout, the
 nine invariants, the closed form for the curve, how to choose `MOVT` for an
