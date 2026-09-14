@@ -67,14 +67,43 @@ is indexed by the requested speed instead of the achievable one, and the feet sl
 
 Little-endian. The dirlist is CRLF ASCII; everything after it is 32-bit words.
 
-    file    := dirlist block[count]                 /* blocks in dirlist order */
-    dirlist := "<count>\r\n" ("<Project>Data\<Project>.spd\r\n")[count]
-    block   := u32 version(=1) u32 n_entries entry[n_entries]
-    entry   := u32 key u32 n_records record[n_records]
-    record  := f32 direction u32 n_points (f32 x, f32 y)[n_points]
+    file    := dirlist block[count]                  /* blocks in dirlist order */
 
-As shipped: 49 projects, 88 entries, 1634 records, 18302 points. The dirlist is
-1943 bytes and the binary body 160584.
+    dirlist := "<count>\r\n"
+               count x "<Project>Data\<Project>.spd\r\n"
+
+    struct block {                                   /* one per project */
+            u32     version;                         /* == 1 */
+            u32     n_entries;
+            entry   entries[n_entries];
+    };
+
+    struct entry {                                   /* one per locomotion state */
+            u32     key;                             /* state id, see §3.1 */
+            u32     n_records;                       /* == 19, or 0 if malformed */
+            record  records[n_records];
+    };
+
+    struct record {                                  /* one per heading */
+            f32     direction;                       /* 0.00 .. 0.90, see §3.2 */
+            u32     n_points;
+            struct { f32 x; f32 y; } points[n_points];
+    };
+
+`sizeof(record) = 8 + 8 * n_points`. No padding, no alignment beyond 4. The block
+count is the dirlist count; blocks follow the dirlist in its order, with no index
+and no length prefix, so a reader must walk them in sequence.
+
+    dirlist                1943 bytes
+    binary               160584 bytes  (40146 words)
+    total                162527 bytes
+
+    projects (= blocks)      49
+    entries                  88
+    records                1634        /* 86 valid entries x 19 */
+    points                18302
+
+Read-then-write reproduces the file **byte for byte**.
 
 A reader must tolerate `n_records == 0` (§10).
 
