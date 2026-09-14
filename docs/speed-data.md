@@ -131,7 +131,8 @@ i = 7:
     7     0.350000024   0.349999994   0.350000024
     18    0.900000155   0.900000036   0.900000155
 
-**I5** means a heading in [0.95, 1.0) has no record and resolves against 0.90.
+**I5** means a heading in [0.95, 1.0) has no record of its own. It resolves against
+**record 0**, not 0.90: the query's search runs off the end and wraps (§4.2).
 
 **I9** needs the playback factor. Against raw root-motion speed the bound fails on
 4 of 46 projects; against `speed x PlaybackSpeed` it holds on all 46.
@@ -391,14 +392,38 @@ Each INI setting is a 32-byte record; the value precedes the name pointer:
 
 `state` is the only integer; `direction` and `goalSpeed` both move through `movss`.
 
-**At runtime nothing is computed.** The lookup is:
+**At runtime nothing is computed.** The query is at RVA 0xbc0e30, slot 1 of the DB
+manager's vftable, and it is three binary searches and a lerp:
 
-    1  state     -> the entry whose key matches
-    2  direction -> one of that entry's 19 records
-    3  goalSpeed -> the two stored points bracketing it; interpolate y linearly.
-                    Below x[0] return y[0]; above x[n] return y[n].
+    1  state     -> the entry whose key matches EXACTLY. No match, return goalSpeed.
+    2  direction -> exact match, else the FIRST RECORD ABOVE the request; past
+                    the last it WRAPS TO RECORD 0. Records are never blended.
+    3  goalSpeed -> the first point at or above the request.
+                    Below the first point, interpolate from the ORIGIN (0,0).
+                    Past the last point, return goalSpeed UNCHANGED.
 
-Two searches and a lerp. All the modelling is baked into the stored y.
+    4  lerp      -> t = (x_hi - goal)/(x_hi - x_lo); y = (1-t)*y_hi + t*y_lo,
+                    skipped when |x_hi - x_lo| <= FLT_EPSILON.
+
+Three of those are not what a reader would assume, and all three were read out of the
+binary rather than guessed:
+
+- **The heading is a ceiling, not the nearest record.** A request of 0.03 reads the
+  0.05 curve, not the 0.00 one.
+- **The compass wraps.** A heading in [0.95, 1.0) reads **record 0**, the forward
+  curve — not the 0.90 one. An earlier revision of this document said otherwise.
+- **Above the last point the query passes the request through**; it does not clamp to
+  the last y. That is the same behaviour as having no database, so an actor asked for
+  more than its sweep covers is indexed on the raw request (§9).
+
+**No offset is applied to `goalSpeed` anywhere.** It is loaded at `0x58(%rbx)`, passed
+to the query untouched, and used directly in the subtraction — no `addss`, `subss` or
+`mulss` between. Whatever produces the 0.0403 of §6.1 is not in the runtime.
+
+One layout note: in memory a point is `{ float y; float x; }`, the query searching `+4`
+and returning `+0`. On disk it is the other way round — the field at `+0` is the sorted
+one in 1634 of 1634 records, and a binary search key must be sorted — so the loader
+swaps them.
 
 **With no database the call is skipped and `speedOut = goalSpeed`.** That is an
 identity pass-through, not a fallback computation.
@@ -1090,7 +1115,9 @@ Two hypotheses are tested and dead:
 **`max(x)` does not bound what the game can request.** 47 of the 86 entries stop below
 their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of
 802.29 — and 37 of those are still rising when the sweep ends. Above the last point the
-query clamps, so those actors are indexed below the speed they are asked for.
+query does not clamp — it returns the request untouched (§4.2) — so above its own
+sweep an actor's gait blend is indexed on the raw request, exactly as if the table were
+absent. The sampler simply stops working for that actor at speed.
 
 **Bit-exact values are unreachable, by a proof rather than a gap.** The animation cache
 stores root motion at six significant digits and it is stored nowhere else, so the

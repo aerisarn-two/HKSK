@@ -43,29 +43,44 @@ public sealed class SpeedRecord
     /// Reads the curve at a requested speed, as the engine does.
     /// </summary>
     /// <remarks>
-    /// Clamps below the first point and above the last, and interpolates
-    /// linearly between the two that bracket <paramref name="goalSpeed"/>.
-    /// Returns <paramref name="goalSpeed"/> unchanged for an empty curve, which
-    /// is what the engine does when it has no database at all.
+    /// Read out of the query at RVA 0xbc0e30, not guessed. Two boundaries are not
+    /// what a reader would assume:
+    ///
+    /// <list type="bullet">
+    /// <item><b>Below the first point it interpolates from the origin</b>, not from
+    /// the first point. The engine leaves the lower value at zero when the bracketing
+    /// index is 0, so the segment runs from (0,0) to the first stored point. Most
+    /// entries store a point at x = 0 and never notice; the two whose sweep starts
+    /// above zero do.</item>
+    /// <item><b>Above the last point it returns <paramref name="goalSpeed"/>
+    /// unchanged</b>, not the last y. The binary search runs off the end, the query
+    /// bails, and `speedOut` keeps the value it came in with — the same as having no
+    /// database at all. It does not clamp.</item>
+    /// </list>
+    ///
+    /// Between the bracketing points it is a plain lerp, guarded by FLT_EPSILON on
+    /// the span.
     /// </remarks>
     public float Sample(float goalSpeed)
     {
         if (Points.Count == 0) return goalSpeed;
-        if (goalSpeed <= Points[0].X) return Points[0].Y;
 
-        for (int i = 1; i < Points.Count; i++)
-        {
-            SpeedPoint b = Points[i];
-            if (goalSpeed > b.X) continue;
+        // The first point whose x is at or above the request: the engine's search
+        // yields an exact hit or the insertion point.
+        int i = 0;
+        while (i < Points.Count && Points[i].X < goalSpeed) i++;
 
-            SpeedPoint a = Points[i - 1];
-            float span = b.X - a.X;
-            if (span <= 0f) return b.Y;
+        if (i >= Points.Count) return goalSpeed;   // past the end: pass through
 
-            return a.Y + (b.Y - a.Y) * ((goalSpeed - a.X) / span);
-        }
+        SpeedPoint hi = Points[i];
+        float loX = i == 0 ? 0f : Points[i - 1].X;  // below the first point: from the origin
+        float loY = i == 0 ? 0f : Points[i - 1].Y;
 
-        return Points[^1].Y;
+        float span = hi.X - loX;
+        if (Math.Abs(span) <= float.Epsilon) return hi.Y;
+
+        float t = (hi.X - goalSpeed) / span;
+        return (1f - t) * hi.Y + t * loY;
     }
 
     /// <summary>The 19 direction values an entry's records carry, in order.</summary>
@@ -108,36 +123,30 @@ public sealed class SpeedEntry
     public bool IsEmpty => Records.Count == 0;
 
     /// <summary>
-    /// Picks the curve for a heading and reads it.
+    /// Picks the curve for a heading and reads it, as the engine does.
     /// </summary>
     /// <remarks>
-    /// Takes the record whose <see cref="SpeedRecord.Direction"/> is nearest
-    /// <paramref name="direction"/>, which handles I5 correctly -- a heading in
-    /// [0.95, 1.0) has no record and falls to 0.90.
+    /// Read out of the query at RVA 0xbc0e30. The engine takes the record with an
+    /// exact match, else the **first record above** the requested heading — a
+    /// ceiling, not the nearest. And because the heading is a compass, a request
+    /// past the last record **wraps to record 0**: a heading in [0.95, 1.0) reads
+    /// the forward curve, not the 0.90 one.
     ///
-    /// <strong>Nearest-record is an assumption.</strong> The query is known to
-    /// take a float direction and return a float, but whether the engine snaps
-    /// to a record or interpolates between two adjacent ones has not been read
-    /// out of the binary. Snapping is the conservative reading: it cannot
-    /// invent a value between two curves. If it turns out to interpolate, this
-    /// is where that changes, and only headings off the 0.05 grid are affected.
+    /// The records are not blended. One is chosen and read.
     ///
     /// Returns <paramref name="goalSpeed"/> unchanged when the entry is empty.
     /// </remarks>
     public float Sample(float direction, float goalSpeed)
     {
-        SpeedRecord? best = null;
-        float bestDelta = float.MaxValue;
+        if (Records.Count == 0) return goalSpeed;
 
-        foreach (SpeedRecord record in Records)
-        {
-            float delta = Math.Abs(record.Direction - direction);
-            if (delta >= bestDelta) continue;
-            bestDelta = delta;
-            best = record;
-        }
+        int i = 0;
+        while (i < Records.Count && Records[i].Direction < direction) i++;
 
-        return best?.Sample(goalSpeed) ?? goalSpeed;
+        // Past the last heading the compass wraps round to the first.
+        if (i >= Records.Count) i = 0;
+
+        return Records[i].Sample(goalSpeed);
     }
 }
 
