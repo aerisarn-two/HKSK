@@ -811,6 +811,22 @@ x = 424.5, over a two-fold range in x — with a droop confined to the floor seg
                                   fifty times too large
     5/128 = 0.0390625            outside the measured quartiles
     1/30, one frame at 30 Hz     0.0333, well outside
+    rounding of the inputs       six-significant-digit rounding moves the implied
+                                 offset by at most 7.5e-5, and producing the whole
+                                 0.0403 would need travel wrong by 0.32% or a
+                                 duration by 0.5-0.9% -- 500 to 1500x the quantum
+
+**It is upstream of the blend.** The dog's ladder crosses three segments using two
+different clips, with travel 89.45 and 154.29 and durations from 17.9 down to 0.53, and
+every segment reads the same offset:
+
+    5.0   -> 74.5    walkforward   travel  89.45   d 17.910 -> 0.857    0.03894
+    186.8 -> 287.3   trotforward   travel 154.29   d  1.231 -> 0.800    0.04080
+    287.3 -> 425.0   trotforward   travel 154.29   d  0.800 -> 0.533    0.04071
+
+No error in travel or duration can be common to unrelated clips; an error in the
+parameter can. Whatever it is happens to the number before the blend sees it, and
+before any clip data is touched.
 
 **It remains unidentified.** Something in the generator fed the blend a parameter
 0.0403 below the x it recorded, the same amount for every creature regardless of ladder
