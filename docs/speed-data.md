@@ -51,10 +51,14 @@ authoring error, and matches it numerically:
     Dog                     32.4%                     32.0%
     Chicken                 60.0%                     52.0%
 
-One part is not error and does not go away. Between two gait clips the blend is
-time-synchronised, and a blend of two clips with different durations does not
-travel at the average of their speeds (§6). That curvature is real locomotion
-behaviour, so even a perfect creature needs the table between its gaits.
+One part is not authoring error and does not go away. The blend is
+time-synchronised, so it returns a **duration-weighted** average of two clips'
+speeds rather than a plain one, and the curve bends away from a straight line by
+
+    (s_a - s_b)(D_a - D_b) / (2(D_a + D_b))
+
+which is zero only when the two clips have the same duration. So even a perfectly
+authored creature needs the table between its gaits (§6).
 
 Without the file the modifier passes the request through unchanged, the gait blend
 is indexed by the requested speed instead of the achievable one, and the feet slide.
@@ -620,9 +624,36 @@ the size of it; its slowest rung plays `walkforward` at 0.058, stretching 0.833 
     85.0        34.56         34.70          59.77
     88.0        50.75         51.06          61.88
 
-**This is the part of the file that is not authoring error** (§0). Even a perfectly
-authored creature needs it: between two gait clips of different duration the delivered
-speed is not the average of theirs.
+**This is the part of the file that is not authoring error** (§0), and it has two
+sources of very different character.
+
+Measured over the 40 adjacent rung pairs of thirteen forward ladders:
+
+    duration ratio ~ 1 (equal durations)    5 pairs   median |deviation|  0.000%
+    duration ratio != 1                    35 pairs   median |deviation| 17.6%
+
+Curvature comes from duration mismatch and from nothing else — equal durations give an
+exactly straight segment. Since 26 of the 40 pairs are the *same clip* on both sides,
+the mismatch is usually just a `PlaybackSpeed` ratio.
+
+**The dominant term is the floor rung, and it is a rigging convention rather than a
+fact about locomotion.** Every ladder's bottom step reuses the walk clip at a rate near
+0.05, stretching it 7x to 71x, which bends that first segment enormously:
+
+    Chicken   walkforward -> walkforward   ratio 71.43   -94.6%
+    Deer      walkforward -> walkforward   ratio 34.48   -89.0%
+    Bear      walkforward -> walkforward   ratio 25.00   -85.2%
+    Skeever   walkforward -> walkforward   ratio  7.25   -57.4%
+
+That is how a near-standstill is faked, not how an animal accelerates.
+
+**Between real gaits the curvature is mild** — steps of 1.2x to 3x give a few percent:
+bear trot pairs at -0.3% and -1.7%, dog trot pairs at -4.5% and -4.0%. Small, but not
+zero, and it is genuine blending behaviour.
+
+**The deviation is always below the chord, never above.** A faster rung is a shorter
+clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
+chord-based model tested came in short and never over.
 
 ### Verification
 
