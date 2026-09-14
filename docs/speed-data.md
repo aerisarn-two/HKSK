@@ -903,9 +903,30 @@ So the constant lives in the generator's own code, which did not ship. It is mea
 from the output and not recoverable from the inputs, and that is where the search ends
 unless the tool turns up.
 
-**It remains unidentified.** Something in the generator fed the blend a parameter
-0.0403 below the x it recorded, the same amount for every creature regardless of ladder
-scale. Measured against the shipped floats with the correction applied:
+**It remains unidentified, and it may not be an offset at all.**
+
+What is certain is where the error is *not*. A saturated point evaluates `|V| / d` on a
+single rung with no interpolation, and there the model is exact — median error 0.00006%
+over 11 such points, below the cache's own rounding — while interior points sit at
+0.23285%, **3871 times worse**. Any clamping or quantisation of an input would show up
+equally at both. It does not. The inputs are right; the whole error is in the
+interpolation.
+
+That leaves two readings this data cannot separate:
+
+- the generator fed the blend a parameter 0.0403 below the x it recorded, or
+- **the interpolation law in §6 is slightly wrong**, and 0.0403 is what that
+  discrepancy looks like when expressed as a parameter shift.
+
+The second is not idle. The Behavior documentation states how the *pose* blends —
+linearly between child weights — and says nothing about how a synchronised blend
+combines the children's **durations**. That `d` interpolates linearly is this document's
+assumption, verified at segment endpoints and merely assumed between them. A different
+sync rule would produce exactly this: right at both ends of every segment, a fraction of
+a percent out in the middle.
+
+Treat `x - 0.0403` as an empirical correction that works, not as a discovered mechanism.
+Measured against the shipped floats with it applied:
 
     132 points, single-family entries
       bit-exact                      1
