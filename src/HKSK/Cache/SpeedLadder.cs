@@ -69,9 +69,27 @@ public sealed class SpeedLadder
     /// </remarks>
     public float Evaluate(float x)
     {
-        if (Rungs.Count == 0) return 0f;
-        if (Rungs.Count == 1 || x <= Rungs[0].Weight) return Rungs[0].Delivered;
-        if (x >= Rungs[^1].Weight) return Rungs[^1].Delivered;
+        (Vector3 travel, float duration) = Resolve(x);
+        return duration > 0f ? travel.Length() / duration : 0f;
+    }
+
+    /// <summary>
+    /// The travel and duration the blend produces at <paramref name="x"/>, before
+    /// they are divided.
+    /// </summary>
+    /// <remarks>
+    /// A heading that falls between two compass arms is a blend of both, and
+    /// blending two speeds is not the same as blending what produces them: the
+    /// travel has to stay a vector and the duration has to stay separate all the
+    /// way to the last division (§5.2, §6). So the pair is what a caller composing
+    /// two ladders needs, and <see cref="Evaluate"/> is the single-ladder case of
+    /// it.
+    /// </remarks>
+    public (Vector3 Travel, float Duration) Resolve(float x)
+    {
+        if (Rungs.Count == 0) return (Vector3.Zero, 0f);
+        if (Rungs.Count == 1 || x <= Rungs[0].Weight) return (Rungs[0].Travel, Rungs[0].Duration);
+        if (x >= Rungs[^1].Weight) return (Rungs[^1].Travel, Rungs[^1].Duration);
 
         for (int i = 1; i < Rungs.Count; i++)
         {
@@ -80,16 +98,13 @@ public sealed class SpeedLadder
 
             SpeedRung a = Rungs[i - 1];
             float span = b.Weight - a.Weight;
-            if (span <= 0f) return b.Delivered;
+            if (span <= 0f) return (b.Travel, b.Duration);
 
             float u = (x - a.Weight) / span;
-            Vector3 travel = Vector3.Lerp(a.Travel, b.Travel, u);
-            float duration = a.Duration + u * (b.Duration - a.Duration);
-
-            return duration > 0f ? travel.Length() / duration : 0f;
+            return (Vector3.Lerp(a.Travel, b.Travel, u), a.Duration + u * (b.Duration - a.Duration));
         }
 
-        return Rungs[^1].Delivered;
+        return (Rungs[^1].Travel, Rungs[^1].Duration);
     }
 
     /// <summary>The parameter above which the response stops changing.</summary>

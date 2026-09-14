@@ -1,3 +1,4 @@
+using System.Numerics;
 using HKSK.Havok;
 using HKSK.Model;
 using HKX2;
@@ -204,6 +205,119 @@ public sealed class SpeedSampler
             if (child is not null) top = MathF.Max(top, child.m_weight);
 
         return top > 1.001f;
+    }
+
+    /// <summary>
+    /// The compass serving a locomotion state, or null when the project's
+    /// compasses do not separate on it.
+    /// </summary>
+    /// <remarks>
+    /// A key is an <c>iState</c> value and names a movement type (§3.1), and the
+    /// movement type is what says which family a record was sampled for: a
+    /// <c>GiantProject</c> key of 2 is <c>GiantCombatRun</c> and the compass is
+    /// <c>CombatDirectionalBlend_RUN</c>; a <c>DraugrProject</c> key of 5 is
+    /// <c>DraugrGreatSword</c> and the compass is <c>2GS_Direction_Blend</c>.
+    /// Matching is on the tokens the two names share once the creature's own name
+    /// -- carried by every one of its movement types, so it distinguishes nothing
+    /// -- is removed.
+    ///
+    /// This is a name match and it is the one place here that is. The tree says
+    /// which blends the sampler drives and which arm answers a heading; it does
+    /// not say which family a state belongs to, because nothing in the graph
+    /// writes <c>iState</c> for most creatures -- the engine sets it from the
+    /// actor's movement type. So the movement type's name is the join, and where
+    /// two compasses tie on it this returns null rather than guessing.
+    /// </remarks>
+    public IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassFor(int key)
+    {
+        if (Compasses.Count == 0) return null;
+
+        var movements = States.FirstOrDefault(s => s.Key == key).MovementTypes ?? [];
+        if (movements.Count == 0) return null;
+
+        // Every movement type of a creature carries its name, so the tokens they
+        // all share are noise here.
+        HashSet<string>? shared = null;
+        foreach (SpeedState state in States)
+            foreach (string movement in state.MovementTypes)
+            {
+                HashSet<string> tokens = Tokenise(movement);
+                if (shared is null) shared = tokens;
+                else shared.IntersectWith(tokens);
+            }
+
+        var wanted = new HashSet<string>();
+        foreach (string movement in movements) wanted.UnionWith(Tokenise(movement));
+        if (shared is not null) wanted.ExceptWith(shared);
+
+        var ranked = Compasses
+            .Select(c =>
+            {
+                HashSet<string> tokens = Tokenise(c.Name);
+                return (c.Arms, Score: tokens.Count(t => wanted.Contains(t)) * 10 - tokens.Count(t => !wanted.Contains(t)));
+            })
+            .OrderByDescending(c => c.Score)
+            .ToList();
+
+        return ranked.Count == 1 || ranked[0].Score > ranked[1].Score ? ranked[0].Arms : null;
+    }
+
+    /// <summary>Splits a node or movement-type name into comparable tokens.</summary>
+    private static HashSet<string> Tokenise(string name)
+    {
+        string[] parts = System.Text.RegularExpressions.Regex.Split(
+            name, @"(?<!^)(?=[A-Z][a-z])|[^A-Za-z0-9]+|(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])");
+
+        // words every locomotion blender carries, which separate nothing
+        HashSet<string> noise = ["blend", "direction", "directional", "locomotion", "mt", ""];
+        return [.. parts.Select(p => p.ToLowerInvariant()).Where(p => p.Length > 0 && !noise.Contains(p))];
+    }
+
+    /// <summary>
+    /// What a compass delivers at a heading, for a table sampled between its arms.
+    /// </summary>
+    /// <remarks>
+    /// The file samples 19 headings at steps of 0.05 and a compass has its arms at
+    /// steps of 0.125, so only 0, 0.25, 0.5 and 0.75 ever land on an arm. Every
+    /// other heading is a blend of the two arms bracketing it, and it is a
+    /// synchronised blend like any other: lerp the travel as a vector, lerp the
+    /// duration, divide once at the end. Collapsing each arm to a speed first
+    /// would overstate the mix, because the arms point in different directions and
+    /// |lerp(a,b)| &lt; lerp(|a|,|b|) unless they are parallel.
+    ///
+    /// The compass wraps, so the arm at 0.875 brackets with the one at 0.
+    /// </remarks>
+    public static float Sample(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, float direction, float x)
+    {
+        ArgumentNullException.ThrowIfNull(arms);
+        if (arms.Count == 0) return 0f;
+
+        var ordered = arms.OrderBy(a => a.Direction).ToList();
+        if (ordered.Count == 1) return ordered[0].Ladder.Evaluate(x);
+
+        int upper = ordered.FindIndex(a => a.Direction >= direction - 1e-4f);
+        if (upper < 0) upper = 0;                       // past the last arm: wrap to the first
+
+        if (MathF.Abs(ordered[upper].Direction - direction) <= 1e-4f)
+            return ordered[upper].Ladder.Evaluate(x);
+
+        int lower = upper == 0 ? ordered.Count - 1 : upper - 1;
+
+        float from = ordered[lower].Direction;
+        float to = ordered[upper].Direction;
+        if (to <= from) to += 1f;                       // the wrapping segment
+        float here = direction < from ? direction + 1f : direction;
+
+        float span = to - from;
+        float u = span > 0f ? (here - from) / span : 0f;
+
+        (Vector3 travelA, float durationA) = ordered[lower].Ladder.Resolve(x);
+        (Vector3 travelB, float durationB) = ordered[upper].Ladder.Resolve(x);
+
+        Vector3 travel = Vector3.Lerp(travelA, travelB, u);
+        float duration = durationA + u * (durationB - durationA);
+
+        return duration > 0f ? travel.Length() / duration : 0f;
     }
 
     private static hkbBlenderGenerator? LadderUnder(object? node, Dictionary<hkbBlenderGenerator, SpeedLadder> driven)

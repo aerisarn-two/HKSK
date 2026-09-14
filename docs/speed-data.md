@@ -1236,12 +1236,39 @@ offset in x, no scale, constant across the corpus — but not explained. It is e
 from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
 The tool that wrote the file is not shipped, so this may stay a measured constant.
 
-**Ladder identification, which is now the largest error in the file.** With §6.2 applied
-the arithmetic residual is a few thousandths of a percent, and what remains is §5.3
-failing to place a blender: `HighlandCowProject`, `Spriggan` and `WerewolfBeastProject`
-sit at tenths of a percent whatever the offset. Records that change ladder partway up
-their range are a second case — `FalmerProject` key 2 leaves the walk blender at x=100.5
-and is answered by the run blender above it — and §6 models one ladder per record.
+**Which family a state belongs to.** This is the largest remaining error, and it is the
+only part of the walk from a project to a record that is not structural. The tree says
+which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); it does
+not say which *family* a state belongs to, because for most creatures nothing in the
+graph writes `iState` at all — the engine sets it from the actor's movement type. Only
+seven projects carry a `BSiStateTaggingGenerator` and only three a
+`BSIStateManagerModifier`, so neither generalises.
+
+What does generalise is the movement type's own name, which §3.1 already recovers from
+the `iState_<MOVT>` variables:
+
+    GiantProject      key 2 = GiantCombatRun     -> CombatDirectionalBlend_RUN
+    DraugrProject     key 5 = DraugrGreatSword   -> 2GS_Direction_Blend
+    SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
+
+Matching on the tokens the two names share, once the creature's own name is removed,
+places 589 of the 1634 records. Ten projects have every record placed and rebuilt to
+better than a tenth of a percent at the 90th percentile. Where two compasses tie, the
+answer is no compass rather than a guess.
+
+Records that change ladder partway up their range are a second case — `FalmerProject`
+key 2 leaves the walk blender at x=100.5 and is answered by the run blender above it —
+and §6 models one ladder per record.
+
+**Three creatures whose ladders do not describe their tables.** `HorseProject`'s rungs
+sit at 5, 125.112, 214, 303.906 and 450 but deliver 12.1, 303.9, 329.2, 467.6 and 0:
+the weight-to-delivery ratio is constant per clip (2.4291 for both walk rungs, 1.5385
+for both trot rungs) and `RunForward` has no travel in the cache at all, so the cache's
+duration for these clips is not the duration the blend uses. `HMDaedra`'s compass has
+nine arms at 0.05 and 0.95 rather than eight from 0, and one of its ladders is
+non-monotonic — `MT_BackwardRight_Blend` delivers 128 at weight 64 and 64 at weight 128.
+`DwarvenSpiderCenturionProject` has a sampler and a compass whose children are clips,
+so it has no speed axis to describe. None of these is an identification problem.
 
 **Unverified rather than unknown:** quadruped side and back records, which have no
 compass family, the two player states §5.3's name fallback cannot place, and the eight
@@ -1314,7 +1341,11 @@ and not zero, which would model a creature that cannot move.
 sampler, reads the variables off it, and returns the states the project declares
 (key and movement-type name, from its `iState_<MOVT>` variables), every ladder the
 sampler's answer drives, and the compasses those ladders hang under, so a heading
-resolves to an arm without reading a node name. It returns null for the eight
+resolves to an arm without reading a node name. `CompassFor(key)` picks the family
+from the movement type naming that state, and `Sample(arms, direction, x)` answers a
+heading, blending the two arms bracketing it when it falls between them — which is
+15 of every 19 headings, since the file samples at 0.05 and the arms sit at 0.125
+(§3.2). Rounding to the nearest arm instead is twenty times worse. It returns null for the eight
 projects that have no sampler, which is the honest answer: the table is not part of
 how they move. Over the corpus that is 1038 ladders, 142 compasses, 996 arms and
 3416 rungs, every rung naming an animation and carrying its root motion.
