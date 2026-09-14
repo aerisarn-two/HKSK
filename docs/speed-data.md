@@ -528,8 +528,17 @@ and their child weights are positions on the `Direction` axis:
         child[2] w=0.250   RightBlend              child[6] w=0.750   LeftBlend
         child[3] w=0.375   BackwardsRightBlend     child[7] w=0.875   ForwardLeftBlend
 
-`flags=0x31` is `FLAG_SYNC | FLAG_IS_PARAMETRIC_BLEND_CYCLIC | FLAG_FORCE_DENSE_POSE`,
-and `cyclic[0,1]` is what makes the compass wrap: a heading of 0.9 blends child[7] at
+`flags=0x31` is `FLAG_SYNC | FLAG_PARAMETRIC_BLEND | FLAG_IS_PARAMETRIC_BLEND_CYCLIC`.
+The enum is read from `HavokAssembly.DLL`'s own metadata, not guessed:
+
+    FLAG_SYNC                                      1
+    FLAG_SMOOTH_GENERATOR_WEIGHTS                  4
+    FLAG_DONT_DEACTIVATE_CHILDREN_WITH_ZERO_WEIGHTS 8
+    FLAG_PARAMETRIC_BLEND                         16
+    FLAG_IS_PARAMETRIC_BLEND_CYCLIC               32
+    FLAG_FORCE_DENSE_POSE                         64
+
+`cyclic[0,1]` is what makes the compass wrap: a heading of 0.9 blends child[7] at
 0.875 with child[0] at 0.000 ≡ 1.000. It carries **no variable binding at all** — the
 engine writes `m_blendParameter` directly — which is why searching the graph for a
 blender bound to `Direction` finds nothing.
@@ -556,10 +565,18 @@ weights in degrees and left/centre/right children:
 
 Turn authority grows with gait. The sampler supplies the speed axis and nothing else.
 
-**Flags do not distinguish the families.** Across all 1037 sampler-bound blenders the
-value is 17 (1022) or 16 (15) — `FLAG_SYNC | FLAG_IS_PARAMETRIC_BLEND_CYCLIC`.
-`FLAG_PARAMETRIC_BLEND` (8) is never set, and the same pattern appears on the turn
-blenders. Evidence for the blend model in §6 is the measured fit, not the flag.
+**Every speed blender is a parametric blend, and none of them is cyclic.** Across all
+1037 sampler-bound blenders the value is 17 (1022) or 16 (15) — that is
+`FLAG_PARAMETRIC_BLEND` alone, or with `FLAG_SYNC`. `FLAG_IS_PARAMETRIC_BLEND_CYCLIC`
+(32) is never set on them, which is the difference from the compass above: a ladder has
+ends, a compass wraps. The same pattern appears on the turn blenders.
+
+This says the model in §6 is the right shape by construction and not only by fit: a
+parametric blend is *defined* as interpolating between the children bracketing
+`m_blendParameter`, and `FLAG_SYNC` is what ties their durations together. Earlier
+revisions of this document read the flag word against a wrong enum, concluded that
+`FLAG_PARAMETRIC_BLEND` was never set, and therefore rested the whole model on the fit.
+That reading was wrong in both directions.
 
 ### 5.3 Which blender serves a state
 
@@ -778,6 +795,12 @@ zero, and it is genuine blending behaviour.
 clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
 chord-based model tested came in short and never over.
 
+That is a property of how the clips were authored, not of the blend. Built deliberately
+the other way — a faster rung given the *longer* clip — the same formula puts the arc
+above the chord, and `hkmeasure` reproduces it: 300 u/s at 1.0s against 125 u/s at 0.8s
+delivers 222.22 at the midpoint where the chord says 212.5. The sign is what the corpus
+supplies; the curve is what the runtime supplies.
+
 ### Verification
 
 Over the whole file, on the four cardinal records, selecting the blender by the
@@ -850,11 +873,46 @@ equal-duration segment gives half the value, and why it was never found in the
 executable, the SDK, the authoring file or any of the 107 behaviour graphs. There was no
 constant to find.
 
-**What remains open** is the exact weighting a synchronised parametric blend applies.
-The Behavior Tool documents the pose side — linear between child weights — and says
-nothing about the duration side, nor about any correction at a segment's ends. `c`
-correlates with duration mismatch without being explained by it, and no rule has been
-fitted across entries.
+#### The blend law itself is now measured, and it is exactly §6
+
+Everything above infers the law by fitting the model to the shipped file. That is
+backwards: the law can be measured directly, by running the blend. `hkmeasure` (§12)
+drives a real `hkbBlenderGenerator` inside Havok Behavior's own runtime, over two
+synthetic clips whose travel and duration are chosen rather than recovered, and reads
+the root motion back frame by frame.
+
+Two clips, weights 0 and 1, `flags=0x11` (`FLAG_SYNC | FLAG_PARAMETRIC_BLEND`),
+`syncMaster=-1` — the shipped ladder configuration:
+
+    clip a   duration 1.0   travel 100   speed 100
+    clip b   duration 0.8   travel 300   speed 375
+
+        x       delivered     §6 predicted    rel err     u recovered
+      0.00      99.999985      100.000000     1.5e-07     -0.00000007
+      0.25     157.894727      157.894738     6.3e-08      0.24999996
+      0.50     222.222221      222.222223     9.0e-09      0.49999999
+      0.75     294.117607      294.117648     1.4e-07      0.74999987
+      1.00     374.999980      375.000000     5.3e-08      0.99999994
+
+`u` recovered from the delivered speed equals `x` to seven or eight decimals, and the
+error is at float32 epsilon — the precision of the thing being measured. **There is no
+correction term.** `y(x) = |lerp(V_a, V_b, u)| / lerp(d_a, d_b, u)` with `u` the plain
+normalised position between the bracketing rung weights is not an approximation to the
+runtime's behaviour; it is the runtime's behaviour.
+
+The figures are identical for a 10-second and a 1000-second sampling window, so they are
+not a statistical artefact. Getting there required removing one of my own: Havok
+accumulates `worldFromModel`, and at a few hundred units a second a float32 stops
+resolving a 1.7-unit increment within a minute, which manufactured a spurious residual of
+about 1e-4 that looked exactly like a weighting constant. Resetting the character to the
+origin each frame and accumulating the deltas in double makes it vanish.
+
+**What this leaves open is no longer the blend law.** `c` above is a different quantity:
+it is what the weight would have to be for the model to reproduce the *shipped cache
+values*, and the law is now known not to supply it. So the discrepancy is in the inputs
+— the per-rung travel and duration this document recovers from the cache, and which clip
+of a rung's subtree is taken as the representative — and not in how they are combined.
+That is a narrower and more tractable question than the one it replaces.
 
 **Consequences for a generator.** The closed form is exact at the rungs and at
 saturation — a saturated point evaluates `|V| / d` with no interpolation and matches to
@@ -1072,6 +1130,11 @@ children's durations is wrong, and it is what the closed form's remaining error 
 pose side is documented; the duration side is not, and no rule has been fitted across
 entries yet.
 
+**Which clip represents a rung.** Now the first thing to check, because §6.1 rules the
+blend law out as the source of the residual against the shipped file. A rung's subtree
+holds several clips and this document takes the shortest name as the straight variant;
+the travel and duration fed to the model follow from that choice.
+
 **The point-retention rule.** Needed only for a byte-identical rebuild (§8). Now a
 tractable experiment, because §6 can produce the dense curve to score candidates
 (Douglas-Peucker at a tolerance, curvature threshold, error-bounded decimation) against
@@ -1080,10 +1143,11 @@ the shipped file's 1634 exact point sets.
 **The floor-rung region.** Below and just above a ladder's lowest rung the model clamps
 to the floor child and the shipped data does not quite agree — 20 of the Falmer's 164
 points, all at point index 0-3, by up to 16%. Both signs occur, so it is not a lag.
-Candidates not yet separated: partial weighting of the lowest child below its position,
-or something in `FLAG_IS_PARAMETRIC_BLEND_CYCLIC` being set on the speed blenders with a
-`cyclic[0,1]` range against children at 5 and 100.44 — which is nonsensical unless the
-flag is inert, `FLAG_PARAMETRIC_BLEND` never being set.
+The second candidate this document used to offer — `FLAG_IS_PARAMETRIC_BLEND_CYCLIC`
+against a `cyclic[0,1]` range — is withdrawn: that flag is not set on any speed blender
+(§5.2), and the corrected enum makes the ladders plain non-cyclic parametric blends.
+What is left is the behaviour below the lowest rung, which `hkmeasure` can now put a
+clip under and read directly.
 
 **Unverified rather than unknown:** quadruped side and back records, which have no
 compass family, the two player states §5.3's name fallback cannot place, and the eight
@@ -1152,7 +1216,37 @@ answers the query the engine makes (§4.2), and returns `goalSpeed` unchanged fo
 absent project, state or curve — which is the engine's own behaviour with no database,
 and not zero, which would model a creature that cannot move.
 
+`HKSK.Cache.SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector
+travel and a duration — and `FromBlender` builds the ladder from a project's blender.
+
 Generation (§8) is not implemented: it needs `top(s)`, which is still authored (§9).
+
+### hkmeasure
+
+The blend law in §6 is checked against Havok itself rather than against the shipped file,
+by `tools/hkmeasure`. It builds a skeleton, two clips of chosen travel and duration, and a
+`hkbBlenderGenerator`, then steps the graph and reads the root motion back. Four things
+about the host are worth writing down, because each cost a day:
+
+- **Havok must be initialised through `HavokManaged.HavokSystem.Init()`.** Without it
+  `hkBaseSystem::isInitialized()` still reports true, but the per-thread memory router is
+  never bound, and the first allocation dereferences a null `TlsGetValue`. The Behavior
+  Tool's own startup is `HavokSystem.Init` → `new hbtHavokEnvironment()` → run →
+  `Dispose` → `Terminate`, and nothing shorter works.
+- **Skyrim's own HKX will not load.** They are `hk_2010.2.0-r1` with 8-byte pointers and
+  the tool is 32-bit; `HavokPackfile.load` returns null. Content reaches the harness as an
+  **XML packfile**, which is layout-independent — written by the tool itself, so the
+  schema is right by construction. `hkaDefaultAnimatedReferenceFrame` has no managed
+  constructor, so the root motion is patched in as text afterwards.
+- **`Methods.generate` hard-codes a `0.0f` timestep** where it calls
+  `hkbBehaviorGraph::generate`; the Tool advances time from its own timeline. A headless
+  caller poses the graph forever at t=0 until that is passed through.
+- **`activate()` clones the node tree.** `m_blendParameter` has to be set on the template
+  before the clone is taken, or the sweep is flat.
+
+Under Wine the runtime is Mono, which runs the mixed-mode assembly but rejects the IL of
+a few of its methods. Only one is on this path — the physics floor under a character,
+which the harness does not use.
 
 ## 13. Entry census
 
