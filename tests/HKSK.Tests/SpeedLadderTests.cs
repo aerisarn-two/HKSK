@@ -151,4 +151,80 @@ public class SpeedLadderTests
         Assert.Equal(324.4792f, shipped, 3);
         Assert.InRange(MathF.Abs(ladder.Evaluate(324.5f) - shipped) / shipped, 0f, 0.0002f);
     }
+
+    /// <summary>
+    /// The shipped table is the blend law read <see cref="SpeedLadder.SamplerOffset"/>
+    /// earlier, and reading it there reproduces the file.
+    /// </summary>
+    /// <remarks>
+    /// These are the points that used to carry the whole of §6's residual: the
+    /// steep top of a segment whose durations differ by 38x, where the plain law
+    /// runs 0.06% to 0.76% high. The bound here is 0.05%, which is a fortieth of
+    /// what it was, and every point clears it.
+    /// </remarks>
+    [CorpusFact]
+    public void TheSamplerOffsetReproducesTheShippedTable()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        ActorProject actor = Assert.IsType<ActorProject>(cache.OpenActor("SphereCenturion"));
+
+        hkbBlenderGenerator? blender = actor.Behaviors
+            .SelectMany(b => b.File.All<hkbBlenderGenerator>())
+            .FirstOrDefault(b => b.m_name == "MT_Forward_Blend");
+        Assert.NotNull(blender);
+
+        SpeedLadder ladder = SpeedLadder.FromBlender(blender!, actor);
+        SpeedProjectBlock block = Assert.IsType<SpeedProjectBlock>(cache.SpeedData!.Block("SphereCenturion"));
+        SpeedRecord record = block.Entries.SelectMany(e => e.Records).First(r => r.Direction == 0f);
+
+        // Only the points the ladder actually spans: outside it the record is
+        // answering for a state this blender does not serve (§5.3).
+        var spanned = record.Points
+            .Where(p => p.X > ladder.Rungs[0].Weight && p.X < ladder.Rungs[^1].Weight)
+            .ToList();
+        // 9 up the steep segment, then the terminal point, which this record
+        // stores twice (§10).
+        Assert.Equal(11, spanned.Count);
+
+        foreach (SpeedPoint p in spanned)
+        {
+            float plain = ladder.Evaluate(p.X);
+            float tabulated = ladder.Tabulate(p.X);
+            Assert.InRange(MathF.Abs(tabulated - p.Y) / p.Y, 0f, 0.0005f);
+
+            // and it is an improvement everywhere, not a wash that happens to
+            // average out
+            Assert.True(MathF.Abs(tabulated - p.Y) <= MathF.Abs(plain - p.Y),
+                $"x={p.X}: offset made it worse ({tabulated} vs {plain}, shipped {p.Y})");
+        }
+
+        // The worst point in the file for the plain law: the top of the segment.
+        SpeedPoint top = spanned.Single(p => p.X == 192f);
+        Assert.InRange(MathF.Abs(ladder.Evaluate(top.X) - top.Y) / top.Y, 0.007f, 0.008f);
+        Assert.InRange(MathF.Abs(ladder.Tabulate(top.X) - top.Y) / top.Y, 0f, 0.0005f);
+    }
+
+    /// <summary>
+    /// Below its lowest rung a ladder holds the floor child's speed flat, which is
+    /// what Havok does -- measured, not assumed.
+    /// </summary>
+    /// <remarks>
+    /// A blender with children at 5 and 100 delivers the floor clip's speed for
+    /// every parameter from 0 to 5, with no partial weighting and no ramp from the
+    /// origin (docs/speed-data.md §6.1). The engine interpolates from the origin
+    /// when it reads a table below its first point (§4.2), but that is the query
+    /// side, not the blend.
+    /// </remarks>
+    [Fact]
+    public void BelowTheLowestRungTheFloorHoldsFlat()
+    {
+        var ladder = new SpeedLadder([
+            new SpeedRung(5f, new Vector3(0f, 5f, 0f), 1f),
+            new SpeedRung(100f, new Vector3(0f, 100f, 0f), 1f)]);
+
+        foreach (float x in new[] { 0f, 1f, 2.5f, 4.9f, 5f })
+            Assert.Equal(5f, ladder.Evaluate(x), 4);
+
+        Assert.Equal(50f, ladder.Evaluate(50f), 4);
+    }
 }

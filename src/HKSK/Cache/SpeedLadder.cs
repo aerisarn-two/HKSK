@@ -35,13 +35,14 @@ public readonly record struct SpeedRung(float Weight, Vector3 Travel, float Dura
 /// is what a speed table records: set the blend parameter to x, and the creature
 /// travels at <see cref="Evaluate"/>(x).
 ///
-/// <strong>Accuracy.</strong> Exact at a rung and above the top rung. Exact on a
-/// segment whose two children share a duration. Up to a fraction of a percent out
-/// between rungs whose durations differ, for a reason not yet established (§6.1) --
-/// solving the shipped data back gives a blend weight of <c>u - c</c> with c around
-/// 1e-4, constant within a segment and varying between them. Good enough to author
-/// a creature against; not enough to reproduce Bethesda's bytes, which the cache's
-/// own rounding rules out anyway.
+/// <strong>Accuracy.</strong> <see cref="Evaluate"/> is the runtime's own
+/// behaviour, not an approximation to it: measured against Havok Behavior with a
+/// blender built to a shipped ladder's shape, it agrees to float32 epsilon
+/// (docs/speed-data.md §6.1).
+///
+/// The shipped table is a different question, and <see cref="Tabulate"/> answers
+/// it: the sampler that wrote <c>speeddatasinglefile.txt</c> recorded the response
+/// at <c>x - </c><see cref="SamplerOffset"/> while storing <c>x</c>.
 /// </remarks>
 public sealed class SpeedLadder
 {
@@ -92,6 +93,34 @@ public sealed class SpeedLadder
 
     /// <summary>The parameter above which the response stops changing.</summary>
     public float Saturation => Rungs.Count == 0 ? 0f : Rungs[^1].Weight;
+
+    /// <summary>
+    /// The shift between the x a shipped sampler stored and the response it
+    /// recorded there.
+    /// </summary>
+    /// <remarks>
+    /// Measured, not derived. <see cref="Evaluate"/> is the blend law exactly, so
+    /// this is the whole of the difference between the law and the shipped file:
+    /// fitting <c>x' = a*x + b</c> over the corpus gives <c>a = 1.000000</c> and
+    /// <c>b = -0.040445</c>, a pure offset with no scale, constant across creatures
+    /// whose segment spans run from 30 to 3160 and whose duration ratios run from
+    /// 1.2 to 71.
+    ///
+    /// Applying it takes the median error against the shipped file from 0.0715% to
+    /// 0.0021%. Where it comes from is not known: it is not in the blender, which
+    /// was measured; not in the flags; and not in the sampling grid, which is 0.5
+    /// throughout. Treat it as a property of Bethesda's sampler.
+    /// </remarks>
+    public const float SamplerOffset = 0.0404f;
+
+    /// <summary>What a shipped speed table records at <paramref name="x"/>.</summary>
+    /// <remarks>
+    /// <see cref="Evaluate"/> is what the creature does when the blend parameter is
+    /// x. This is what the file says at x, which is the same curve read
+    /// <see cref="SamplerOffset"/> earlier. Use this to check a table or to
+    /// regenerate one; use <see cref="Evaluate"/> to predict a creature.
+    /// </remarks>
+    public float Tabulate(float x) => Evaluate(x - SamplerOffset);
 
     /// <summary>
     /// Builds a ladder from a blender, resolving each child's clip through the cache.

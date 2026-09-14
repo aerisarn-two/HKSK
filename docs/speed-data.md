@@ -860,18 +860,16 @@ Within a segment `w = u - c` with c constant to about 8%. **The 120-fold differe
 visible error is sensitivity, not a difference in kind**: the same ~1e-4 error in the
 weight moves y by 0.0064% on a flat segment and by 0.76% near the top of a steep one.
 
-**But c is not one number.** 2.1e-4 against 1.08e-4 in two segments of one record, so it
-is not a pure parameter offset. And the equal-duration segment still shows 1.08e-4, so
-it is not purely the duration law either. The two candidates this document has offered in
-turn — a constant parameter offset, then a wrong duration rule — are each refuted by one
-of these two segments.
+**`c` looked like it was not one number**, because 2.1e-4 and 1.08e-4 came out of the two
+segments of this one record. Both of those are `c` measured in *weight*, and a weight is
+a segment-relative unit: the same shift in x is a different `c` in every segment. Read in
+x instead, the two segments give 0.0400 and 0.0208 — and the second is a two-point
+segment fitted on a duplicate terminal point, which constrains nothing. Held at the first
+segment's value it lands within 0.006%.
 
-**The `x - 0.0403` correction of earlier revisions is withdrawn** regardless. It was that
-weight discrepancy re-expressed through a segment's span and slope, which is why it
-drifted within a segment, why per-entry fits ranged from 0.027 to 0.0735, why an
-equal-duration segment gives half the value, and why it was never found in the
-executable, the SDK, the authoring file or any of the 107 behaviour graphs. There was no
-constant to find.
+That is the mistake this document made twice: it fitted the correction per segment, in
+per-segment units, and then took the spread between segments as proof that no constant
+existed. The spread was the units.
 
 #### The blend law itself is now measured, and it is exactly §6
 
@@ -907,12 +905,75 @@ resolving a 1.7-unit increment within a minute, which manufactured a spurious re
 about 1e-4 that looked exactly like a weighting constant. Resetting the character to the
 origin each frame and accumulating the deltas in double makes it vanish.
 
-**What this leaves open is no longer the blend law.** `c` above is a different quantity:
-it is what the weight would have to be for the model to reproduce the *shipped cache
-values*, and the law is now known not to supply it. So the discrepancy is in the inputs
-— the per-rung travel and duration this document recovers from the cache, and which clip
-of a rung's subtree is taken as the representative — and not in how they are combined.
-That is a narrower and more tractable question than the one it replaces.
+#### 6.2 The sampler reads the curve 0.04 early
+
+With the law fixed, the shipped file has exactly one degree of freedom left, and it is in
+x. Solve every shipped point back for the x at which the law would have produced it, over
+every record whose ladder can be identified without fitting — 832 points, 38 projects:
+
+    dx      0.038   0.039   0.040   0.041   0.042   other
+    points     19      48      99     125      45     496
+
+The peak is not a fitting artefact; `dx` is measured per point against rungs read from the
+graph. Fitting the general form `x' = a·x + b` over the well-determined creatures gives
+
+    a = 1.000000        b = -0.040445
+
+a pure offset with no scale component, constant across creatures whose segment spans run
+from 30 to 3160 and whose duration ratios run from 1.2 to 71. **The sampler stored x and
+recorded the response at `x - 0.0404`.**
+
+What it does to the file, over all 832 points with no selection of any kind:
+
+                              median error    within 0.05%
+    the law at x                  0.2225%          27%
+    the law at x - 0.0404         0.0245%          59%
+
+and over the creatures whose ladders are unambiguous, 0.0715% to 0.0021%. On
+`SphereCenturion`'s forward record, which carried the largest residual in the file:
+
+        x      shipped     law(x)    err     law(x-0.04)    err
+      123.0   12.945877   12.953101  -0.056%   12.946102   -0.002%
+      158.5   24.872831   24.899417  -0.107%   24.873569   -0.003%
+      173.5   40.727379   40.798219  -0.174%   40.728869   -0.004%
+      185.5   83.110947   83.400699  -0.347%   83.111410   -0.001%
+      190.0  136.316147  137.078416  -0.556%  136.298652   +0.013%
+      192.0  190.543274  192.000000  -0.759%  190.473703   +0.037%
+
+The `x - 0.0403` of earlier revisions was therefore right about the shape and wrong about
+the footing. It was withdrawn because it could not be found in the executable, the SDK,
+the authoring file or any behaviour graph, and because per-segment fits scattered. The
+scatter was the units, and the search was in the wrong place: this is a property of
+Bethesda's sampler, which is not shipped.
+
+**Where it does not come from**, each excluded by measurement rather than by argument:
+the blender, which reproduces the law exactly at the parameter it is given (§6.1); the
+flags, which are plain `PARAMETRIC_BLEND` (§5.2); `m_minCyclicBlendParameter` and
+`m_maxCyclicBlendParameter`, which are `[0,1]` on every speed blender and inert without
+the cyclic flag; and the sampling grid, which is 0.5 on every record in the file, so the
+offset is not a fraction of a step. It is 12.4% of one.
+
+**This also accounts for the floor-rung region.** `FalmerProject` key 1, whose first
+points §9 listed as unexplained:
+
+        x      shipped     law(x)      law(x-0.04)
+       0.00    5.00106    +0.001%        +0.001%
+      65.50   12.56318    -0.102%        -0.001%
+      85.00   24.52383    -0.198%        -0.001%
+      93.00   40.24257    -0.322%        +0.002%
+      97.00   59.22466    -0.466%        +0.011%
+
+Below the lowest rung the blender holds the floor child flat — measured, with a ladder at
+5 and 100 delivering the floor clip's speed for every parameter from 0 to 5, no partial
+weighting and no ramp from the origin. The engine ramps from the origin when it *reads* a
+table below its first point (§4.2), but that is the query side, and the two were being
+confused.
+
+**What is left is ladder identification, not arithmetic.** The residual that survives the
+offset concentrates in records whose blender §5.3 cannot place — `HighlandCowProject`,
+`Spriggan`, `WerewolfBeastProject` — where the error stays at tenths of a percent whatever
+the offset, and in records that change ladder partway up, like `FalmerProject` key 2,
+which leaves the walk blender at x = 100.5 and is answered by the run blender above it.
 
 **Consequences for a generator.** The closed form is exact at the rungs and at
 saturation — a saturated point evaluates `|V| / d` with no interpolation and matches to
@@ -1130,24 +1191,22 @@ children's durations is wrong, and it is what the closed form's remaining error 
 pose side is documented; the duration side is not, and no rule has been fitted across
 entries yet.
 
-**Which clip represents a rung.** Now the first thing to check, because §6.1 rules the
-blend law out as the source of the residual against the shipped file. A rung's subtree
-holds several clips and this document takes the shortest name as the straight variant;
-the travel and duration fed to the model follow from that choice.
-
 **The point-retention rule.** Needed only for a byte-identical rebuild (§8). Now a
 tractable experiment, because §6 can produce the dense curve to score candidates
 (Douglas-Peucker at a tolerance, curvature threshold, error-bounded decimation) against
 the shipped file's 1634 exact point sets.
 
-**The floor-rung region.** Below and just above a ladder's lowest rung the model clamps
-to the floor child and the shipped data does not quite agree — 20 of the Falmer's 164
-points, all at point index 0-3, by up to 16%. Both signs occur, so it is not a lag.
-The second candidate this document used to offer — `FLAG_IS_PARAMETRIC_BLEND_CYCLIC`
-against a `cyclic[0,1]` range — is withdrawn: that flag is not set on any speed blender
-(§5.2), and the corrected enum makes the ladders plain non-cyclic parametric blends.
-What is left is the behaviour below the lowest rung, which `hkmeasure` can now put a
-clip under and read directly.
+**Where the sampler's 0.04 comes from.** Measured and characterised in §6.2 — a pure
+offset in x, no scale, constant across the corpus — but not explained. It is excluded
+from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
+The tool that wrote the file is not shipped, so this may stay a measured constant.
+
+**Ladder identification, which is now the largest error in the file.** With §6.2 applied
+the arithmetic residual is a few thousandths of a percent, and what remains is §5.3
+failing to place a blender: `HighlandCowProject`, `Spriggan` and `WerewolfBeastProject`
+sit at tenths of a percent whatever the offset. Records that change ladder partway up
+their range are a second case — `FalmerProject` key 2 leaves the walk blender at x=100.5
+and is answered by the run blender above it — and §6 models one ladder per record.
 
 **Unverified rather than unknown:** quadruped side and back records, which have no
 compass family, the two player states §5.3's name fallback cannot place, and the eight
@@ -1218,6 +1277,9 @@ and not zero, which would model a creature that cannot move.
 
 `HKSK.Cache.SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector
 travel and a duration — and `FromBlender` builds the ladder from a project's blender.
+`Evaluate` is the runtime's own response, measured exact (§6.1). `Tabulate(x)` is what a
+shipped table says at x, which is the same curve read `SamplerOffset` earlier (§6.2); use
+that one to check or regenerate a table, and `Evaluate` to predict a creature.
 
 Generation (§8) is not implemented: it needs `top(s)`, which is still authored (§9).
 
