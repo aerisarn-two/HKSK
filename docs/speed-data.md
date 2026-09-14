@@ -749,8 +749,8 @@ it, and `GiantProject` state 1 *lowered* to 190 against a ladder reaching 247.37
 no sampling-efficiency argument produces.
 
 **2 — Retention rule.** Unknown, and needed only for a byte-identical rebuild
-(§5.3). Given y on the full grid, candidates (Douglas-Peucker at a tolerance, curvature threshold,
-error-bounded decimation) are scored against the shipped file by whether they
+(§5.3). Given y on the full grid, candidates (Douglas-Peucker at a tolerance,
+curvature threshold, error-bounded decimation) are scored against the shipped file by whether they
 reproduce its exact point sets in all 1,634 records.
 
 With `top(s)`, the rest follows: keys from §4.1, direction values from I4, grid from I6,
@@ -758,7 +758,91 @@ y from §5.1.1, and the retention rule only if the output must match byte for by
 
 ### 5.5 Authoring
 
-The table is measured, so it is changed by changing what is measured (§6.3):
+#### Choosing MOVT for an animated creature
+
+`MOVT`'s eight translation values become the rung positions of the four cardinal
+blenders (§6.3), and a rung's content is what the clip beneath it delivers. Position
+and content must be the same number, so:
+
+    MOVT <dir>Walk = travel_walk / (duration_walk / PlaybackSpeed_walk)
+    MOVT <dir>Run  = travel_run  / (duration_run  / PlaybackSpeed_run)
+
+`travel` and `duration` come from the animation cache, `PlaybackSpeed` from the clip
+generator. That is the whole rule, and the shipped game follows it: of **428 rungs**
+whose position is a `MOVT` Walk or Run value, **348 agree with their clip's content to
+within 1%**, 369 within 5%, median ratio 1.000.
+
+Procedure:
+
+    1  pick a walk clip and a run clip for each of forward, back, left, right
+    2  choose each clip's PlaybackSpeed -- this is the tuning knob, since one
+       animation reused at several rates is how a gait ladder is built (the giant
+       builds three rungs from one clip at 0.0606, 1 and 3)
+    3  compute the delivered speed of each; those eight numbers are the MOVT record
+    4  place the blend rungs at the same eight numbers
+    5  regenerate the table
+    6  verify content / position == 1.000 on every cardinal rung
+
+**Step 6 is one division per rung and catches the only failure mode.** When the two
+drift, the ratio is a recognisable playback rate, because the number was taken from the
+clip at `pb = 1` and the rate was changed afterwards:
+
+    HorseProject    Horse_Default_MT   ForwardWalk   125.11 vs 303.91   x2.429
+    ChickenProject  Chicken_Default    ForwardRun    251.94 vs 403.10   x1.600
+    BearProject     Bear_Default_MT    ForwardWalk    59.82 vs  89.74   x1.500
+    DogProject      Dog_Default_MT     ForwardWalk    74.54 vs 104.36   x1.400
+    RieklingProject DLC2Riekling       ForwardWalk   167.42 vs 100.46   x0.600
+
+#### What MOVT does not determine
+
+Do not attempt to derive these from the record; they exist only as blend weights.
+
+    floor rung            a literal 5.0, the walk clip at pb ~0.06. In every ladder,
+                          in no record.
+    intermediate gaits    trot, fast trot: 19 of 38 non-floor rungs across twelve
+                          forward ladders.
+    the four diagonals    MOVT has four directions, so ForwardRight/ForwardLeft and
+                          BackRight/BackLeft are hand-authored symmetric pairs.
+    rotation fields       degrees/s on the TurnDelta axis (§6.2); the sampler never
+                          sees them.
+
+#### Why it matters even though the table absorbs the error
+
+A wrong `MOVT` does not slide the feet. The table records the content, so the gait
+blend is still indexed correctly and the animation still matches the motion. What
+breaks is upstream: `MOVT` is what the engine plans movement with, so a dog whose
+record says 74.54 while its clip delivers 104.36 travels 40% faster than pathing,
+combat spacing and arrival timing assume.
+
+Keep position and content equal and the table degenerates to an identity. That is the
+sign it was authored correctly, not a sign it is redundant.
+
+#### Choosing the sweep
+
+`top(s)` and the starting x are authored (§5.4). Two rules follow from the mechanism.
+
+**The sweep may start at or below the ladder's bottom rung and lose nothing; starting
+above it discards live response.** Below its bottom rung the blend clamps, so the
+response is constant there and skipping it costs nothing. The file has one of each:
+
+    DeerProject:21   starts at 400, bottom rung 416.50 -> content 416.67
+                     constant across the whole skipped span; nothing lost
+    GiantProject:2   starts at 150, bottom rung  50.00 -> content  50.00
+                     50..150 is live and absent; a request of 50 returns y(150)
+                     = 65.87 where the answer is 50.00, 32% too fast
+
+So `min(x)` is a claim that the response is flat below it — true for the deer, false for
+the giant.
+
+**The 0.5 grid is quantisation, not resolution, and barely matters.** About 11 of ~650
+swept positions survive per record and the consumer interpolates between them, so the
+grid only fixes where a breakpoint may land, to within half a unit. The y error that
+introduces is bounded by `0.5 x slope`, about 0.43 units at the median slope of 0.86 —
+under 0.5% of a typical y. Changing it alters the bytes and which points a retention
+rule picks, not what the engine computes. Its one real consequence is that 325 is round
+because it is 650 steps of 0.5.
+
+#### Changing an existing creature
 
     input                              controls
     clip travel and duration           the content axis: what the actor delivers, in y
@@ -769,9 +853,9 @@ The table is measured, so it is changed by changing what is measured (§6.3):
     top(s)                             how far along x the table covers
 
 To make an actor faster, raise the content: add or replace a faster clip, or raise its
-generator's `PlaybackSpeed` — then move the rung positions to match, or the table will
-simply record the new mismatch. Editing `y` in the file desynchronises it from the
-animations it describes and can violate I9.
+generator's `PlaybackSpeed` — then move the rung positions and the `MOVT` record to
+match, or the table will simply record the new mismatch. Editing `y` in the file
+desynchronises it from the animations it describes and can violate I9.
 
 ## 6. Consumer
 
