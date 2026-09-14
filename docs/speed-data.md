@@ -786,14 +786,15 @@ possible. Against a linear chord the same records score 10-25%.
 The misses are blender **identification**, not the form: they concentrate on
 `NPC_Bleedout_MT` and `NPC_Drunk_MT`, which §5.3 cannot place.
 
-#### 6.1 The residual is the duration law, not a parameter offset
+#### 6.1 The residual, and what it is not
 
-§6 interpolates the children's durations linearly. **That is wrong, and it accounts for
-essentially all of the difference between the closed form and the shipped values.**
+The closed form is exact at the rungs and at saturation and slightly out between them.
+Two explanations have been offered for that and both are refuted below, so the section
+is kept as a record of what the residual is **not**.
 
-The test is a segment whose two children have *equal* durations. There the duration law
-is inert — `d(u)` is that duration whatever the rule — so any error left must come from
-somewhere else. `SphereCenturion`'s forward ladder provides one, and its two segments
+The discriminating case is a segment whose two children have *equal* durations, where
+the duration rule is inert — `d(u)` is that duration whatever the law — so any error
+left must come from somewhere else. `SphereCenturion`'s forward ladder provides one, and its two segments
 sit side by side in a single record:
 
     w=  5.00   |V|=192   d=38.46154      content   4.992    mt_forward @ 0.026
@@ -813,19 +814,38 @@ The second segment is a pure identity under the model — equal durations and co
 travel give `y = x` — and it lands within 0.0064%, **a factor of 120 better** than the
 first segment reaches. Duration mismatch is what the error tracks.
 
-**The `x - 0.0403` correction of earlier revisions was this error re-expressed as a
-parameter shift.** That is why it drifted within a segment, why per-entry fits ranged
-from 0.027 to 0.0735, why it was never found in the executable, the SDK, the authoring
-file or any of the 107 behaviour graphs, and why the same measurement on an
-equal-duration segment gives half the value. It was never a constant and never a
-mechanism. It is withdrawn.
+**Solve for the blend weight rather than for a shift in x and it gets tidier.** Segment 1
+has the same clip at both ends, so `|V|` is constant and the implied weight follows from
+the duration alone; segment 2 has equal durations, so it follows from `|V|` alone:
 
-**What the correct duration rule is remains open.** The Behavior Tool documentation
-states how the *pose* blends — linearly between child weights — and says nothing about
-how a synchronised blend combines the children's durations. Solving the shipped data
-back for the blended duration gives values consistent with a small residual weight on
-the other child at the segment ends (about 2e-4 at the top of the Sphere's first
-segment), but no single rule has been fitted across entries yet.
+    segment 1                          segment 2
+      x=123.0   w - u = -2.208e-04       x=324.5   w - u = -1.084e-04
+      x=158.5           -2.200e-04
+      x=181.0           -2.166e-04
+      x=192.0           -2.041e-04
+
+Within a segment `w = u - c` with c constant to about 8%. **The 120-fold difference in
+visible error is sensitivity, not a difference in kind**: the same ~1e-4 error in the
+weight moves y by 0.0064% on a flat segment and by 0.76% near the top of a steep one.
+
+**But c is not one number.** 2.1e-4 against 1.08e-4 in two segments of one record, so it
+is not a pure parameter offset. And the equal-duration segment still shows 1.08e-4, so
+it is not purely the duration law either. The two candidates this document has offered in
+turn — a constant parameter offset, then a wrong duration rule — are each refuted by one
+of these two segments.
+
+**The `x - 0.0403` correction of earlier revisions is withdrawn** regardless. It was that
+weight discrepancy re-expressed through a segment's span and slope, which is why it
+drifted within a segment, why per-entry fits ranged from 0.027 to 0.0735, why an
+equal-duration segment gives half the value, and why it was never found in the
+executable, the SDK, the authoring file or any of the 107 behaviour graphs. There was no
+constant to find.
+
+**What remains open** is the exact weighting a synchronised parametric blend applies.
+The Behavior Tool documents the pose side — linear between child weights — and says
+nothing about the duration side, nor about any correction at a segment's ends. `c`
+correlates with duration mismatch without being explained by it, and no rule has been
+fitted across entries.
 
 **Consequences for a generator.** The closed form is exact at the rungs and at
 saturation — a saturated point evaluates `|V| / d` with no interpolation and matches to
