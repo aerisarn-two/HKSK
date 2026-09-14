@@ -835,6 +835,11 @@ across the 107 behaviour graphs the 49 projects reach is a round authored value 
 0.03333334, one frame at 30 Hz. None is near 0.0403. `bcbehavior.hkb`, the single
 authoring-side file in the game data, has 0.033, 0.035 and 0.035019 and nothing closer.
 
+The Havok 2010.2 SDK does not settle it either: it ships no Behavior component, so
+`hkbBlenderGenerator` exists there only in the reflection patch tables and its blending
+code is not present. The single `0.04f` in the whole SDK is a comment on quaternion
+packing error (`|q.length4()-1.0f| < 0.04f`), unrelated.
+
 So the constant lives in the generator's own code, which did not ship. It is measurable
 from the output and not recoverable from the inputs, and that is where the search ends
 unless the tool turns up.
