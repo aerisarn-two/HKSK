@@ -29,69 +29,137 @@ namespace HKSK.Tests;
 internal static class FamilyGuess
 {
     /// <summary>
-    /// A record answered by a sequence of ladders, because the creature changes
-    /// gait partway up its own speed range.
+    /// The compass answering a state at a speed and a heading, given the movement
+    /// types. <strong>No rule using them has survived measurement, so this is
+    /// <see cref="CompassFor"/>.</strong>
     /// </summary>
-    /// <param name="Project">The project whose table carries it.</param>
-    /// <param name="Key">The locomotion state.</param>
-    /// <param name="Stages">
-    /// The compasses in increasing speed, each with the speed it takes over at. The
-    /// first stage's threshold is ignored.
-    /// </param>
     /// <remarks>
-    /// <strong>The thresholds are not in the behaviour graph.</strong> The gait
-    /// machines transition on the events <c>runStart</c> and <c>walkStart</c>, with
-    /// no condition attached -- the game raises them from the actor's movement
-    /// type, and the graph only responds. So this is external data of the same kind
-    /// as the state-to-family mapping, and it sits here for the same reason: to be
-    /// replaced by a project that supplies it, not to be guessed at in a library.
-    /// </remarks>
-    internal readonly record struct GaitSequence(string Project, int Key, (float At, string Compass)[] Stages);
-
-    /// <summary>The gait sequences visible in the shipped table.</summary>
-    /// <remarks>
-    /// The falmer walks and then runs. The benthic lurker has three: its plain walk,
-    /// its combat walk and its combat run. At heading 0 the first two deliver the
-    /// same thing, which is what hid the middle stage until a sideways heading was
-    /// looked at -- there the plain walk saturates at 99.5 and the combat walk
-    /// carries on to 129.4.
-    /// </remarks>
-    private static readonly GaitSequence[] Sequences =
-    [
-        new("FalmerProject", 2,
-        [
-            (0f, "MT_DirectionalBlend"),
-            (100.25f, "1HM_DirectionalBlend_Run"),
-        ]),
-        new("BenthicLurkerProject", 1,
-        [
-            (0f, "DirectionalBlend"),
-            (115f, "CombatDirectionalBlend_WALK"),
-            (215.75f, "CombatDirectionalBlend_RUN"),
-        ]),
-    ];
-
-    /// <summary>The compass answering a state at a given speed.</summary>
-    /// <remarks>
-    /// The same as <see cref="CompassFor"/> for a state that keeps one gait, which
-    /// is nearly all of them.
+    /// <para>
+    /// The parameters are kept because the shape of the answer is known to need
+    /// them: some records change family partway up their range, and nothing in the
+    /// graph says where. The movement type is the obvious place to look, since it
+    /// states a walk speed and a run speed per heading, and it is an input the
+    /// caller has and the library does not.
+    /// </para>
+    /// <para>
+    /// Two rules were written against it and both were measured and dropped:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>
+    /// <description>
+    /// <em>above the walk speed the creature is running, so the running family
+    /// answers</em> — costs nineteen curves on the giant alone.
+    /// <c>GiantCombatWalk</c> asks for 82.46 walking and 247.37 running, and those
+    /// are the second and third rungs of <em>one</em> ladder rather than a switch
+    /// between two families.
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// the same, but only where the state's own compass <em>cannot reach</em> the
+    /// run speed and another one can — which spares the giant but still costs
+    /// seven curves on the player and the benthic lurker, and gains nothing. Not
+    /// even the falmer, whose records do span a switch: its ladder reaches
+    /// 175.774, its run speed exactly, so a reach test never fires for it.
+    /// </description>
+    /// </item>
+    /// </list>
+    /// <para>
+    /// The falmer's switch is therefore not a gait change in the movement type's
+    /// sense, and what it is remains open. Answering with one compass throughout
+    /// scores 660 of 1482; both rules score less.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassAt(
-        this SpeedSampler sampler, string project, int key, float x)
+        this SpeedSampler sampler, int key, float x, float direction,
+        IReadOnlyDictionary<string, MovementType> movements)
+        => sampler.CompassFor(key);
+
+    /// <summary>
+    /// The compass serving a state, chosen by matching its rungs against the
+    /// movement type's speeds -- a second opinion on <see cref="CompassFor(SpeedSampler, int)"/>,
+    /// arrived at without reading a single name.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A ladder's rungs are placed at the speeds the movement type asks for, so a
+    /// state and the compass that answers it can be paired by their numbers rather
+    /// than by their names. <c>FalmerDefault</c> walks forward at 100.44 and runs at
+    /// 361.24, and exactly one of the falmer's four compasses has both of those as
+    /// rungs — <c>MagicCast_DirectionalBlend</c>, whose name shares not one token
+    /// with the state's. <c>GiantCombatWalk</c> is 82.46/247.37 against rungs
+    /// 82.458/247.374, and <c>GiantCombatRun</c> is 50/415 against 50/415.
+    /// </para>
+    /// <para>
+    /// Each of the movement type's eight numbers is looked for in the arm at its own
+    /// heading, so a compass scores on the whole shape and not on one lucky rung.
+    /// Where the numbers cannot separate the compasses — the benthic lurker's
+    /// <c>DirectionalBlend</c> and <c>CombatDirectionalBlend_WALK</c> have identical
+    /// rungs, and its two states identical speeds — the name heuristic breaks the
+    /// tie, as it does when no movement type is supplied at all.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassFor(
+        this SpeedSampler sampler, int key, IReadOnlyDictionary<string, MovementType> movements)
+        => sampler.CompassBySpeeds(key, movements)?.Arms ?? sampler.CompassFor(key);
+
+    /// <summary>
+    /// The compass whose rungs are the state's movement-type speeds, or null where
+    /// the numbers decide nothing -- no movement type is known, none of its speeds
+    /// is a rung anywhere, or two compasses match it equally well.
+    /// </summary>
+    public static SpeedCompass? CompassBySpeeds(
+        this SpeedSampler sampler, int key, IReadOnlyDictionary<string, MovementType> movements)
     {
-        foreach (GaitSequence g in Sequences)
+        SpeedState state = sampler.States.FirstOrDefault(s => s.Key == key);
+        if (state.MovementTypes is null) return null;
+
+        SpeedCompass best = default;
+        bool found = false;
+        int most = 0;
+        bool tied = false;
+
+        foreach (string name in state.MovementTypes)
         {
-            if (g.Project != project || g.Key != key) continue;
+            if (!movements.TryGetValue(name, out MovementType movement)) continue;
 
-            string wanted = g.Stages[0].Compass;
-            foreach ((float at, string compass) in g.Stages)
-                if (x >= at) wanted = compass;
+            foreach (SpeedCompass compass in sampler.Compasses)
+            {
+                int score = Score(compass, movement);
+                if (score == 0) continue;
 
-            foreach (SpeedCompass c in sampler.Compasses)
-                if (c.Name == wanted) return c.Arms;
+                if (score > most) { most = score; best = compass; found = true; tied = false; }
+                else if (score == most && compass.Name != best.Name) tied = true;
+            }
         }
 
-        return sampler.CompassFor(key);
+        return found && !tied ? best : null;
+    }
+
+    /// <summary>How many of a movement type's eight speeds are rungs of a compass.</summary>
+    private static int Score(SpeedCompass compass, MovementType movement)
+    {
+        int score = 0;
+
+        for (int quarter = 0; quarter < 4; quarter++)
+        {
+            float heading = quarter * 0.25f;
+
+            SpeedLadder? ladder = null;
+            foreach ((float at, SpeedLadder arm) in compass.Arms)
+                if (MathF.Abs(at - heading) < 1e-3f) ladder = arm;
+
+            if (ladder is null) continue;
+
+            (float walking, float running) = movement.At(heading);
+            foreach (SpeedRung rung in ladder.Rungs)
+            {
+                if (MathF.Abs(rung.Weight - walking) <= 0.05f) score++;
+                if (MathF.Abs(rung.Weight - running) <= 0.05f) score++;
+            }
+        }
+
+        return score;
     }
 
     /// <summary>The compass serving a state, or null when it cannot be told.</summary>

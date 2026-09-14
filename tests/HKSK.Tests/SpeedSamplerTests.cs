@@ -204,6 +204,7 @@ public sealed class SpeedSamplerTests
     public void TheTableRebuildsCurveByCurve()
     {
         (SkyrimCache cache, List<string> projects) = Load();
+        var movements = Masters.Available ? Masters.Read() : Movements.None;
 
         int curves = 0, pass = 0, fail = 0, unresolved = 0;
 
@@ -217,13 +218,13 @@ public sealed class SpeedSamplerTests
                 {
                     curves++;
                     if (sampler.CompassFor((int)entry.Key) is null) { unresolved++; continue; }
-                    if (Holds(sampler, name, (int)entry.Key, record)) pass++; else fail++;
+                    if (Holds(sampler, (int)entry.Key, record, movements)) pass++; else fail++;
                 }
         }
 
         Assert.Equal(1482, curves);
-        Assert.Equal(662, pass);
-        Assert.Equal(212, fail);
+        Assert.Equal(660, pass);
+        Assert.Equal(214, fail);
         Assert.Equal(608, unresolved);
     }
 
@@ -315,81 +316,173 @@ public sealed class SpeedSamplerTests
     }
 
     /// <summary>
-    /// A record can be answered by a sequence of ladders, because the creature
-    /// changes gait partway up its own speed range.
+    /// The blend rungs and the movement-type speeds are the same numbers about half
+    /// the time, and the rest of the time they are close but not equal.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>FalmerProject</c> key 2 walks to about 100 and runs above it.
-    /// <c>BenthicLurkerProject</c> key 1 has three stages -- its plain walk, its
-    /// combat walk and its combat run. At heading 0 the first two deliver the same
-    /// thing, which hid the middle one until a sideways heading was looked at:
-    /// there the plain walk saturates at 99.5 and the combat walk carries on to
-    /// 129.4.
+    /// §5.4 says the rungs are placed at the movement type's values, and for some
+    /// creatures that is literal: <c>Falmer1HMWalk</c> walks forward at 100.44 and
+    /// runs at 175.77, and its ladder's rungs are 100.442 and 175.774.
+    /// <c>GiantDefault</c> is 61.84 forward and 54.43 back, and those are its two
+    /// ladders' rungs.
     /// </para>
     /// <para>
-    /// The thresholds are not in the graph -- the gait machines transition on
-    /// <c>runStart</c> and <c>walkStart</c> with no condition attached, and the game
-    /// raises them -- so they are supplied by <see cref="FamilyGuess.GaitSequence"/>
-    /// until something else does.
-    /// </para>
-    /// <para>
-    /// With the sequence, what is left is one sample per curve: the one at the
-    /// transition, where the graph is between states and neither ladder describes
-    /// it. The lurker's sideways and forward headings miss that and nothing else;
-    /// its backward arc misses more, for the separate reason §9 records.
+    /// For others they are near but not equal — the player's forward ladder has a
+    /// rung at 82.4541 against a movement type asking for 80.1 — and that gap is
+    /// what the speed table exists to record (§0). So this is measured and not
+    /// asserted as a law: across 324 directions whose movement type is known, a
+    /// rung matches the walk speed 157 times and the run speed 140.
     /// </para>
     /// </remarks>
-    [CorpusFact]
-    public void AGaitSequenceLeavesOnlyTheSampleAtTheTransition()
+    [MastersFact]
+    public void TheRungsAreTheMovementTypeSpeedsAboutHalfTheTime()
     {
-        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        (SkyrimCache cache, List<string> projects) = Load();
+        var movements = Masters.Read();
 
-        // the falmer: two stages
+        Assert.True(movements.Count > 100, $"only {movements.Count} movement types read");
+
+        int directions = 0, walk = 0, run = 0;
+
+        foreach (string name in projects)
+        {
+            SpeedSampler? sampler = SpeedSampler.FromProject((ActorProject)cache.OpenActor(name)!);
+            if (sampler is null) continue;
+
+            foreach (SpeedState state in sampler.States)
+            {
+                var arms = sampler.CompassFor(state.Key);
+                if (arms is null) continue;
+
+                foreach (string movementName in state.MovementTypes)
+                {
+                    if (!movements.TryGetValue(movementName, out MovementType movement)) continue;
+
+                    foreach ((float heading, float walking, float running) in new[]
+                    {
+                        (0f, movement.ForwardWalk, movement.ForwardRun),
+                        (0.25f, movement.RightWalk, movement.RightRun),
+                        (0.5f, movement.BackWalk, movement.BackRun),
+                        (0.75f, movement.LeftWalk, movement.LeftRun),
+                    })
+                    {
+                        var arm = arms.FirstOrDefault(a => MathF.Abs(a.Direction - heading) < 1e-4f);
+                        if (arm.Ladder is null || arm.Ladder.Rungs.Count == 0) continue;
+
+                        directions++;
+                        if (arm.Ladder.Rungs.Any(r => MathF.Abs(r.Weight - walking) <= 0.05f)) walk++;
+                        if (arm.Ladder.Rungs.Any(r => MathF.Abs(r.Weight - running) <= 0.05f)) run++;
+                    }
+                }
+            }
+        }
+
+        Assert.Equal(324, directions);
+        Assert.Equal(157, walk);
+        Assert.Equal(140, run);
+
+        // the falmer, where it is exact
         SpeedSampler falmer = Assert.IsType<SpeedSampler>(
             SpeedSampler.FromProject((ActorProject)cache.OpenActor("FalmerProject")!));
-        SpeedEntry falmerKey2 = cache.SpeedData!.Block("FalmerProject")!.Entries.Single(e => e.Key == 2);
+        MovementType falmerWalk = movements["Falmer1HMWalk"];
+        SpeedLadder ladder = Assert.IsType<SpeedLadder>(falmer.Cardinal(0f, "MT_DirectionalBlend"));
 
-        int clean = 0, oneMiss = 0, atTheSeam = 0;
-        double worstOnOne = 0;
-        foreach (SpeedRecord record in falmerKey2.Records)
+        Assert.Equal(falmerWalk.ForwardWalk, ladder.Rungs[1].Weight, 2);
+        Assert.Equal(falmerWalk.ForwardRun, ladder.Rungs[2].Weight, 2);
+    }
+
+    /// <summary>
+    /// No failing curve is answered by any other compass the project owns, so
+    /// choosing the family is not what the remaining failures are.
+    /// </summary>
+    /// <remarks>
+    /// This is the cheap test of the obvious suspicion. If a curve misses because
+    /// the wrong family was picked, then some other family in the same graph fits
+    /// it, and trying all of them finds it. Over the whole corpus that rescues
+    /// <strong>none</strong> of the 214: every compass the falmer owns is outside
+    /// tolerance on every one of its key 2 curves, and so on down the list. The gap
+    /// is in the blend or in the inputs, not in the choice.
+    /// </remarks>
+    [CorpusFact]
+    public void NoFailingCurveIsAnsweredByAnotherCompass()
+    {
+        (SkyrimCache cache, List<string> projects) = Load();
+        var movements = Masters.Available ? Masters.Read() : Movements.None;
+
+        int failing = 0, rescued = 0;
+
+        foreach (string name in projects)
         {
-            var bad = BadPoints(falmer, "FalmerProject", 2, record);
-            if (bad.Count == 0) clean++;
-            if (bad.Count == 1) { oneMiss++; if (bad[0] == 100.5f) atTheSeam++; }
-            worstOnOne = Math.Max(worstOnOne, Worst(falmer.CompassFor(2)!, record));
+            SpeedSampler? sampler = SpeedSampler.FromProject((ActorProject)cache.OpenActor(name)!);
+            if (sampler is null) continue;
+
+            foreach (SpeedEntry entry in cache.SpeedData!.Block(name)!.Entries)
+                foreach (SpeedRecord record in entry.Records)
+                {
+                    var chosen = sampler.CompassFor((int)entry.Key);
+                    if (chosen is null || Holds(chosen, record)) continue;
+
+                    failing++;
+                    if (sampler.Compasses.Any(c => Holds(c.Arms, record))) rescued++;
+                }
         }
 
-        Assert.Equal(2, clean);
-        Assert.Equal(17, oneMiss);                  // never more than one
-        Assert.Equal(8, atTheSeam);
-        Assert.InRange(worstOnOne, 0.4d, 0.45d);    // one ladder alone is 44% out
+        Assert.Equal(214, failing);
+        Assert.Equal(0, rescued);
+    }
 
-        // the lurker: three stages, and its forward and sideways headings then miss
-        // only the transition sample
-        SpeedSampler lurker = Assert.IsType<SpeedSampler>(
-            SpeedSampler.FromProject((ActorProject)cache.OpenActor("BenthicLurkerProject")!));
-        SpeedEntry lurkerKey1 = cache.SpeedData.Block("BenthicLurkerProject")!.Entries.Single(e => e.Key == 1);
+    /// <summary>
+    /// The movement type's speeds name the same compass the node names do, where
+    /// they name one at all.
+    /// </summary>
+    /// <remarks>
+    /// A ladder's rungs are the movement type's own numbers, so a state can be
+    /// paired with its compass arithmetically instead of by reading names. Doing so
+    /// decides 31 of the 89 states and agrees with the names on 25 of them, which is
+    /// worth knowing because the two routes share no evidence: one reads the graph's
+    /// text, the other reads the masters' numbers and the root motion.
+    /// </remarks>
+    [MastersFact]
+    public void TheMovementTypeSpeedsAgreeWithTheNamesOnWhichCompassServesAState()
+    {
+        (SkyrimCache cache, List<string> projects) = Load();
+        var movements = Masters.Read();
 
-        int onlyTheSeam = 0;
-        foreach (SpeedRecord record in lurkerKey1.Records)
+        int decided = 0, agreed = 0;
+
+        foreach (string name in projects)
         {
-            var bad = BadPoints(lurker, "BenthicLurkerProject", 1, record);
-            if (bad.Count == 1 && bad[0] == 215.5f) onlyTheSeam++;
+            SpeedSampler? sampler = SpeedSampler.FromProject((ActorProject)cache.OpenActor(name)!);
+            if (sampler is null) continue;
+
+            foreach (SpeedState state in sampler.States)
+            {
+                var byName = sampler.CompassFor(state.Key);
+                if (byName is null) continue;
+
+                SpeedCompass? byNumber = sampler.CompassBySpeeds(state.Key, movements);
+                if (byNumber is null) continue;                    // the numbers decide nothing
+
+                decided++;
+                if (ReferenceEquals(byName, byNumber.Value.Arms)) agreed++;
+            }
         }
 
-        Assert.Equal(9, onlyTheSeam);
+        Assert.Equal(31, decided);
+        Assert.Equal(25, agreed);
     }
 
     /// <summary>The x of every point of a record outside <see cref="Tolerance"/>.</summary>
-    private static List<float> BadPoints(SpeedSampler sampler, string project, int key, SpeedRecord record)
+    private static List<float> BadPoints(SpeedSampler sampler, int key, SpeedRecord record,
+                                         IReadOnlyDictionary<string, MovementType> movements)
     {
         var bad = new List<float>();
         foreach (SpeedPoint point in record.Points)
         {
             if (point.Y <= 0f) continue;
 
-            var arms = sampler.CompassAt(project, key, point.X);
+            var arms = sampler.CompassAt(key, point.X, record.Direction, movements);
             if (arms is null) { bad.Add(point.X); continue; }
 
             double value = SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset);
@@ -404,12 +497,11 @@ public sealed class SpeedSamplerTests
         Worst(arms, record) <= Tolerance;
 
     /// <summary>The same, for a state that may change gait partway up its range.</summary>
-    private static bool Holds(SpeedSampler sampler, string project, int key, SpeedRecord record) =>
-        Misses(sampler, project, key, record) == 0;
+    private static bool Holds(SpeedSampler sampler, int key, SpeedRecord record,
+                              IReadOnlyDictionary<string, MovementType> movements) =>
+        BadPoints(sampler, key, record, movements).Count == 0;
 
-    /// <summary>How many points of a record fall outside <see cref="Tolerance"/>.</summary>
-    private static int Misses(SpeedSampler sampler, string project, int key, SpeedRecord record) =>
-        BadPoints(sampler, project, key, record).Count;
+
 
     /// <summary>The worst point of a record, relative.</summary>
     private static double Worst(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, SpeedRecord record)

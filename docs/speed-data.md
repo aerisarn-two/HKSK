@@ -976,6 +976,15 @@ and over the creatures whose ladders are unambiguous, 0.0715% to 0.0021%. On
       190.0  136.316147  137.078416  -0.556%  136.298652   +0.013%
       192.0  190.543274  192.000000  -0.759%  190.473703   +0.037%
 
+**It is fitted, and it is the only fitted number left.** The admissible inputs to a
+rebuild are the behaviour graph, the movement types and the root motion; this is none of
+them, and was obtained by minimising the error against the file it is meant to predict.
+It is not the same kind of thing as a per-creature threshold read off its own curve — it
+is one global constant, identical for every creature, and it describes the tool Bethesda
+sampled with rather than the data being described — but a rebuild that has to be handed
+it is not deriving the file from its inputs alone, and this document should not pretend
+otherwise.
+
 The `x - 0.0403` of earlier revisions was therefore right about the shape and wrong about
 the footing. It was withdrawn because it could not be found in the executable, the SDK,
 the authoring file or any behaviour graph, and because per-segment fits scattered. The
@@ -1244,8 +1253,8 @@ hides a bad end, and averaging over records hides whole records being wrong, so 
 score here is per curve: a curve passes when *every* point of it is within 2%. Counting
 that way, over the 1482 curves belonging to the 41 projects that read the table:
 
-    pass, every point within 2%                     662    44.7%
-    rebuilt and does not hold                       212    14.3%
+    pass, every point within 2%                     660    44.5%
+    rebuilt and does not hold                       214    14.4%
     no compass to rebuild from                      608    41.0%
 
 Seven projects have every curve they own inside 2%, and the worst point of the worst
@@ -1262,6 +1271,16 @@ its children on one clock, so travel and duration interpolate separately and the
 is the first over the second, which is the hyperbola of §6. Without sync the children
 run at their own rates and what blends is the motion they are already producing: a
 straight line between the rungs.
+
+**Measured against Havok, not inferred.** `hkmeasure` with two rungs at 5 and 192, the
+same clip at playback 0.026 and 1:
+
+    flags   x = 100      what it is
+    0x11      9.881      the synchronised form: travel over blended duration
+    0x10     99.996      the velocity lerp: 4.992 + 0.508 x 187.008
+
+and the cyclic flag on a ladder whose rungs are speeds makes it degenerate, which is why
+a compass carries it and a ladder does not.
 
 `ChaurusProject`'s backward ladder is the clean case. Its floor rung sits at 5 and
 delivers 4.94, its next at 95.09 delivers 95.01, and they are the same clip at two
@@ -1283,12 +1302,56 @@ axis §6 does not model.
 **What the 214 failures are**, taken apart rather than averaged:
 
     one record spanning two gaits      27   BenthicLurker key 1, Falmer key 2
-    the wrong compass chosen           85   Werewolf, Riekling, FirstPerson,
-                                            Slaughterfish, Mudcrab
     a uniform factor of two            19   HMDaedra
     the floor of the backward arc      35   Giant, AtronachFrost, Hagraven,
                                             FrostbiteSpider, Spriggan, VampireBrute
-    the player's own residue           11   keys 3, 7, 9, 16
+    the rest                          133   Werewolf, Riekling, FirstPerson,
+                                            Slaughterfish, Mudcrab, the player
+
+**None of them is a wrong family.** That is the cheap suspicion and it is measurably
+false: if a curve missed because the wrong compass answered it, some other compass in
+the same graph would fit, and trying all of them would find it. Over the corpus that
+rescues **0 of the 214**. Every one of the four compasses the falmer owns is outside
+tolerance on every one of its key 2 curves; the same holds down the list. An earlier
+revision of this document attributed 85 of the failures to a wrong choice of family.
+That was never measured and it is withdrawn.
+
+So what is left is in the blend or in the inputs, and not in the routing.
+
+#### The movement type names the compass, without reading a name
+
+A ladder's rungs are the speeds the movement type asks for, so a state and the compass
+that answers it can be paired arithmetically. `FalmerDefault` walks forward at 100.44
+and runs at 361.24; exactly one of the falmer's four compasses carries both as rungs:
+
+    FalmerDefault        fwd 100.44/361.24      MagicCast_DirectionalBlend  [5, 100.442, 361.242]
+    FalmerBowDrawn       fwd 100.44/100.44      Bow_DirectionalBlend        [5, 100.442]
+    Falmer1HMWalk        fwd 100.44/175.77      MT_DirectionalBlend         [5, 100.442, 175.774]
+    Falmer1HMRun         fwd 180.62/397.00      1HM_DirectionalBlend_Run    [180.62, 360.913, 397.004]
+
+    GiantDefault         fwd  61.84/61.84       DirectionalBlend            [5, 61.844, 123.688]
+    GiantCombatWalk      fwd  82.46/247.37      CombatDirectionalBlend_WALK [5, 82.458, 247.374]
+    GiantCombatRun       fwd  50.00/415.00      CombatDirectionalBlend_RUN  [50, 415, 622.5]
+
+`MagicCast_DirectionalBlend` shares not one token with `FalmerDefault`, so the name
+heuristic of §8 could never have reached it, and the numbers reach it on all eight
+speeds at once. **This is the strongest evidence that §5.4 is literally true** — and
+that the routing can be derived from the three admissible inputs rather than from the
+graph's prose.
+
+Scored over the corpus, though, it is a corroboration and not yet a replacement. It
+decides 31 of the 89 states and agrees with the names on 25; of the six disagreements,
+four are the player's, where a **horse** movement type happens to share numbers with a
+hand-to-hand compass, and one is a falmer state with no records in the table. Swapping
+it in for the name heuristic changes no curve's verdict, in either direction.
+
+The correspondence it rests on is real but partial. Across the 324 directions whose
+movement type is known, a rung equals the walk speed 157 times (48.5%) and the run speed
+140 times (43.2%). Where it is exact it is exact to the last digit; where it is not, it
+is close but not equal — the player's forward ladder has a rung at 82.4541 against a
+movement type asking for 80.1 — and **that gap is the reason the speed table exists at
+all** (§0). So §5.4 is a placement rule the tool followed, not an identity the engine
+enforces.
 
 #### A record can change gait partway up its own range
 
@@ -1304,35 +1367,69 @@ everything above the switch out by up to 44%:
      324.5   298.606     175.810     298.608
 
 Below the switch the walk ladder answers to 0.04% and above it the run ladder answers to
-0.00%. **The threshold is not in the behaviour graph**: the gait machines transition on
-the events `runStart` and `walkStart` with no condition attached, and the game raises
-them from the actor's movement type. So it is external data of the same kind as the
-state-to-family mapping, and it is held in the test suite for the same reason.
+0.00%. The gait machines transition on the events `runStart` and `walkStart` with no
+condition attached, so the threshold is not *in the graph* — but it does not have to be,
+because **it is a movement-type speed**:
 
-Given it, two of the falmer's nineteen curves hold end to end and the other seventeen
-miss exactly one point — for eight of them the sample at the transition itself, where
-the graph is between states and neither ladder describes it.
+    Falmer1HMWalk    forward walk 100.44   forward run 175.77
+    MT_DirectionalBlend rungs        5     100.442        175.774
 
-`BenthicLurkerProject` key 1 has **three** stages, not two: its plain walk, its combat
-walk and its combat run. At heading 0 the first two deliver the same thing, which hid
-the middle one — at a sideways heading the plain walk saturates at 99.5 and the combat
-walk carries on to 129.4:
+The rungs are the movement type's own numbers, which is §5.4 taken literally, and the
+switch is at the walk speed: above it the creature is running. So the *threshold* is an
+input — behaviour, movement type, root motion — and not a fitted constant.
 
-    heading 0.25     x = 99.5    shipped  98.30    walk   98.26
-                     x = 131.5   shipped 129.38    walk   99.52 (saturated)
-                                                   cwalk 129.38
-                     x = 216     shipped 215.52    run   215.53
+**What is still missing is which compass takes over above it**, and two rules were
+written for that and both measured and dropped:
 
-Given the sequence, nine of its nineteen headings miss the transition sample and nothing
-else. The other ten are its backward arc, which misses for the separate reason below.
+- *above the walk speed the running family answers.* It costs nineteen curves on the
+  giant alone, because `GiantCombatWalk` asks for 82.46 walking and 247.37 running and
+  those are the second and third rungs of **one** ladder — `CombatDirectionalBlend_WALK`
+  answers its records throughout;
+- *the same, but only where the state's own compass cannot reach the run speed.* That
+  spares the giant, but it also spares the falmer, whose `MT_DirectionalBlend` reaches
+  175.774 — its run speed, exactly. It fires only on the player and the benthic lurker,
+  where it is wrong, and costs seven curves.
 
-§6 models one ladder per record; this is the shape that needs a sequence of them, and
-the residue after the sequence is one sample per curve rather than a whole upper range.
+The falmer and the giant are therefore **not distinguishable by the three inputs as §6
+models them**: both have a compass whose rungs are their state's walk and run speeds,
+and one spans the switch while the other does not. Answering with a single compass
+throughout scores 660 of 1482; both rules score less, so the rebuild answers with one.
 
-`HMDaedra` is **exactly half** at every point of all 19 curves — 2.4992 against a floor
-rung of 4.9984, saturating at 64 against a top rung of 128. The compass is sound (its
-nine arms blend to 128 at heading 0) and so is the ladder; the table simply records half
-of it. That is one number, applied uniformly, and it is not a blend question.
+A run against the shipped table confirms that no choice would have done: all four of the
+falmer's compasses are outside 2% on all nineteen of its key 2 curves, so picking one of
+them — however cleverly — was never going to rescue the curve. The two ladders the doc shows above must be blended
+across the transition, not switched between, and §6 has no form for that.
+
+`BenthicLurkerProject` key 1 has the same shape and **its thresholds are not derivable**.
+Its curves change ladder near 122 and again near 215, and its movement type says forward
+walk 122.15 and forward run 305.46 — the first matches, the second does not, and no
+movement type in any master carries a speed within half a unit of 215. An earlier
+revision of this document supplied 115 and 215.75 by reading them off the shipped curve.
+That is not an input and the numbers are withdrawn: the only admissible inputs are the
+behaviour graph, the movement types and the root motion, and a threshold fitted to the
+answer is none of them.
+
+§6 models one ladder per record; the falmer is the shape shown to need two, and what
+takes over where is a movement-type speed when the movement type states one.
+
+#### HMDaedra records exactly half of what its graph says
+
+Every point of all nineteen of its curves is the model divided by two: 2.4992 against a
+floor rung that delivers 4.9984, 12.4891 at x = 25 against 24.998, and a saturation of
+64 against a top rung of 128. Its clips are plain — `MT_Forward` travels 64 units in one
+second and `MT_FastForward` travels 128 — and the rungs sit at 5, 64 and 128, so the
+graph claims the weight and the delivery agree, as everywhere else.
+
+What it is not, each checked rather than assumed:
+
+    the clip duration       the animation file says 1.0, and so does the cache
+    the playback speed      0.0781 and 1, and 64 x 0.0781 is the 4.9984 on the floor
+    the sync flag           its ladders are 0x10 and the unsynchronised form is used
+    the cyclic wrap         measured against Havok; see below
+    the compass geometry    its nine arms blend to 128 at heading 0
+    the skeleton scale      1
+
+So it is one number, applied uniformly, and nothing found so far produces it.
 
 #### The backward arc is wrong at x = 0 and nowhere else
 
