@@ -1,3 +1,4 @@
+using HKSK.Behavior;
 using HKSK.Cache;
 using HKSK.Havok;
 
@@ -58,6 +59,21 @@ public sealed partial class ActorProject : CacheProject
     /// clips are simply absent, which is why a clip may have no generator.
     /// </summary>
     public IReadOnlyList<string> MissingBehaviors { get; private set; } = [];
+
+    /// <summary>
+    /// The behaviour files as one graph, rooted at the file the character names
+    /// and joined across <c>hkbBehaviorReferenceGenerator</c>.
+    /// </summary>
+    /// <remarks>
+    /// Built once and cached. Use this rather than searching the files flatly:
+    /// <see cref="HavokFile.All{T}"/> returns every node of a type in a packfile
+    /// whether or not the graph can reach it, and for the thirteen projects split
+    /// over several files it cannot say which file a node's ancestors are in.
+    /// </remarks>
+    public BehaviorGraph Graph =>
+        _graph ??= BehaviorGraph.Read(Behaviors, Character?.BehaviorFilename);
+
+    private BehaviorGraph? _graph;
 
     /// <summary>The animation slots, indexed by cache index.</summary>
     public IReadOnlyList<AnimationSlot> Animations => _slots;

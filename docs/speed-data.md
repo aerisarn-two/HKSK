@@ -745,6 +745,92 @@ RACE `SpeedOverrides` may override a movement type per race, but only 10 of 161 
 carry any, with 17 distinct values, and they are almost all byte-identical copies of
 the record they override. Reading the record is correct.
 
+### 5.5 Visiting the graph
+
+Everything in section 5 is a question about *where a node sits*, and until now the
+answer came from searching a packfile flatly and then guessing at the rest from
+names. That is backwards, and it has a concrete cost.
+
+**A behaviour graph is not a file.** `hkbBehaviorReferenceGenerator` names its target
+as a *string* and leaves the pointer `SERIALIZE_IGNORED`, so nothing in the packfile
+links the two -- the engine resolves the name at load, and so must anything that reads
+the graph. 123 of these joins hold the corpus together across 13 projects, and 93 of
+them are the player's and the first-person rig's:
+
+    DefaultMale / DefaultFemale   17 files   32 references   depth 53
+    FirstPerson                   15 files   29 references   depth 51
+    Bear, Dog, Wolf, Deer, Cow     4 files    3 references each
+
+The other 36 projects are a single file, which is why the island view survived as long
+as it did -- and why the projects it fails on are the ones whose rebuild is worst.
+
+`HKSK.Behavior` walks the whole thing from the character's root generator, crossing
+references as the engine does. Two things about it are worth stating.
+
+**The edges are found by reflection, not by a list of node types.** A blender reaches
+its children through one wrapper struct, a state machine through another, and at least
+three more node types hold a bare generator under three different property names
+(`m_generator`, `m_pDefaultGenerator`, `m_pBlenderGenerator`). Hand-listing them is how
+a walk silently loses a subtree: it does not fail, it returns less, and nothing says
+which type was forgotten. Reading the edges off the generated classes instead is
+exhaustive by construction.
+
+**And it is shown to be, not assumed.** Every `hkbNode` in every packfile of all 49
+projects is looked for in the walk:
+
+    hkbNode in the packfiles                      28476
+    reached from the character's root             28351
+    not reached, and an hkbBehaviorGraph            125      <- one per file
+    not reached, anything else                        0
+
+The 125 are the per-file graph wrappers, which the walk starts *below*. Nothing else in
+the shipped game is unreachable, and `TheOnlyNodesTheWalkDoesNotReachAreTheGraphWrappers`
+keeps it that way.
+
+#### What ancestry buys
+
+A node's path is the thing the name heuristics of section 8 were standing in for:
+
+    MT_DirectionalBlend      Falmer_Master_Behavior / FalmerRoot / RootBehavior /
+                             Falmer_Base_State / MT_State / MT_State_Behavior /
+                             MT_DirectionalState / 1HM_Locomotion_Behavior /
+                             1HM_DirectionalState_Walk / TAG iState=2
+
+    1HM_DirectionalBlend_Run ... same to 1HM_Locomotion_Behavior /
+                             1HM_DirectionalState_Run / TAG iState=3
+
+Read straight off the chain: which key the blend serves, and that the walk and run
+blends are **two states of one machine**. Section 9 spent a great deal of effort trying
+to recover the second fact from name tokens and from movement-type speeds, and neither
+survived measurement -- the structure was in the graph the whole time.
+
+`BehaviorWalk.KeyOf` reads the key by the two routes the graph offers.
+`BSiStateTaggingGenerator` sets `iState` above a subtree and is read from the ancestors;
+`BSIStateManagerModifier` sets it from a table of (state machine, state id) pairs, and
+**that one is unreadable without ancestry** -- a flat search cannot say which machine a
+blend sits under, which is why it could not be measured before. Over the 142 direction
+blends:
+
+    keyed by BSiStateTaggingGenerator              61
+    keyed by BSIStateManagerModifier               10
+    keyed by either                                71      <- the two never overlap
+
+Against the name heuristic, where both answer, over the 291 states:
+
+    the graph places a compass under the key        32
+    the name heuristic agrees                       25
+    the name heuristic answers nothing               7
+    the two contradict each other                    0
+
+The seven are the player's and the first-person rig's sneak and ready-weapon states and
+the sphere centurion's ranged one -- all previously counted among the 608 records with
+no compass to rebuild from. So the structural route does not overturn section 8; it
+corroborates it where it spoke and reaches further where it did not.
+
+It reaches half the compasses and no more, and the half it misses is not a gap in the
+walk but a graph that genuinely never sets `iState` over those subtrees. What decides
+those is still open.
+
 ## 6. Computing the curve
 
 **y has a closed form accurate to about 0.003%. That is enough to author and to use a
