@@ -38,6 +38,7 @@ The **cache side** is generated, and is what the game actually reads:
 | --- | --- |
 | `animationdatasinglefile.txt` | every project's clips, and its root motion |
 | `animationsetdatasinglefile.txt` | each creature's attack and idle sets |
+| `speeddatasinglefile.txt` | what speed each actor really moves at, per state |
 | `animationdata/`, `animationsetdata/` | the same content, split per project |
 
 The cache exists so the game can answer "how far does this animation travel?"
@@ -258,14 +259,31 @@ under Wine off Windows.
 
 The cache is three files, not two. Beside the animation data and the animation set
 data the game ships **`meshes/speeddatasinglefile.txt`** — binary after a text
-dirlist, 49 projects, and read by nothing: HKSK does not parse it yet.
-
-**`docs/speed-data.md`** is the specification: the four-level layout, the eight
-invariants a reader may assert, what each field is and how firmly, the cross-check
-against the RACE records, and the open questions with what has been ruled out.
-It is a `(state, direction, goal speed) → speed` table for
-`BSSpeedSamplerModifier`, gated on `bUseSpeedSampler` — which the executable
+dirlist, 49 projects, a `(state, direction, goal speed) → speed` table for
+`BSSpeedSamplerModifier`. It is gated on `bUseSpeedSampler`, which the executable
 defaults to **1**, so the data is live and not, as it first appeared, dormant.
+
+A creature's speed is written down twice — in its RACE `MOVT` record and in its
+animations' root motion — and those are meant to agree, because `MOVT` is authored
+from the clips and the locomotion blender's rungs are placed at the `MOVT` values.
+They drift, because `PlaybackSpeed` sits between them and gets changed without the
+record being revisited. **This file is the measured difference.** For a correctly
+authored creature it is the identity; the chicken's run says 251.94 and delivers
+403.10, because the clip plays at 1.6.
+
+`SpeedDataFile` reads it, writes it back byte for byte, and answers the engine's
+query. `SkyrimCache` picks it up from the meshes folder and saves it with the
+other two.
+
+```csharp
+var cache = SkyrimCache.Load(meshes);
+float actual = cache.SpeedData!.Sample("DeerProject", state: 20, direction: 0f, goalSpeed: 300f);
+```
+
+Generating one from scratch is not implemented: the sweep bound is still an
+authored input. **`docs/speed-data.md`** is the specification — the layout, the
+nine invariants, the closed form for the curve, how to choose `MOVT` for an
+animated creature, and the open questions with what has been ruled out.
 
 ## Paired animations
 

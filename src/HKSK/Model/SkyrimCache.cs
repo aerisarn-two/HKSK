@@ -13,7 +13,12 @@ namespace HKSK.Model;
 /// <code>
 ///   meshes/animationdatasinglefile.txt      clips and root motion, per project
 ///   meshes/animationsetdatasinglefile.txt   attack and idle sets, per creature
+///   meshes/speeddatasinglefile.txt          speed sampler tables, per actor
 /// </code>
+///
+/// The third is optional and binary. The game loads it ungated and it is present
+/// in the shipped data, but a cache can be read without it -- <see cref="SpeedData"/>
+/// is then null and <see cref="Save(string)"/> writes nothing for it.
 ///
 /// The split per-project files under <c>animationdata/</c> and
 /// <c>animationsetdata/</c> are the same content in a form the Creation Kit
@@ -33,11 +38,15 @@ public sealed partial class SkyrimCache
     /// <summary>The merged animation set data file's name.</summary>
     public const string AnimationSetDataFileName = "animationsetdatasinglefile.txt";
 
-    private SkyrimCache(string? meshes, AnimationDataFile data, AnimationSetDataFile sets)
+    /// <summary>The merged speed sampler file's name.</summary>
+    public const string SpeedDataFileName = SpeedDataFile.FileName;
+
+    private SkyrimCache(string? meshes, AnimationDataFile data, AnimationSetDataFile sets, SpeedDataFile? speed)
     {
         MeshesFolder = meshes;
         AnimationData = data;
         SetData = sets;
+        SpeedData = speed;
     }
 
     /// <summary>The meshes folder this was read from, when it was read from one.</summary>
@@ -45,6 +54,15 @@ public sealed partial class SkyrimCache
 
     public AnimationDataFile AnimationData { get; }
     public AnimationSetDataFile SetData { get; }
+
+    /// <summary>
+    /// The speed sampler tables, when the folder had them.
+    /// </summary>
+    /// <remarks>
+    /// Null for a cache parsed from text, or read from a folder without the
+    /// file. Every shipped meshes folder has it.
+    /// </remarks>
+    public SpeedDataFile? SpeedData { get; set; }
 
     /// <summary>Reads the cache from an extracted meshes folder.</summary>
     public static SkyrimCache Load(string meshesFolder)
@@ -57,16 +75,22 @@ public sealed partial class SkyrimCache
         if (!File.Exists(sets))
             throw new FileNotFoundException($"no {AnimationSetDataFileName} in '{meshesFolder}'", sets);
 
-        return new SkyrimCache(meshesFolder, AnimationDataFile.Load(data), AnimationSetDataFile.Load(sets));
+        string speed = Path.Combine(meshesFolder, SpeedDataFileName);
+
+        return new SkyrimCache(
+            meshesFolder,
+            AnimationDataFile.Load(data),
+            AnimationSetDataFile.Load(sets),
+            File.Exists(speed) ? SpeedDataFile.Load(speed) : null);
     }
 
     /// <summary>Reads the cache from the two files' contents.</summary>
     public static SkyrimCache Parse(string animationData, string animationSetData) =>
-        new(null, AnimationDataFile.Parse(animationData), AnimationSetDataFile.Parse(animationSetData));
+        new(null, AnimationDataFile.Parse(animationData), AnimationSetDataFile.Parse(animationSetData), null);
 
     /// <summary>Wraps two already-built files, as <see cref="SplitCache.ToMerged()"/> does.</summary>
     public static SkyrimCache FromParts(AnimationDataFile data, AnimationSetDataFile sets) =>
-        new(null, data, sets);
+        new(null, data, sets, null);
 
     /// <summary>
     /// Rebuilds a merged cache from the split, per-project files.
@@ -219,17 +243,25 @@ public sealed partial class SkyrimCache
         return ActorProject.Open(prop.Data, character, sets: sets);
     }
 
-    /// <summary>Writes both merged files back to the meshes folder.</summary>
+    /// <summary>Writes the merged files back to the meshes folder.</summary>
     public void Save() =>
         Save(MeshesFolder ?? throw new InvalidOperationException(
             "this cache was parsed from text and has no folder; pass one to Save"));
 
-    /// <summary>Writes both merged files to a folder.</summary>
+    /// <summary>Writes the merged files to a folder.</summary>
+    /// <remarks>
+    /// The speed data is written only when this cache has it. A cache read from
+    /// a folder that had none does not gain one on save, because an empty or
+    /// invented table is worse than none: with no file the modifier passes the
+    /// request through, which is a known and survivable state, whereas a wrong
+    /// table silently mis-indexes the gait blend.
+    /// </remarks>
     public void Save(string meshesFolder)
     {
         Directory.CreateDirectory(meshesFolder);
         AnimationData.Save(Path.Combine(meshesFolder, AnimationDataFileName));
         SetData.Save(Path.Combine(meshesFolder, AnimationSetDataFileName));
+        SpeedData?.Save(Path.Combine(meshesFolder, SpeedDataFileName));
     }
 
     /// <summary>

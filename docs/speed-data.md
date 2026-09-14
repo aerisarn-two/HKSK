@@ -7,7 +7,7 @@
     Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
     Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:     bUseSpeedSampler:Animation, compiled default 1 (ON)
-    Reader:   none. HKSK does not implement this file yet.
+    Reader:   HKSK.Cache.SpeedDataFile -- read, write, and query
 
 Third file of the animation cache, after `animationdatasinglefile.txt` and
 `animationsetdatasinglefile.txt`. Named `.txt`; binary after byte 1943.
@@ -929,6 +929,15 @@ highest `ForwardRun` is `NPC_Horse_MT` — the mounted type, at double the on-fo
 
 Implementing §1 is sufficient to read and rewrite the file losslessly; §3 to interpret
 it; §6 and §8 to generate one.
+
+`HKSK.Cache.SpeedDataFile` does the first two. `SkyrimCache.Load` picks the file up from
+the meshes folder when it is there and `SkyrimCache.Save` writes it back; the round trip
+is byte-exact against the shipped file. `Sample(project, state, direction, goalSpeed)`
+answers the query the engine makes (§4.2), and returns `goalSpeed` unchanged for an
+absent project, state or curve — which is the engine's own behaviour with no database,
+and not zero, which would model a creature that cannot move.
+
+Generation (§8) is not implemented: it needs `top(s)`, which is still authored (§9).
 
 ## 13. Entry census
 

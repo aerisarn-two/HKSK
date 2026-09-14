@@ -43,6 +43,9 @@ public static class Corpus
 
     /// <summary>The merged animation set data file.</summary>
     public static string AnimationSetData => Path_("animationsetdatasinglefile.txt");
+
+    /// <summary>The merged speed sampler file.</summary>
+    public static string SpeedData => Path_("speeddatasinglefile.txt");
 }
 
 /// <summary>Skips a test when there is no corpus to run it against.</summary>
