@@ -28,6 +28,72 @@ namespace HKSK.Tests;
 /// </remarks>
 internal static class FamilyGuess
 {
+    /// <summary>
+    /// A record answered by a sequence of ladders, because the creature changes
+    /// gait partway up its own speed range.
+    /// </summary>
+    /// <param name="Project">The project whose table carries it.</param>
+    /// <param name="Key">The locomotion state.</param>
+    /// <param name="Stages">
+    /// The compasses in increasing speed, each with the speed it takes over at. The
+    /// first stage's threshold is ignored.
+    /// </param>
+    /// <remarks>
+    /// <strong>The thresholds are not in the behaviour graph.</strong> The gait
+    /// machines transition on the events <c>runStart</c> and <c>walkStart</c>, with
+    /// no condition attached -- the game raises them from the actor's movement
+    /// type, and the graph only responds. So this is external data of the same kind
+    /// as the state-to-family mapping, and it sits here for the same reason: to be
+    /// replaced by a project that supplies it, not to be guessed at in a library.
+    /// </remarks>
+    internal readonly record struct GaitSequence(string Project, int Key, (float At, string Compass)[] Stages);
+
+    /// <summary>The gait sequences visible in the shipped table.</summary>
+    /// <remarks>
+    /// The falmer walks and then runs. The benthic lurker has three: its plain walk,
+    /// its combat walk and its combat run. At heading 0 the first two deliver the
+    /// same thing, which is what hid the middle stage until a sideways heading was
+    /// looked at -- there the plain walk saturates at 99.5 and the combat walk
+    /// carries on to 129.4.
+    /// </remarks>
+    private static readonly GaitSequence[] Sequences =
+    [
+        new("FalmerProject", 2,
+        [
+            (0f, "MT_DirectionalBlend"),
+            (100.25f, "1HM_DirectionalBlend_Run"),
+        ]),
+        new("BenthicLurkerProject", 1,
+        [
+            (0f, "DirectionalBlend"),
+            (115f, "CombatDirectionalBlend_WALK"),
+            (215.75f, "CombatDirectionalBlend_RUN"),
+        ]),
+    ];
+
+    /// <summary>The compass answering a state at a given speed.</summary>
+    /// <remarks>
+    /// The same as <see cref="CompassFor"/> for a state that keeps one gait, which
+    /// is nearly all of them.
+    /// </remarks>
+    public static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassAt(
+        this SpeedSampler sampler, string project, int key, float x)
+    {
+        foreach (GaitSequence g in Sequences)
+        {
+            if (g.Project != project || g.Key != key) continue;
+
+            string wanted = g.Stages[0].Compass;
+            foreach ((float at, string compass) in g.Stages)
+                if (x >= at) wanted = compass;
+
+            foreach (SpeedCompass c in sampler.Compasses)
+                if (c.Name == wanted) return c.Arms;
+        }
+
+        return sampler.CompassFor(key);
+    }
+
     /// <summary>The compass serving a state, or null when it cannot be told.</summary>
     public static IReadOnlyList<(float Direction, SpeedLadder Ladder)>? CompassFor(
         this SpeedSampler sampler, int key)

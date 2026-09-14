@@ -194,8 +194,8 @@ public sealed class SpeedSamplerTests
     /// of both (<see cref="SpeedSampler.Sample"/>).
     /// </para>
     /// <para>
-    /// Of the 1482 curves in the 41 projects that read the table, 660 hold at 2%
-    /// end to end, 214 are rebuilt and do not hold, and 608 have no compass to
+    /// Of the 1482 curves in the 41 projects that read the table, 662 hold at 2%
+    /// end to end, 212 are rebuilt and do not hold, and 608 have no compass to
     /// rebuild from -- mostly quadrupeds, which turn rather than strafe, so their
     /// side and back records come from a turn axis §6 does not model.
     /// </para>
@@ -213,21 +213,17 @@ public sealed class SpeedSamplerTests
             if (sampler is null) continue;                 // never reads the table
 
             foreach (SpeedEntry entry in cache.SpeedData!.Block(name)!.Entries)
-            {
-                var arms = sampler.CompassFor((int)entry.Key);
-
                 foreach (SpeedRecord record in entry.Records)
                 {
                     curves++;
-                    if (arms is null) { unresolved++; continue; }
-                    if (Holds(arms, record)) pass++; else fail++;
+                    if (sampler.CompassFor((int)entry.Key) is null) { unresolved++; continue; }
+                    if (Holds(sampler, name, (int)entry.Key, record)) pass++; else fail++;
                 }
-            }
         }
 
         Assert.Equal(1482, curves);
-        Assert.Equal(660, pass);
-        Assert.Equal(214, fail);
+        Assert.Equal(662, pass);
+        Assert.Equal(212, fail);
         Assert.Equal(608, unresolved);
     }
 
@@ -318,9 +314,102 @@ public sealed class SpeedSamplerTests
         Assert.Equal("mt_behavior", mt.File);
     }
 
+    /// <summary>
+    /// A record can be answered by a sequence of ladders, because the creature
+    /// changes gait partway up its own speed range.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>FalmerProject</c> key 2 walks to about 100 and runs above it.
+    /// <c>BenthicLurkerProject</c> key 1 has three stages -- its plain walk, its
+    /// combat walk and its combat run. At heading 0 the first two deliver the same
+    /// thing, which hid the middle one until a sideways heading was looked at:
+    /// there the plain walk saturates at 99.5 and the combat walk carries on to
+    /// 129.4.
+    /// </para>
+    /// <para>
+    /// The thresholds are not in the graph -- the gait machines transition on
+    /// <c>runStart</c> and <c>walkStart</c> with no condition attached, and the game
+    /// raises them -- so they are supplied by <see cref="FamilyGuess.GaitSequence"/>
+    /// until something else does.
+    /// </para>
+    /// <para>
+    /// With the sequence, what is left is one sample per curve: the one at the
+    /// transition, where the graph is between states and neither ladder describes
+    /// it. The lurker's sideways and forward headings miss that and nothing else;
+    /// its backward arc misses more, for the separate reason §9 records.
+    /// </para>
+    /// </remarks>
+    [CorpusFact]
+    public void AGaitSequenceLeavesOnlyTheSampleAtTheTransition()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        // the falmer: two stages
+        SpeedSampler falmer = Assert.IsType<SpeedSampler>(
+            SpeedSampler.FromProject((ActorProject)cache.OpenActor("FalmerProject")!));
+        SpeedEntry falmerKey2 = cache.SpeedData!.Block("FalmerProject")!.Entries.Single(e => e.Key == 2);
+
+        int clean = 0, oneMiss = 0, atTheSeam = 0;
+        double worstOnOne = 0;
+        foreach (SpeedRecord record in falmerKey2.Records)
+        {
+            var bad = BadPoints(falmer, "FalmerProject", 2, record);
+            if (bad.Count == 0) clean++;
+            if (bad.Count == 1) { oneMiss++; if (bad[0] == 100.5f) atTheSeam++; }
+            worstOnOne = Math.Max(worstOnOne, Worst(falmer.CompassFor(2)!, record));
+        }
+
+        Assert.Equal(2, clean);
+        Assert.Equal(17, oneMiss);                  // never more than one
+        Assert.Equal(8, atTheSeam);
+        Assert.InRange(worstOnOne, 0.4d, 0.45d);    // one ladder alone is 44% out
+
+        // the lurker: three stages, and its forward and sideways headings then miss
+        // only the transition sample
+        SpeedSampler lurker = Assert.IsType<SpeedSampler>(
+            SpeedSampler.FromProject((ActorProject)cache.OpenActor("BenthicLurkerProject")!));
+        SpeedEntry lurkerKey1 = cache.SpeedData.Block("BenthicLurkerProject")!.Entries.Single(e => e.Key == 1);
+
+        int onlyTheSeam = 0;
+        foreach (SpeedRecord record in lurkerKey1.Records)
+        {
+            var bad = BadPoints(lurker, "BenthicLurkerProject", 1, record);
+            if (bad.Count == 1 && bad[0] == 215.5f) onlyTheSeam++;
+        }
+
+        Assert.Equal(9, onlyTheSeam);
+    }
+
+    /// <summary>The x of every point of a record outside <see cref="Tolerance"/>.</summary>
+    private static List<float> BadPoints(SpeedSampler sampler, string project, int key, SpeedRecord record)
+    {
+        var bad = new List<float>();
+        foreach (SpeedPoint point in record.Points)
+        {
+            if (point.Y <= 0f) continue;
+
+            var arms = sampler.CompassAt(project, key, point.X);
+            if (arms is null) { bad.Add(point.X); continue; }
+
+            double value = SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset);
+            if (Math.Abs(value - point.Y) / point.Y > Tolerance) bad.Add(point.X);
+        }
+
+        return bad;
+    }
+
     /// <summary>Whether every point of a record is inside <see cref="Tolerance"/>.</summary>
     private static bool Holds(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, SpeedRecord record) =>
         Worst(arms, record) <= Tolerance;
+
+    /// <summary>The same, for a state that may change gait partway up its range.</summary>
+    private static bool Holds(SpeedSampler sampler, string project, int key, SpeedRecord record) =>
+        Misses(sampler, project, key, record) == 0;
+
+    /// <summary>How many points of a record fall outside <see cref="Tolerance"/>.</summary>
+    private static int Misses(SpeedSampler sampler, string project, int key, SpeedRecord record) =>
+        BadPoints(sampler, project, key, record).Count;
 
     /// <summary>The worst point of a record, relative.</summary>
     private static double Worst(IReadOnlyList<(float Direction, SpeedLadder Ladder)> arms, SpeedRecord record)
