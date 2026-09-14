@@ -1,8 +1,9 @@
-using System.Numerics;
+using HKSK.Cache;
 using HKSK.Model;
 using HKX2;
+using System.Numerics;
 
-namespace HKSK.Cache;
+namespace HKSK.Tests;
 
 /// <summary>
 /// One step of a locomotion blend: where it sits, and what it delivers.

@@ -1,9 +1,10 @@
-using System.Numerics;
+using HKSK.Cache;
 using HKSK.Havok;
 using HKSK.Model;
 using HKX2;
+using System.Numerics;
 
-namespace HKSK.Cache;
+namespace HKSK.Tests;
 
 /// <summary>
 /// One locomotion state a speed table can be sampled for: its key, and the

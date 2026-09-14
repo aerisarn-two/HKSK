@@ -9,7 +9,8 @@
     Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
     Gate:     bUseSpeedSampler:Animation, compiled default 1 (ON)
     Reader:   HKSK.Cache.SpeedDataFile  -- read, write, and query
-              HKSK.Cache.SpeedLadder    -- the response curve of §6
+    Model:    HKSK.Tests.SpeedLadder    -- the response curve of §6
+              HKSK.Tests.SpeedSampler   -- the graph side of the join
 
 Third file of the animation cache, after `animationdatasinglefile.txt` and
 `animationsetdatasinglefile.txt`. Named `.txt`; binary after byte 1943.
@@ -791,7 +792,7 @@ the size of it; its slowest rung plays `walkforward` at 0.058, stretching 0.833 
     85.0        34.56         34.70          59.77
     88.0        50.75         51.06          61.88
 
-`HKSK.Cache.SpeedLadder` implements this. `SpeedLadder.FromBlender` reads the rungs out
+`SpeedLadder` implements this. `SpeedLadder.FromBlender` reads the rungs out
 of an `hkbBlenderGenerator` and resolves each child's clip through the cache;
 `Evaluate(x)` is the form above. The three properties that were each wrong at some point
 during this investigation — travel blending as a vector, duration blending separately,
@@ -1383,25 +1384,39 @@ answers the query the engine makes (§4.2), and returns `goalSpeed` unchanged fo
 absent project, state or curve — which is the engine's own behaviour with no database,
 and not zero, which would model a creature that cannot move.
 
-`HKSK.Cache.SpeedSampler` walks a project to its table: `FromProject` finds the
-sampler, reads the variables off it, and returns the states the project declares
-(key and movement-type name, from its `iState_<MOVT>` variables), every ladder the
-sampler's answer drives, and the compasses those ladders hang under, so a heading
-resolves to an arm without reading a node name. `CompassFor(key)` picks the family — from the
-tagging generator that sets `iState` to that key where there is one, narrowed by the
-movement type and by the behaviour file where a name is defined more than once — and `Sample(arms, direction, x)` answers a
-heading, blending the two arms bracketing it when it falls between them — which is
-15 of every 19 headings, since the file samples at 0.05 and the arms sit at 0.125
-(§3.2). Rounding to the nearest arm instead is twenty times worse. It returns null for the eight
-projects that have no sampler, which is the honest answer: the table is not part of
-how they move. Over the corpus that is 1038 ladders, 142 compasses, 996 arms and
-3416 rungs, every rung naming an animation and carrying its root motion.
+**That is all the library holds of this file.** `HKSK.Cache` is `SpeedDataFile` and
+nothing more, the way it is `AnimationDataFile` and `AnimationSetDataFile` for the other
+two files of the cache. Everything below models what the table *describes*, which is a
+different job, and it lives in the test suite where it can be checked against the
+shipped bytes without becoming something a caller has to argue with.
 
-`HKSK.Cache.SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector
-travel and a duration — and `FromBlender` builds the ladder from a project's blender.
-`Evaluate` is the runtime's own response, measured exact (§6.1). `Tabulate(x)` is what a
-shipped table says at x, which is the same curve read `SamplerOffset` earlier (§6.2); use
-that one to check or regenerate a table, and `Evaluate` to predict a creature.
+`SpeedSampler` walks a project to its table: `FromProject` finds the sampler, reads the
+variables off it, and returns the states the project declares (key and movement-type
+name, from its `iState_<MOVT>` variables, read from the root graph the character file
+names), every ladder the sampler's answer drives, the compasses those ladders hang
+under with the behaviour file each was defined in, and the compasses a
+`BSiStateTaggingGenerator` puts under each iState value. Every one of those is
+something the graph says. It returns null for the eight projects that have no sampler,
+which is the honest answer: the table is not part of how they move. Over the corpus
+that is 1038 ladders, 142 compasses, 996 arms and 3416 rungs, every rung naming an
+animation and carrying its root motion.
+
+`Sample(arms, direction, x)` answers a heading, blending the two arms bracketing it when
+it falls between them — which is 15 of every 19 headings, since the file samples at 0.05
+and the arms sit at 0.125 (§3.2). Rounding to the nearest arm instead is twenty times
+worse.
+
+`SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector travel and a
+duration — and `FromBlender` builds the ladder from a project's blender. `Evaluate` is
+the runtime's own response, measured exact (§6.1). `Tabulate(x)` is what a shipped table
+says at x, which is the same curve read `SamplerOffset` earlier (§6.2); use that one to
+check or regenerate a table, and `Evaluate` to predict a creature.
+
+**Which compass serves a state is not modelled here at all.** The graph settles it only
+where it tags the state, and for most creatures it does not settle it; the rest is a
+name match, and it sits in `FamilyGuess` in the test suite under that name. A project
+that knows the mapping supplies it, and should not have to route around a library that
+thinks it already knows.
 
 Generation (§8) is not implemented: it needs `top(s)`, which is still authored (§9).
 
