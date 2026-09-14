@@ -828,6 +828,17 @@ No error in travel or duration can be common to unrelated clips; an error in the
 parameter can. Whatever it is happens to the number before the blend sees it, and
 before any clip data is touched.
 
+**And it is not stored anywhere that shipped.** Every float member in [0.030, 0.050]
+across the 107 behaviour graphs the 49 projects reach is a round authored value —
+`hkbClipTrigger.m_localTime` 0.03 to 0.05, `BSLookAtModifier` gains at 0.03 and 0.05,
+`hkbBlendingTransitionEffect.m_duration` 0.033 to 0.05, `hkbClipGenerator.m_enforcedDuration`
+0.03333334, one frame at 30 Hz. None is near 0.0403. `bcbehavior.hkb`, the single
+authoring-side file in the game data, has 0.033, 0.035 and 0.035019 and nothing closer.
+
+So the constant lives in the generator's own code, which did not ship. It is measurable
+from the output and not recoverable from the inputs, and that is where the search ends
+unless the tool turns up.
+
 **It remains unidentified.** Something in the generator fed the blend a parameter
 0.0403 below the x it recorded, the same amount for every creature regardless of ladder
 scale. Measured against the shipped floats with the correction applied:
