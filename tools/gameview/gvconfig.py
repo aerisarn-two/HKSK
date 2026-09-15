@@ -93,13 +93,33 @@ STICK = "\n".join([
     "\t\t\t\t</hkobject>"])
 
 
-def emit(exe, root_path, project_data, character_data, up_axis=2,
+def stick(name, lo, hi):
+    """One of the twelve gamepad-to-variable slots.  Setting lo == hi pins the
+    variable to that value whatever the stick does, which is how a behaviour is
+    driven with no gamepad attached."""
+    return "\n".join([
+        "\t\t\t\t<hkobject>",
+        f"\t\t\t\t\t<hkparam name=\"variableName\">{name}</hkparam>",
+        f"\t\t\t\t\t<hkparam name=\"minValue\">{lo:.6f}</hkparam>",
+        f"\t\t\t\t\t<hkparam name=\"maxValue\">{hi:.6f}</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"minStickValue\">-1.000000</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"maxStickValue\">1.000000</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"stickAxis\">0</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"stick\">0</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"complimentVariableValue\">false</hkparam>",
+        "\t\t\t\t\t<hkparam name=\"negateVariableValue\">false</hkparam>",
+        "\t\t\t\t</hkobject>"])
+
+
+def emit(exe, root_path, project_data, character_data, up_axis=2, sticks=(),
          version="Havok-6.6.0-r1", classversion=4):
     img = R.Image(exe)
     cs = R.classes(img, 0x88d6a0)
     byname = live(img, cs)
     types, ids = types_section(img, cs, byname)
-    sticks = "\n".join([STICK] * 12)
+    slots = [stick(n, v, v) for n, v in sticks]
+    slots += [STICK] * (12 - len(slots))
+    sticks = "\n".join(slots)
     data = f"""\t<hksection name="__data__">
 
 \t\t<hkobject name="#0100" class="hkRootLevelContainer" signature="0xf598a34e">
@@ -162,4 +182,5 @@ def emit(exe, root_path, project_data, character_data, up_axis=2,
 
 if __name__ == '__main__':
     exe, root, proj, char = sys.argv[1:5]
-    sys.stdout.write(emit(exe, root, proj, char))
+    pinned = [(a.split('=')[0], float(a.split('=')[1])) for a in sys.argv[5:]]
+    sys.stdout.write(emit(exe, root, proj, char, sticks=pinned))
