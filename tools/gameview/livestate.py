@@ -41,6 +41,13 @@ class Process:
                                     ctypes.byref(remote), 1, 0)
         return bytes(buf[:got]) if got > 0 else None
 
+    def write(self, addr, data):
+        buf = (ctypes.c_char * len(data)).from_buffer_copy(data)
+        local = _iovec(ctypes.cast(buf, ctypes.c_void_p), len(data))
+        remote = _iovec(ctypes.c_void_p(addr), len(data))
+        return libc.process_vm_writev(self.pid, ctypes.byref(local), 1,
+                                      ctypes.byref(remote), 1, 0) == len(data)
+
     def u32(self, addr):
         d = self.read(addr, 4)
         return struct.unpack('<I', d)[0] if d else None
@@ -185,6 +192,15 @@ def graphs(mem, vtmap):
             if values and array(mem, values + 0x08):
                 found.append(obj)
     return found
+
+
+def set_variables(mem, graph, values):
+    """Write the word variable table directly.  The demo's gamepad slots only
+    reach variables it recognises, and the graph's own initial values are not
+    copied into the live set, so this is how a run is parameterised."""
+    base = mem.u32(mem.u32(graph + 0x50) + 0x08)
+    for i, v in enumerate(values):
+        mem.write(base + 4 * i, struct.pack('<f', float(v)))
 
 
 def variables(mem, graph):

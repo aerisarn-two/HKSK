@@ -77,9 +77,58 @@ def classes(img, ctor_va):
         name = img.cstr(args[0])
         if not name: continue
         out[this] = dict(this=this, name=name, parent=args[1], size=args[2],
+                         enums=args[5], nenums=args[6],
                          members=args[7], nmembers=args[8], defaults=args[9],
                          flags=args[11], version=args[12])
     return out
+
+def enums(img, klass):
+    """The enums a class declares: hkClassEnum is {name, items, numItems, ...}
+    and an item is {value, name}."""
+    out = {}
+    for i in range(klass.get('nenums', 0)):
+        e = klass['enums'] + 20 * i
+        name = img.cstr(img.u32(e))
+        items, n = img.u32(e + 4), img.u32(e + 8)
+        if not name or not items or not n or n > 256:
+            continue
+        out[name] = {}
+        for j in range(n):
+            o = img.off(items + 8 * j)
+            value = struct.unpack_from('<i', img.d, o)[0]
+            out[name][img.cstr(struct.unpack_from('<I', img.d, o + 4)[0])] = value
+    return out
+
+
+def defaults(img, klass, rows):
+    """A class's declared defaults: one int per member, -1 where there is none,
+    followed by the values.  Zero is a real value in Havok, so a member without
+    a default is not the same as a member defaulting to zero."""
+    base = klass.get('defaults')
+    if not base or img.off(base) is None:
+        return {}
+    o = img.off(base)
+    offs = struct.unpack_from('<%di' % len(rows), img.d, o)
+    out = {}
+    for r, off in zip(rows, offs):
+        if off < 0:
+            continue
+        raw = img.d[o + off:o + off + 4]
+        t = r['type']
+        if t == 'TYPE_REAL':
+            out[r['name']] = struct.unpack('<f', raw)[0]
+        elif t == 'TYPE_BOOL':
+            out[r['name']] = bool(raw[0])
+        elif t in ('TYPE_INT8', 'TYPE_UINT8', 'TYPE_ENUM', 'TYPE_FLAGS'):
+            out[r['name']] = raw[0]
+        elif t in ('TYPE_INT16', 'TYPE_UINT16'):
+            out[r['name']] = struct.unpack('<h', raw[:2])[0]
+        elif t in ('TYPE_INT32', 'TYPE_UINT32'):
+            out[r['name']] = struct.unpack('<i', raw)[0]
+        elif t == 'TYPE_CSTRING':
+            out[r['name']] = img.cstr(struct.unpack('<I', raw)[0])
+    return out
+
 
 def members(img, klass, byaddr):
     rows = []

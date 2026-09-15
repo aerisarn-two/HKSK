@@ -77,6 +77,37 @@ The node tree is walked through the reflected child members rather than the
 internal active-node list, which is not reflected. And Yama restricts ptrace to
 descendants, so the tool launches the runtime itself instead of attaching.
 
+## Writing a behaviour to run
+
+`gvbehavior.py` emits the graph itself, so a test can describe a tree in Python
+and have the runtime evaluate it:
+
+    Behaviour(variables={'Left': 0.0, 'Right': 0.0},
+              root=Blend('Root', [(1.0, Clip('ClipL', anim_a)),
+                                  (1.0, Clip('ClipR', anim_b))]))
+
+Every member comes from the runtime's own class definition, in its order, with
+its enum values and -- this matters -- **its defaults**. Zero is a real value in
+Havok, so a member with no declared default is not a member defaulting to zero:
+`indexOfSyncMasterChild` defaults to -1, and emitting 0 instead sends the
+blender indexing its sync master into a null child array. `hkClass::m_defaults`
+is one int per member, -1 where there is none, followed by the values.
+
+Two things about loading it. The reader is chosen by **extension**: a generated
+graph named `.hkx` takes the binary path, whose contents version comes back null
+and is then strcmp'd, so write `.xml`. And a node's children only exist if the
+child member is actually set -- a blender whose arms are built but never
+assigned loads happily and evaluates nothing.
+
+**Open: bindings in a generated file are not applied.** The graph loads,
+activates and evaluates -- two arms live, both clips active -- and its
+`variableInitialValues` read back correctly from memory. But the live variable
+set stays zero, and writing either side of a binding shows neither is copied to
+the other, so with no node using them the variables are discarded each frame.
+`offsetInObjectPlusOne` is computed at activation by resolving `memberPath`
+against the node's class; that resolution is where to look next. Until then a
+run is parameterised by writing node members directly, which does persist.
+
 ## The runtime tells you none of this by itself
 
 Everything above is read out of its memory. It reports nothing. Checked and
