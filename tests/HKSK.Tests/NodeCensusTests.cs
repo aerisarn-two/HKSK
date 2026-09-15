@@ -79,4 +79,29 @@ public sealed class NodeCensusTests
         Assert.Equal(2311, instances["hkbModifierGenerator"]);
         Assert.Equal(791, instances["hkbManualSelectorGenerator"]);
     }
+
+    /// <summary>Every expression the shipped graphs evaluate.</summary>
+    /// <remarks>
+    /// The evaluator has to cover this and nothing else, so the grammar is taken
+    /// from the corpus rather than from Havok's.
+    /// </remarks>
+    [CorpusFact]
+    public void ExpressionCensus()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        Dictionary<string, int> seen = [];
+
+        foreach (ProjectLocation at in cache.LocateSpeedProjects().Where(p => p.Found))
+            foreach (ProjectStep step in ProjectWalk.Of(at.ProjectFile!).Steps)
+                if (step.Node is hkbExpressionData data && data.m_expression is { Length: > 0 })
+                    seen[data.m_expression] = seen.GetValueOrDefault(data.m_expression) + 1;
+
+        StringBuilder text = new();
+        text.AppendLine($"{seen.Count} distinct expressions");
+        foreach ((string expression, int count) in seen.OrderByDescending(p => p.Value))
+            text.AppendLine($"{count,6}  {expression}");
+
+        File.WriteAllText(Path.Combine(Path.GetTempPath(), "expressions.txt"), text.ToString());
+        Assert.NotEmpty(seen);
+    }
 }

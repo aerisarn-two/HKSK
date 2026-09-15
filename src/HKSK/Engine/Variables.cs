@@ -19,26 +19,35 @@ namespace HKSK.Engine;
 /// </remarks>
 public sealed class Variables
 {
-    private readonly int[] _words;
-    private readonly VariableType[] _types;
     private readonly string[] _names;
     private readonly Dictionary<string, int> _byName;
+    private readonly VariableSpace _space;
+    private readonly string[] _propertyNames;
 
-    private Variables(int[] words, VariableType[] types, string[] names)
+    private Variables(int[] words, VariableType[] types, string[] names,
+                      VariableSpace? space = null, string[]? propertyNames = null)
     {
-        _words = words;
-        _types = types;
         _names = names;
+        _propertyNames = propertyNames ?? [];
+        _space = space ?? new VariableSpace();
 
         _byName = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int i = 0; i < names.Length; i++) _byName.TryAdd(names[i], i);
+
+        for (int i = 0; i < names.Length; i++) _space.Declare(names[i], words[i], types[i]);
     }
+
+    /// <summary>The character-wide store these indices name into.</summary>
+    public VariableSpace Space => _space;
 
     /// <summary>A table with nothing in it.</summary>
     public static Variables Empty { get; } = new([], [], []);
 
     /// <summary>The table a graph starts with, or an empty one when it declares none.</summary>
-    public static Variables Of(hkbBehaviorGraph graph)
+    public static Variables Of(hkbBehaviorGraph graph) => Of(graph, null);
+
+    /// <summary>The table a graph declares, sharing values by name with its siblings.</summary>
+    public static Variables Of(hkbBehaviorGraph graph, VariableSpace? space)
     {
         hkbBehaviorGraphData? data = graph.m_data;
         IList<hkbVariableInfo> infos = data?.m_variableInfos ?? [];
@@ -57,11 +66,29 @@ public sealed class Variables
             named[i] = i < names.Count ? names[i] : $"#{i}";
         }
 
-        return new Variables(words, types, named);
+        return new Variables(words, types, named, space,
+            [.. data?.m_stringData?.m_characterPropertyNames ?? []]);
+    }
+
+    /// <summary>A table built directly, for a graph assembled rather than read.</summary>
+    public static Variables Of(params (string Name, float Value)[] reals)
+    {
+        int[] words = new int[reals.Length];
+        VariableType[] types = new VariableType[reals.Length];
+        string[] names = new string[reals.Length];
+
+        for (int i = 0; i < reals.Length; i++)
+        {
+            words[i] = BitConverter.SingleToInt32Bits(reals[i].Value);
+            types[i] = VariableType.VARIABLE_TYPE_REAL;
+            names[i] = reals[i].Name;
+        }
+
+        return new Variables(words, types, names);
     }
 
     /// <summary>How many word variables the graph declares.</summary>
-    public int Count => _words.Length;
+    public int Count => _names.Length;
 
     /// <summary>The index of a name, or -1.</summary>
     public int IndexOf(string name) => _byName.TryGetValue(name, out int at) ? at : -1;
@@ -70,51 +97,51 @@ public sealed class Variables
     public string NameOf(int index) => _names[index];
 
     /// <summary>How the slot is read.</summary>
-    public VariableType TypeOf(int index) => _types[index];
+    public VariableType TypeOf(int index) => _space.TypeOf(_names[index]);
 
     /// <summary>The raw slot, whatever its type.</summary>
-    public int Word(int index) => _words[index];
+    public int Word(int index) => _space.Word(_names[index]);
 
     /// <summary>The slot as a real.</summary>
-    public float Real(int index) => BitConverter.Int32BitsToSingle(_words[index]);
+    public float Real(int index) => BitConverter.Int32BitsToSingle(Word(index));
 
     /// <summary>The slot as an integer.</summary>
-    public int Int(int index) => _words[index];
+    public int Int(int index) => Word(index);
 
     /// <summary>The slot as a bool.</summary>
-    public bool Bool(int index) => _words[index] != 0;
+    public bool Bool(int index) => Word(index) != 0;
 
     /// <summary>
     /// The slot as a real whatever it is declared as, which is what a member of
     /// real type sees when the variable is bound to it.
     /// </summary>
-    public float AsReal(int index) => _types[index] switch
+    public float AsReal(int index) => TypeOf(index) switch
     {
         VariableType.VARIABLE_TYPE_REAL => Real(index),
-        _ => _words[index],
+        _ => Word(index),
     };
 
     /// <summary>
     /// The slot as an integer whatever it is declared as. A real-typed variable
     /// bound to an integer member is truncated, not reinterpreted.
     /// </summary>
-    public int AsInt(int index) => _types[index] switch
+    public int AsInt(int index) => TypeOf(index) switch
     {
         VariableType.VARIABLE_TYPE_REAL => (int)Real(index),
-        _ => _words[index],
+        _ => Word(index),
     };
 
     /// <summary>Writes a real into a slot, in the representation its type calls for.</summary>
     public void Set(int index, float value) =>
-        _words[index] = _types[index] == VariableType.VARIABLE_TYPE_REAL
+        _space.Set(_names[index], TypeOf(index) == VariableType.VARIABLE_TYPE_REAL
             ? BitConverter.SingleToInt32Bits(value)
-            : (int)value;
+            : (int)value);
 
     /// <summary>Writes an integer into a slot.</summary>
     public void Set(int index, int value) =>
-        _words[index] = _types[index] == VariableType.VARIABLE_TYPE_REAL
+        _space.Set(_names[index], TypeOf(index) == VariableType.VARIABLE_TYPE_REAL
             ? BitConverter.SingleToInt32Bits(value)
-            : value;
+            : value);
 
     /// <summary>Writes by name. False when no such variable is declared.</summary>
     public bool Set(string name, float value)
@@ -128,4 +155,11 @@ public sealed class Variables
 
     /// <summary>Every name, in index order.</summary>
     public IReadOnlyList<string> Names => _names;
+
+    /// <summary>
+    /// The character property an index names, in this file. Property indices are
+    /// per file exactly as variable indices are.
+    /// </summary>
+    public string? PropertyNameOf(int index) =>
+        index >= 0 && index < _propertyNames.Length ? _propertyNames[index] : null;
 }

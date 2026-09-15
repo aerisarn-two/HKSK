@@ -101,4 +101,39 @@ public sealed class ActiveGeneratorTests
             string.Join("\n", active.Select(a => a.ToString())));
         Assert.NotEmpty(active);
     }
+
+    /// <summary>The deer's iState follows its speed, through the expression pass.</summary>
+    /// <remarks>
+    /// <c>iMovementSpeed = cond((Speed &lt; 100), 0, 1)</c> and
+    /// <c>iState = iState_DeerDefault + iMovementSpeed</c>: two expressions on a
+    /// modifier, resolved by name because the file stores no index, deciding which
+    /// locomotion block the creature is in. This is the join the speed tables need.
+    /// </remarks>
+    [CorpusFact]
+    public void TheDeersStateFollowsItsSpeed()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        ProjectLocation at = cache.LocateSpeedProjects().First(p => p.Name == "DeerProject");
+
+        int Walking = StateAt(at.ProjectFile!, 0f), Running = StateAt(at.ProjectFile!, 300f);
+
+        Assert.Equal(20, Walking);
+        Assert.Equal(21, Running);
+    }
+
+    private static int StateAt(string projectHkx, float speed)
+    {
+        Evaluation run = ActiveGenerators.Of(projectHkx, tables =>
+        {
+            foreach (Variables variables in tables.Values) variables.Set("Speed", speed);
+        });
+
+        foreach (Variables variables in run.Variables.Values)
+        {
+            int at = variables.IndexOf("iState");
+            if (at >= 0 && variables.AsInt(at) != 0) return variables.AsInt(at);
+        }
+
+        return 0;
+    }
 }

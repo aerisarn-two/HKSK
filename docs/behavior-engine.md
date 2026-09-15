@@ -147,7 +147,54 @@ Held by `ActiveGeneratorTests`: all 49 projects resolve, **no state machine
 anywhere fails to pick a state**, and every project selects down to at least one
 clip.
 
-### 4.1 Two things the files do not say
+### 4.1 Modifiers, expressions and character properties
+
+`hkbEvaluateExpressionModifier` and the expression language are implemented, with
+`hkbModifierList` and `BSIStateManagerModifier`. The grammar is taken from the
+**261 distinct expressions the game ships** (`ExpressionCensus`): two forms,
+`variable = expression` and `Event if condition` -- the condition's parentheses
+are optional -- seven functions (`cond`, `fabs`, `clamp`, `max`, `min`, `sind`,
+`cos`) and the usual operators. All 261 parse (`TheWholeCorpusParses`).
+
+Three things about it:
+
+- **`m_assignmentVariableIndex` is -1 on all 691 expressions.** The runtime
+  resolves the name at activation and the file carries nothing, so the evaluator
+  resolves names itself.
+- **A variable name may begin with digits.** `1stPRot` is real; a leading run of
+  digits is a name when a letter follows and a number when it does not.
+- **`cond` is Bethesda's.** Havok 6.6's compiler emits zero tokens for it, so it
+  cannot be checked against the oracle. It is a three-argument select, and only
+  the branch taken has to resolve -- a shared file names constants that only some
+  of its creatures declare.
+
+Modifiers run on the way down, before the generator they sit above, and the walk
+iterates to a fixed point because what a modifier writes decides what the machines
+below it select.
+
+### 4.2 How one file serves ten creatures
+
+Ten quadrupeds load `quadrupedbehavior.hkx`, whose root modifier list holds a
+modifier list per creature -- Bear, Canine, Cow, Deer, Goat, Horker, Mammoth,
+SabreCat, Skeever -- **every one of them stored as enabled**. What picks one is a
+binding on `enable` of type `BINDING_TYPE_CHARACTER_PROPERTY`, and the properties
+are named `IsBear`, `IsDeer`, `IsSkeever` and so on.
+
+**Character properties are not in the behaviour graph.** They live in the
+character file's `hkbCharacterData`, which visiting the graph never reaches, so
+the engine loads it separately. Read the field instead of the binding and all
+nine creatures' modifiers run: the deer came out with the skeever's `iState`.
+
+Values are shared by name across a character's files while indices stay per file,
+and the same holds for property indices. `iState_DeerDefault` is 20 in the deer's
+own file and 10 in the shared one, and it is the deer's that the speed tables are
+numbered by.
+
+Held by `TheDeersStateFollowsItsSpeed`: the deer's `iState` is **20 at rest and 21
+at speed 300**, through `iMovementSpeed = cond((Speed < 100), 0, 1)` and
+`iState = iState_DeerDefault + iMovementSpeed`.
+
+### 4.3 Two things the files do not say
 
 **Variable indices are per file.** Each behaviour packfile carries its own
 `hkbBehaviorGraphData`, so a binding's `variableIndex` means nothing except
