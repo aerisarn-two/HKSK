@@ -51,9 +51,36 @@ A project's search paths are the **absolute** authoring paths, baked into its
 `hkbProjectStringData` — `C:\work\tremor\...` for the shipped tutorials. `rootPath`
 in the config does not override them, so symlink them into the Wine prefix.
 
-## There is no state log, and this is why
+## Reading the state out of the running evaluator
 
-The runtime reports no behaviour state. Checked and ruled out:
+`livestate.py` prints the live graph: the variable table, and every node with
+its runtime fields.
+
+    hkbBehaviorGraph @0x2c10100
+      variables: [0.25, 0.75]
+       hkbBlenderGenerator      numActiveChildren: 2  indexOfSyncMasterChild: -1
+         hkbBlenderGeneratorChild  weight: 1.0  isActive: 1
+           hkbClipGenerator       userControlledTimeFraction: 0.25
+         hkbBlenderGeneratorChild  weight: 1.0  isActive: 1
+           hkbClipGenerator       userControlledTimeFraction: 0.75
+
+Which arm of a blend is live, which state a machine is in, how long it has been
+there -- `numActiveChildren`, `isActive`, `weight`, `currentStateId`,
+`previousStateId`, `timeInState` -- are all reflected members, so the reflection
+that writes the input files also reads the state back.
+
+Three things make it work. The runtime keeps a pointer map from vtable to
+hkClass, and in memory an entry is the two words side by side, so any object
+can be named from its first word; an hkClass is itself `{name, parent}` and
+looks the same, which is why keys that are known class addresses are rejected.
+The node tree is walked through the reflected child members rather than the
+internal active-node list, which is not reflected. And Yama restricts ptrace to
+descendants, so the tool launches the runtime itself instead of attaching.
+
+## The runtime tells you none of this by itself
+
+Everything above is read out of its memory. It reports nothing. Checked and
+ruled out:
 
 - `-rl0..5` is the physics report level; it prints nothing here and writes no file.
 - The statistics packet is the monitor stream: 71 named timers a frame, but they
