@@ -33,6 +33,8 @@ public sealed class SpeedDataRebuildTests
     private int _evaluatorAgreed, _evaluatorDiffered, _evaluatorMissed;
     private readonly List<string> _mismatches = [];
     private int _sharedPoints, _sharedHeld, _newPoints, _newHeld;
+    private int _keyHeld, _keyPoints;
+    private readonly List<string> _perKey = [];
 
     /// <summary>The 19 headings every shipped block carries, at 0.05 apart.</summary>
     private static IEnumerable<float> Headings()
@@ -143,7 +145,8 @@ public sealed class SpeedDataRebuildTests
 
                     arms = paired is { } chosen
                         ? built.First(b => b.State.Equals(chosen)).Arms
-                        : StateAt(graph, walk, properties, actor, built, parameter, key);
+                        : LikeAnother(built, constants, movements, type)
+                          ?? StateAt(graph, walk, properties, actor, built, parameter, key);
                 }
 
                 if (arms is null) { unbuildable++; continue; }
@@ -227,6 +230,76 @@ public sealed class SpeedDataRebuildTests
         // no locomotion state in the ConsumersIn sense and no arms were built for
         // them. Take the compass straight off the graph instead.
         return live.Count == 0 ? null : ArmsAround(live[0].Blend, run.Walk ?? walk, actor);
+    }
+
+    /// <summary>
+    /// The state a key borrows because its movement type walks at another key's
+    /// speeds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two of the player's movement types are perks rather than stances.
+    /// <c>NPCBowDrawnQuickShot</c> and <c>NPCBlockingShieldCharge</c> carry the walk
+    /// speeds of <c>NPCBowDrawn</c> and <c>NPCBlocking</c> exactly -- 120, 65.11,
+    /// 74.89, 76.81 and 81, 71, 81, 81 -- and replace only the run speeds, with
+    /// <c>NPCDefault</c>'s 370 and 205.25. So the perk changes how fast the player
+    /// may run, not what animation plays, and the shipped tables say the same: key
+    /// 16's records are key 3's and key 17's are key 4's, point for point.
+    /// </para>
+    /// <para>
+    /// The graph does not declare either, and the speed pairing cannot help. It
+    /// scores a state by how many of a movement type's eight speeds are rungs, so
+    /// for key 16 the bow ladder matches the four walks and the default ladder
+    /// matches the four runs, and it ties and says nothing; for key 17 nothing
+    /// matches at all, because the block ladder's rungs are not the movement type's
+    /// numbers.
+    /// </para>
+    /// <para>
+    /// <strong>The masters settle it without the shipped file.</strong> Where an
+    /// undeclared key's movement type walks at exactly the same four speeds as a
+    /// declared key's, it is that key's locomotion -- and the walk speeds are the
+    /// ones that matter, because a speed table is read at a goal speed and the
+    /// ladder it indexes is the same ladder either way.
+    /// </para>
+    /// </remarks>
+    private static List<(float Direction, SpeedLadder Ladder)>? LikeAnother(
+        List<(LocomotionState State, List<(float Direction, SpeedLadder Ladder)> Arms)> built,
+        IReadOnlyDictionary<string, int> constants,
+        IReadOnlyDictionary<string, MovementType> movements,
+        MovementType? mine)
+    {
+        if (mine is not { } type) return null;
+
+        List<(float Direction, SpeedLadder Ladder)>? found = null;
+
+        foreach ((string constant, int key) in constants)
+        {
+            if (!movements.TryGetValue(constant["iState_".Length..], out MovementType other)) continue;
+            if (!WalksAlike(type, other)) continue;
+
+            var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
+            if (arms is null) continue;
+
+            // Two declared keys walking alike would make this ambiguous, so it only
+            // answers where exactly one does.
+            if (found is not null) return null;
+            found = arms;
+        }
+
+        return found;
+    }
+
+    /// <summary>Whether two movement types walk at the same four speeds.</summary>
+    private static bool WalksAlike(MovementType a, MovementType b)
+    {
+        for (int quarter = 0; quarter < 4; quarter++)
+        {
+            (float mine, float _) = a.At(quarter * 0.25f);
+            (float theirs, float _) = b.At(quarter * 0.25f);
+            if (mine <= 0f || MathF.Abs(mine - theirs) > 0.005f) return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -567,6 +640,7 @@ public sealed class SpeedDataRebuildTests
                 // Reached by a tag over a subtree with no ladder, which is the graph
                 // declaring it as plainly as a tag over a locomotion state does.
                 bool flat = !declared && arms is not null;
+                bool borrowed = false;
 
                 if (arms is null)
                 {
@@ -575,12 +649,17 @@ public sealed class SpeedDataRebuildTests
 
                     arms = paired is { } chosen
                         ? built.First(b => b.State.Equals(chosen)).Arms
-                        : StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
+                        : LikeAnother(built, constants, movements, type);
+
+                    // Borrowed from a key that walks alike, which is the masters
+                    // speaking rather than the graph, but it is not a guess either.
+                    borrowed = arms is not null;
+                    arms ??= StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
                 }
 
                 if (arms is null) continue;
 
-                bool shared = declared || flat || paired is not null;
+                bool shared = declared || flat || borrowed || paired is not null;
                 if (declared)
                 {
                     _declared++;
@@ -626,13 +705,20 @@ public sealed class SpeedDataRebuildTests
                         if (shared) { _sharedPoints++; if (ok) _sharedHeld++; }
                         else { _newPoints++; if (ok) _newHeld++; }
 
-                        if (ok) { pointsHeld++; _projectHeld++; } else recordHolds = false;
+                        _keyPoints++;
+                        if (ok) { pointsHeld++; _projectHeld++; _keyHeld++; } else recordHolds = false;
                     }
 
                     if (recordHolds) recordsHeld++; else blockHolds = false;
                 }
 
                 if (blockHolds) blocksHeld++;
+
+                _perKey.Add($"{name,-24} key {mine.Key,-3} " +
+                            $"{(declared ? "declared" : flat ? "flat" : paired is not null ? "paired" : borrowed ? "borrowed" : "evaluated"),-9} " +
+                            $"'{(built.FirstOrDefault(b => ReferenceEquals(b.Arms, arms)).State.State?.m_name ?? "(flat)"),-30}' " +
+                            $"{_keyHeld,4}/{_keyPoints,-4} arms={arms.Count}");
+                _keyHeld = _keyPoints = 0;
             }
 
             per.Add($"{name,-28} {_projectHeld,6}/{_projectPoints,-6} " +
@@ -651,23 +737,24 @@ public sealed class SpeedDataRebuildTests
             string.Join("\n", _mismatches) + "\n" +
             $"points on shared blocks: {_sharedHeld}/{_sharedPoints}\n" +
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
-            string.Join("\n", per.OrderByDescending(x => x)));
+            string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
         Assert.Equal(76, blocks);
         Assert.Equal(1444, records);
         Assert.Equal(16592, points);
 
-        // 14225 against the 10145 the pairing alone reached, over 76 blocks against
-        // 51. The rate falls from 87% to 86% because the 15 blocks the evaluator
-        // supplies are the harder ones, holding 1914 of 2909.
-        Assert.Equal(14225, pointsHeld);
-        Assert.Equal(1094, recordsHeld);
-        Assert.Equal(44, blocksHeld);
+        // 14989 against the 10145 the pairing alone reached, over 76 blocks against
+        // 51, and 90% of the shipped points rather than 87% -- so the blocks added
+        // since are no longer the harder ones on average. The 11 the evaluator still
+        // supplies hold 1822 of 2041.
+        Assert.Equal(14989, pointsHeld);
+        Assert.Equal(1164, recordsHeld);
+        Assert.Equal(46, blocksHeld);
 
         Assert.Equal(25, _declared);
-        Assert.Equal(61, _sharedBlocks);
-        Assert.Equal(15, _newBlocks);
-        Assert.Equal(12311, _sharedHeld);
+        Assert.Equal(65, _sharedBlocks);
+        Assert.Equal(11, _newBlocks);
+        Assert.Equal(13167, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,

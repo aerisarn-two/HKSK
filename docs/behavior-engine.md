@@ -379,6 +379,29 @@ answered. The second half of that is not optional: the falmer's `Bow_iStateGen`
 guards eight ladders, and taking one clip out of them is a moment rather than a
 curve -- it cost 150 of its points until the condition was added.
 
+### A perk is not a stance
+
+Two of the player's movement types change what the game *allows* rather than what
+it plays. `NPCBowDrawnQuickShot` carries `NPCBowDrawn`'s four walk speeds exactly
+-- 120, 65.11, 74.89, 76.81 -- and replaces only the runs, with `NPCDefault`'s 370
+and 205.25; `NPCBlockingShieldCharge` does the same to `NPCBlocking`. The shipped
+tables agree: key 16's records are key 3's and key 17's are key 4's, point for
+point.
+
+Neither is declared, and the speed pairing cannot help. It scores a state by how
+many of a movement type's eight speeds are rungs, so for key 16 the bow ladder
+matches the four walks and the default ladder matches the four runs -- it ties and
+says nothing -- and for key 17 nothing matches at all.
+
+**The masters settle it without the shipped file.** Where an undeclared key's
+movement type walks at exactly the same four speeds as a declared key's, and only
+one declared key does, it is that key's locomotion. Key 16 goes from 16 of its 187
+points to 181 and key 17 from 38 of 247 to all 247, which takes both players to
+97.3%. It is tried after the pairing rather than before, because a state whose
+rungs match the movement type's own speeds is more direct evidence than two
+movement types resembling each other -- the falmer has a key where the pairing is
+right and this is not.
+
 ### The stance
 
 What remains on the player is one thing: the graph is not driven into a stance.
