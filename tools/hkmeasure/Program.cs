@@ -71,8 +71,273 @@ static class Probe
                           new hkVector4(1, 1, 1, 1));
 
 
+    // Phase 3.  Watch a behaviour decide.  The question the static analysis
+    // could not answer is which locomotion state serves which iState key, and
+    // for most creatures the graph answers it with an expression:
+    //
+    //     iMovementSpeed = cond((Speed < 100), 0, 1)
+    //     iState         = iState_DeerDefault + iMovementSpeed
+    //
+    // with the state machine binding startStateId to that same iMovementSpeed.
+    // This builds exactly that shape and sweeps Speed, printing iState beside
+    // the state actually entered, so the pairing is observed rather than
+    // inferred.  The deer is the creature it reproduces.
+    static void States(string path, float from, float to, int steps)
+    {
+        var env = Root(new hbtHavokEnvironment());
+
+        object root = Root(HavokPackfile.load(path));
+        var rlc = root as hkRootLevelContainer;
+        hkaAnimationContainer ac = null;
+        if (rlc != null)
+            for (int i = 0; i < rlc.m_namedVariants.Count; i++)
+                if (rlc.m_namedVariants[i].m_variant is hkaAnimationContainer c) ac = c;
+        else ac = root as hkaAnimationContainer;
+        if (ac == null) { Console.WriteLine("[load] no hkaAnimationContainer"); return; }
+
+        var ch = Root(Methods.createCharacter());
+        Methods.setSkeleton(ch, (IntPtr)ac.m_skeletons[0]);
+
+        // one clip per state, so the state that ran is visible in the motion too
+        var clips = new List<hkbClipGenerator>();
+        for (int i = 0; i < ac.m_bindings.Count && i < 2; i++)
+        {
+            var clip = Root(new hkbClipGenerator());
+            clip.m_name = "clip" + i;
+            clip.m_animationName = "clip" + i;
+            clip.m_playbackSpeed = 1f;
+            clip.m_animationBindingIndex = -1;
+            clip.m_mode = hkbClipGenerator.PlaybackMode.MODE_LOOPING;
+            Methods.setAnimationBinding(clip, (IntPtr)ac.m_bindings[i]);
+            clips.Add(clip);
+        }
+
+        // the machine: state 0 walks, state 1 runs, chosen by startStateId
+        var machine = Root(new hkbStateMachine());
+        machine.m_name = "Locomotion";
+        machine.m_startStateId = 0;
+        machine.m_syncVariableIndex = -1;
+        machine.m_maxSimultaneousTransitions = 32;
+        for (int i = 0; i < clips.Count; i++)
+        {
+            var info = Root(new hkbStateMachine.StateInfo());
+            info.m_name = i == 0 ? "WalkState" : "RunState";
+            info.m_stateId = i;
+            info.m_probability = 1f;
+            info.m_enable = true;
+            info.m_generator = clips[i];
+            machine.m_states.Add(info);
+        }
+
+        var expr = Root(new hkbEvaluateExpressionModifier());
+        expr.m_name = "Locomotion_EEM";
+        expr.m_enable = true;
+
+        var data = Root(new hkbExpressionDataArray());
+        string exprEnv = Environment.GetEnvironmentVariable("EXPR");
+        string[] texts = exprEnv != null
+            ? exprEnv.Split('|')
+            : new[] { "sel = cond((Speed < 100), 0, 1)", "iState = iState_Base + sel" };
+        foreach (string text in texts)
+        {
+            var e = Root(new hkbExpressionData());
+            e.m_expression = text;
+            e.m_assignmentVariableIndex = -1;
+            e.m_assignmentEventIndex = -1;
+            data.m_expressionsData.Add(e);
+        }
+        expr.m_expressions = data;
+
+        var graph = Root(Methods.createBehavior());
+        var modGen = Root(Methods.createModifierGenerator(expr, machine));
+        Methods.setRootGenerator(graph, modGen);
+
+        // a graph that discards its variables when inactive loses whatever the
+        // modifier wrote between the deactivate and the next read
+        graph.m_variableMode = hkbBehaviorGraph.VariableMode.VARIABLE_MODE_MAINTAIN_VALUES_WHEN_INACTIVE;
+        Console.WriteLine($"[graph] variableMode={graph.m_variableMode} " +
+                          $"modifier={(modGen.m_modifier == null ? "null" : modGen.m_modifier.m_name)} " +
+                          $"generator={(modGen.m_generator == null ? "null" : "set")}");
+
+        int vPb = Methods.addVariableReal(graph, "pb");
+        int vSpeed = Methods.addVariableReal(graph, "Speed");
+        int vSel = Methods.addVariableInt32(graph, "sel");
+        int vState = Methods.addVariableInt32(graph, "iState");
+        int vBase = Methods.addVariableInt32(graph, "iState_Base");
+        Console.WriteLine($"[vars] pb={vPb} Speed={vSpeed} sel={vSel} iState={vState} iState_Base={vBase}");
+        var gd = graph.m_data;
+        Console.WriteLine($"[vars] data={(gd == null ? "NULL" : "ok")} " +
+                          $"infos={(gd?.m_variableInfos == null ? -1 : gd.m_variableInfos.Count)} " +
+                          $"names={(gd?.m_stringData?.m_variableNames == null ? -1 : gd.m_stringData.m_variableNames.Count)} " +
+                          $"initial={(gd?.m_variableInitialValues?.m_wordVariableValues == null ? -1 : gd.m_variableInitialValues.m_wordVariableValues.Count)}");
+
+        // startStateId <- sel, the binding that makes the key and the state one number
+        // observable channel: if the modifier really runs, a clip whose playback
+        // speed is bound to a variable it writes will report a different duration.
+        var clipBind = Root(new hkbVariableBindingSet());
+        var pbBind = Root(new hkbVariableBindingSet.Binding());
+        pbBind.m_memberPath = "playbackSpeed";
+        pbBind.m_variableIndex = vPb;
+        pbBind.m_bindingType = 0;
+        clipBind.m_bindings.Add(pbBind);
+        clips[0].m_variableBindingSet = clipBind;
+
+        var bind = Root(new hkbVariableBindingSet());
+        var one = Root(new hkbVariableBindingSet.Binding());
+        one.m_memberPath = "startStateId";
+        one.m_variableIndex = vSel;
+        one.m_bindingType = 0;
+        bind.m_bindings.Add(one);
+        machine.m_variableBindingSet = bind;
+
+        var ctx = Root(new hkbContext());
+        // A context built by hand has no project data, and the public generate
+        // path walks into it -- that is where setCharacter was faulting.
+        ctx.m_projectData = Root(Methods.createProjectData());
+        Methods.setCharacter(ctx, ch);
+        Methods.setUpVector(ctx, new hkVector4(0, 0, 1, 0));
+        Console.WriteLine($"[ctx] projectData={(ctx.m_projectData == null ? "null" : "ok")} " +
+                          $"characterSetup={(Methods.getCharacterSetup(ch) == null ? "NULL" : "ok")} " +
+                          $"numBones={Methods.getNumBones(ch)}");
+
+        // The Tool registers each character with the environment before stepping.
+        // addCharacter takes the unmanaged hkbCharacter, which `using Havok` hides
+        // behind the managed wrapper of the same name -- hence global::.
+        // The public overload is the one the Tool drives, and it is the one that
+        // runs the modifier pass -- the inner per-character generate the blend
+        // sweep uses skips it, which is why an expression compiled but never ran.
+        var chars = new List<hkbCharacter> { ch };
+        var graphs = new List<hkbBehaviorGraph> { graph };
+        var ctxs = new List<hkbContext> { ctx };
+        var qIn = new List<List<hkbEvent>> { new List<hkbEvent>() };
+        var qOut = new List<List<hkbEvent>> { new List<hkbEvent>() };
+        var flagsA = new List<bool> { false };   // stateChanged
+        var flagsB = new List<bool> { false };   // variablesChanged
+        var bones = new List<int> { 1 };
+
+        // generate(characters, behaviors, allCharactersEventQueue, contexts,
+        //          generatorOutputListener, stateChanged, variablesChanged,
+        //          numBones, worldUp, timestep, step, isfirstCharacterAdditive,
+        //          eventQueueOut) -- worldUp is a value type and must not be null.
+        var worldUp = new hkVector4(0, 0, 1, 0);
+
+        Action Step = () => Methods.generate(
+            chars, graphs, qIn, ctxs, null, flagsA, flagsB, bones, worldUp,
+            1f / FPS, true, false, qOut);
+
+        Console.WriteLine();
+        Console.WriteLine("     Speed     sel   iState   stateId  stateName");
+
+        for (int s = 0; s <= steps; s++)
+        {
+            float speed = steps == 0 ? from : from + (to - from) * s / steps;
+
+            // Two passes.  The expression computes sel during generate, but the
+            // machine reads startStateId when it activates -- so the first pass
+            // works out sel and the second lets the machine act on it.  That
+            // ordering is itself a finding: within one frame the state lags the
+            // key by exactly one activation.
+            int sel = 0, state = 0, id = -1;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                // set on the template first: activate() clones, and a value written
+                // after the clone may not reach the instance that runs.
+                Methods.setVariableValueInt32(graph, vBase, 20);      // iState_DeerDefault
+                Methods.setVariableValueReal(graph, vSpeed, speed);
+                if (pass > 0) Methods.setVariableValueInt32(graph, vSel, sel);
+
+                Methods.activate(graph, ctx);
+                for (int i = 0; i < clips.Count; i++)
+                    Methods.setAnimationBinding(clips[i], (IntPtr)ac.m_bindings[i]);
+
+                Methods.setVariableValueInt32(graph, vBase, 20);
+                Methods.setVariableValueReal(graph, vSpeed, speed);
+
+                for (int f = 0; f < 4; f++) Step();
+
+                sel = Methods.getVariableValueInt32(graph, vSel);
+                state = Methods.getVariableValueInt32(graph, vState);
+                id = Methods.getCurrentStateId(machine);
+
+                if (s == 0)
+                {
+                    var cs = expr.m_compiledExpressionSet;
+                    Console.WriteLine($"[pass {pass}] Base={Methods.getVariableValueInt32(graph, vBase)} " +
+                                      $"Speed={F(Methods.getVariableValueReal(graph, vSpeed))} " +
+                                      $"expr={(expr.m_expressions == null ? "null" : expr.m_expressions.m_expressionsData.Count.ToString())} " +
+                                      $"compiled={(cs == null ? "NULL" : cs.m_rpn.Count + " token, " + cs.m_numExpressions + " espressioni")}");
+                    if (cs != null)
+                    {
+                        Console.WriteLine($"        starts=[{string.Join(",", System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Range(0, cs.m_expressionToRpnIndex.Count), k => cs.m_expressionToRpnIndex[k].ToString())))}]");
+                        for (int t = 0; t < cs.m_rpn.Count && t < 16; t++)
+                            Console.WriteLine($"        rpn[{t}] op={cs.m_rpn[t].m_operator} data={F(cs.m_rpn[t].m_data)} type={cs.m_rpn[t].m_type}");
+                    }
+                    Console.WriteLine($"        clip0 durationLocalTime={F(Methods.getDurationLocalTime(clips[0]))} " +
+                                      $"pb(read)={F(Methods.getVariableValueReal(graph, vPb))}");
+                    for (int k = 0; k < data.m_expressionsData.Count; k++)
+                        Console.WriteLine($"        expr[{k}] assignVar={data.m_expressionsData[k].m_assignmentVariableIndex}" +
+                                          $" assignEvt={data.m_expressionsData[k].m_assignmentEventIndex}" +
+                                          $"  \"{data.m_expressionsData[k].m_expression}\"");
+                }
+
+                if (pass == 0) Methods.deactivate(graph, ctx);
+            }
+
+            Console.WriteLine($"  {F(speed),8}  {sel,6}  {state,7}  {id,8}  {Methods.getStateName(machine)}");
+            Methods.deactivate(graph, ctx);
+        }
+    }
+
+    // Discovery, not production: the assembly only loads under its own runtime,
+    // so the one way to see what it offers is to ask it there.
+    static void Api(string filter)
+    {
+        var asm = typeof(Methods).Assembly;
+        foreach (var t in asm.GetTypes())
+        {
+            if (!t.IsPublic) continue;
+            if (filter != null && t.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+            var members = new List<string>();
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            {
+                if (m.IsSpecialName) continue;
+                var ps = new List<string>();
+                foreach (var pi in m.GetParameters()) ps.Add(pi.ParameterType.Name + " " + pi.Name);
+                members.Add($"    {m.ReturnType.Name} {m.Name}({string.Join(", ", ps)})");
+            }
+            foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                members.Add($"    field {f.FieldType.Name} {f.Name}");
+            foreach (var pr in t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                members.Add($"    prop {pr.PropertyType.Name} {pr.Name}");
+
+            if (members.Count == 0) continue;
+            Console.WriteLine($"=== {t.FullName}");
+            members.Sort();
+            foreach (var line in members) Console.WriteLine(line);
+        }
+    }
+
     static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "api")
+        {
+            Api(args.Length > 1 ? args[1] : null);
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "states")
+        {
+            HavokSystem.Init();
+            States(args.Length > 1 ? args[1] : "rigrf.xml",
+                   args.Length > 2 ? float.Parse(args[2], CultureInfo.InvariantCulture) : 0f,
+                   args.Length > 3 ? float.Parse(args[3], CultureInfo.InvariantCulture) : 200f,
+                   args.Length > 4 ? int.Parse(args[4]) : 8);
+            GC.KeepAlive(Keep);
+            HavokSystem.Terminate();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "emit")
         {
             HavokSystem.Init();
@@ -201,8 +466,14 @@ static class Probe
         if (soloClip >= 0) { Methods.setRootGenerator(graph, clips[soloClip]); Console.WriteLine("[graph] root = clip " + soloClip); }
         else Methods.setRootGenerator(graph, blender);
         var ctx = Root(new hkbContext());
+        // A context built by hand has no project data, and the public generate
+        // path walks into it -- that is where setCharacter was faulting.
+        ctx.m_projectData = Root(Methods.createProjectData());
         Methods.setCharacter(ctx, ch);
         Methods.setUpVector(ctx, new hkVector4(0, 0, 1, 0));
+        Console.WriteLine($"[ctx] projectData={(ctx.m_projectData == null ? "null" : "ok")} " +
+                          $"characterSetup={(Methods.getCharacterSetup(ch) == null ? "NULL" : "ok")} " +
+                          $"numBones={Methods.getNumBones(ch)}");
         Methods.activate(graph, ctx);
         Console.WriteLine("[graph] activated");
         for (int i = 0; i < clips.Count; i++)
