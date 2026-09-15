@@ -310,6 +310,26 @@ that also has one must not mix them.
 speed table regardless. Accepting only the sampler's output finds no ladder for
 them, so the search falls back through `SpeedDamped` and `Speed`.
 
+## 4.7 Where the remaining curve error is
+
+Two thirds of it is the two player projects: 1303 wrong points on DefaultFemale
+and 1264 on DefaultMale, of 4099 across the corpus, both around half right.
+
+Per key on DefaultMale the split is clean. **The five keys the graph declares are
+almost perfect** -- 2 and 10 exact, 3 at 181/187, 9 at 205/206 off by a constant
+1.032, 4 at 146/247 with a suspicious 24 arms. **The two the heuristic pairs are
+entirely wrong** -- keys 1 and 15, 0 of 39 and 0 of 44, at ratios 0.29 and 4.24,
+so it picked the wrong state. **And the seven the evaluator supplies deliver
+exactly zero**: each matches a locomotion state with a single blend, and
+`SpeedLadder.FromBlender` resolves that blend's rungs by taking the shortest-named
+clip beneath each child -- but on the player those children are compasses, so it
+picks an animation that does not travel.
+
+Resolving those rungs by running the graph at each knot instead was tried and
+changed the score by nothing at all, so it is not in the tree. The zero-delivering
+arms are still counted as recovered blocks, which flatters the recall figure: some
+of the 76 carry curves that are entirely wrong.
+
 ## 5. Open
 
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
