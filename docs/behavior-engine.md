@@ -312,23 +312,50 @@ them, so the search falls back through `SpeedDamped` and `Speed`.
 
 ## 4.7 Where the remaining curve error is
 
-Two thirds of it is the two player projects: 1303 wrong points on DefaultFemale
-and 1264 on DefaultMale, of 4099 across the corpus, both around half right.
+Sorting the 16,592 points by the compass they came through says where the error
+lives, and it is not where it looks:
 
-Per key on DefaultMale the split is clean. **The five keys the graph declares are
-almost perfect** -- 2 and 10 exact, 3 at 181/187, 9 at 205/206 off by a constant
-1.032, 4 at 146/247 with a suspicious 24 arms. **The two the heuristic pairs are
-entirely wrong** -- keys 1 and 15, 0 of 39 and 0 of 44, at ratios 0.29 and 4.24,
-so it picked the wrong state. **And the seven the evaluator supplies deliver
-exactly zero**: each matches a locomotion state with a single blend, and
-`SpeedLadder.FromBlender` resolves that blend's rungs by taking the shortest-named
-clip beneath each child -- but on the player those children are compasses, so it
-picks an animation that does not travel.
+| compass | on an arm | between arms |
+| --- | --- | --- |
+| 1 arm | 90% | 91% |
+| 4 arms | 82% | 76% |
+| 8 arms | 73% | 69% |
+| 24 arms | 100% | 49% |
 
-Resolving those rungs by running the graph at each knot instead was tried and
-changed the score by nothing at all, so it is not in the tree. The zero-delivering
-arms are still counted as recovered blocks, which flatters the recall figure: some
-of the 76 carry curves that are entirely wrong.
+A heading that lands between two arms fares only about five points worse than
+one that lands on an arm, so **interpolation is not the problem** -- identifying
+the ladder is. The sole exception is the player's 24-arm block, exact on every
+arm and half wrong between them, which is a compass carrying arms it should not.
+
+Nothing delivers zero any more, and the median ratio against the shipped file is
+within a percent of 1 on almost every key, so where a block is wrong it is wrong
+in shape rather than in scale. The two exceptions are worth naming: `HorseProject`
+sits at a near-constant 0.41 -- its ladder delivers about 2.4x what its rung
+weights say, while its shipped table is very nearly the identity -- and
+`HorkerProject` at 0.62. Neither is a cache artefact: the cache's duration agrees
+with the animation's own on both, checked against all 6,674 motion blocks (103
+disagree corpus-wide and none of them are these).
+
+### The stance
+
+What remains on the player is one thing: the graph is not driven into a stance.
+Running it with Bethesda's movement selectors lands in default locomotion, which
+is correct for someone walking about with nothing drawn, and the speed table also
+records them sneaking, blocking, holding a bow and casting. So 17 of the 23 keys
+the graph declares are reached by declaration and not by running it.
+
+Searching all 301 of the player's variables against those declarations -- the
+only ground truth available, since the graph says which state each key belongs
+to -- finds exactly one: **`iIsInSneak = 1` reaches `Sneak_Locomotion_State`.**
+No other stance falls to a single variable, which is expected: a drawn bow is a
+weapon type and a draw flag together. Nothing in the tree sets any of them yet.
+
+**508 clip generators across 26 projects bind `playbackSpeed`** -- to
+`weaponSpeedMult`, `turnSpeedMult` and their kin -- and the ladder builder reads
+the stored field. Only 19 of those clips are ever a ladder rung, all on the
+player's keys 1 and 15, and those two keys are misidentified for other reasons,
+so modelling it would change no number here. It is recorded because it is a real
+gap and the next thing to trip over.
 
 ## 4.8 Which clips move the character
 

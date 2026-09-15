@@ -99,10 +99,45 @@ public static partial class LocomotionStates
             ProjectStep at = walk.StepOf(machine)!.Value;
             (SelectedBy selection, string? variable) = Selection(machine, at, variables);
 
+            List<SpeedConsumer> blends = groups[(machine, state)];
+
             yield return new LocomotionState(
-                machine, state, groups[(machine, state)],
-                selection, variable, walk.KeyOf(state), at.File);
+                machine, state, blends,
+                selection, variable, walk.KeyOf(state) ?? KeyUnder(walk, blends), at.File);
         }
+    }
+
+    /// <summary>
+    /// The key the state's own blends are tagged with, when the state is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>BSiStateTaggingGenerator</c> tags the subtree below it, and where that
+    /// subtree is a whole locomotion state the tag sits above the state and
+    /// <see cref="ProjectWalk.KeyOf"/> finds it. The player's graph is arranged the
+    /// other way round: <c>1hm_locomotion</c> holds one state per weapon whose
+    /// <em>contents</em> begin with <c>1HM_iStateGen</c>, <c>2HM_iStateGen</c>,
+    /// <c>Bow_iStateGen</c>, so asking the state reaches nothing and keys 6, 7 and 8
+    /// look undeclared when the graph declares them plainly.
+    /// </para>
+    /// <para>
+    /// So where the state carries no tag, the blends under it are asked instead --
+    /// and only answered when they agree, since a state whose blends are tagged
+    /// differently is not one key's worth of locomotion.
+    /// </para>
+    /// </remarks>
+    private static int? KeyUnder(ProjectWalk walk, List<SpeedConsumer> blends)
+    {
+        int? only = null;
+
+        foreach (SpeedConsumer consumer in blends)
+        {
+            if (walk.KeyOf(consumer.Node) is not { } key) return null;
+            if (only is null) only = key;
+            else if (only != key) return null;
+        }
+
+        return only;
     }
 
     /// <summary>How a machine's state is chosen, and by what.</summary>

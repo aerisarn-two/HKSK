@@ -244,19 +244,31 @@ public sealed class LocomotionStateTests
 
     /// <summary>
     /// A locomotion state carries the table key when the graph declares it, which
-    /// it does for about a third of them.
+    /// it does for a little under half of them.
     /// </summary>
     /// <remarks>
-    /// 56 of the 177 states know their <c>iState</c> from the graph alone, by either
-    /// route it offers: a <c>BSiStateTaggingGenerator</c> above them, or a
-    /// <c>BSIStateManagerModifier</c> naming their (machine, state) pair. Reading
-    /// only the tag finds 41, so the second route is worth a third again.
-    /// The other 121 declare nothing, and for those the key has to come from the
+    /// <para>
+    /// 81 of the 177 states know their <c>iState</c> from the graph alone, by any of
+    /// the three routes it offers: a <c>BSiStateTaggingGenerator</c> above them, a
+    /// <c>BSIStateManagerModifier</c> naming their (machine, state) pair, or a
+    /// tagging generator <em>below</em> them, guarding the blends the state holds.
+    /// </para>
+    /// <para>
+    /// <strong>The third route is worth 25 states and all of them are the player's.</strong>
+    /// Bethesda arranged <c>1hm_locomotion</c> the other way up from everyone
+    /// else's graph: one state per weapon whose contents begin with
+    /// <c>1HM_iStateGen</c>, <c>2HM_iStateGen</c>, <c>Bow_iStateGen</c>. Asking the
+    /// state reaches nothing and keys 6, 7 and 8 look undeclared when the graph
+    /// declares them plainly.
+    /// </para>
+    /// <para>
+    /// The other 96 declare nothing, and for those the key has to come from the
     /// movement types -- which is why those are a required input rather than a
     /// convenience.
+    /// </para>
     /// </remarks>
     [CorpusFact]
-    public void FiftySixOfTheStatesCarryTheirKeyInTheGraph()
+    public void EightyOneOfTheStatesCarryTheirKeyInTheGraph()
     {
         (_, var projects) = Load();
         int tagged = 0, untagged = 0;
@@ -265,7 +277,7 @@ public sealed class LocomotionStateTests
             foreach (LocomotionState state in LocomotionStates.In(walk, variables))
                 if (state.Key is not null) tagged++; else untagged++;
 
-        Assert.Equal(56, tagged);
-        Assert.Equal(121, untagged);
+        Assert.Equal(81, tagged);
+        Assert.Equal(96, untagged);
     }
 }
