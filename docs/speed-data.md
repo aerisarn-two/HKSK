@@ -913,6 +913,29 @@ That is how a near-standstill is faked, not how an animal accelerates.
 bear trot pairs at -0.3% and -1.7%, dog trot pairs at -4.5% and -4.0%. Small, but not
 zero, and it is genuine blending behaviour.
 
+### 6.2 The daedra's halving, explained
+
+Every point of `HMDaedra`'s table is exactly half what its ladder delivers, and
+duration, playback speed, the sync flag, the cyclic wrap, the compass geometry and
+the skeleton scale were each eliminated in turn. Running the graph shows why:
+
+    hkbBlenderGenerator 'Locomotion_Tentacle_Blend'          x1
+      BSCyclicBlendTransitionGenerator 'MT_Direction_...'    x0.5   <- the ladder
+      hkbClipGenerator 'MT Idle.HKX01'                       x0.5   <- no travel
+
+**The locomotion subtree is mixed half and half with a stationary idle.** The
+ladder alone delivers 5, 64 and 128 at its three rungs; the shipped record reads
+2.5 and tops at 64. The table is not wrong and neither is the curve model -- the
+creature really does travel at half the ladder's speed, because half of what it is
+doing is standing still.
+
+Scaling by that share turns HMDaedra from 0 of 77 curves to **65 of 77**. It is
+not applied, because there is no general way yet to say which of a pose's clips
+contribute to root motion: scaling by the ladder's own weight costs 3000 points
+elsewhere, and scaling by the travelling fraction of all live clips costs 1800 --
+the humanoids layer upper and lower body, so a live clip that does not travel is
+normal for them. Both were measured and reverted. What is settled is the cause.
+
 **The deviation is always below the chord, never above.** A faster rung is a shorter
 clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
 chord-based model tested came in short and never over.
