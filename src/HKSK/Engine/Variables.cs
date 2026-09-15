@@ -147,6 +147,15 @@ public sealed class Variables
             ? BitConverter.SingleToInt32Bits(value)
             : value);
 
+    /// <summary>Holds a variable so the graph cannot write it. See <see cref="VariableSpace.Pin"/>.</summary>
+    public bool Pin(string name)
+    {
+        if (IndexOf(name) < 0 && !_space.Has(name)) return false;
+
+        _space.Pin(name);
+        return true;
+    }
+
     /// <summary>Writes by name. False when no such variable is declared.</summary>
     public bool Set(string name, float value)
     {

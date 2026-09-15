@@ -96,15 +96,17 @@ public sealed class StructuralRebuildTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 25 of the 78 blocks can be reached without reading a single name -- 13
-    /// because a <c>BSiStateTaggingGenerator</c> tags their state with the key, 12
-    /// because the project has one block and one locomotion state and there is
-    /// nothing to choose between. Rebuilt from that state's arms and the root motion
-    /// under them, <strong>371 of their 475 curves are within 2% at every
-    /// point</strong>.
+    /// 28 of the 78 blocks can be reached without reading a single name -- 16
+    /// because the graph declares their key, by a <c>BSiStateTaggingGenerator</c>
+    /// above the state or a <c>BSIStateManagerModifier</c> naming its (machine,
+    /// state) pair, and 12 because the project has one block and one locomotion
+    /// state and there is nothing to choose between. Rebuilt from that state's arms
+    /// and the root motion under them, <strong>408 of their 532 curves are within
+    /// 2% at every point</strong>.
     /// </para>
     /// <para>
-    /// Thirteen of the twenty-five are exact end to end.
+    /// Fourteen of the twenty-eight are exact end to end. Reading only the tag and
+    /// not the state manager finds 13 of the 16, and 25 blocks rather than 28.
     /// </para>
     /// </remarks>
     [CorpusFact]
@@ -114,27 +116,27 @@ public sealed class StructuralRebuildTests
         List<Rebuilt> done = Rebuild(cache, out int keys, out _);
 
         Assert.Equal(78, keys);
-        Assert.Equal(25, done.Count);
-        Assert.Equal(13, done.Count(r => r.ByTag));
+        Assert.Equal(28, done.Count);
+        Assert.Equal(16, done.Count(r => r.ByTag));
 
-        Assert.Equal(475, done.Sum(r => r.Total));
-        Assert.Equal(371, done.Sum(r => r.Held));
+        Assert.Equal(532, done.Sum(r => r.Total));
+        Assert.Equal(408, done.Sum(r => r.Held));
 
-        Assert.Equal(13, done.Count(r => r.Held == r.Total));
+        Assert.Equal(14, done.Count(r => r.Held == r.Total));
     }
 
     /// <summary>
-    /// Setting aside the one creature already known to be wrong, it is 81%.
+    /// Setting aside the one creature already known to be wrong, four in five hold.
     /// </summary>
     /// <remarks>
     /// <c>HMDaedra</c> fails all 19 of its curves and has done since section 9:
     /// every point of its table is exactly half what its graph produces, and
     /// duration, playback speed, the sync flag, the cyclic wrap, the compass
     /// geometry and the skeleton scale have each been eliminated. It is not a
-    /// failure of this path. Without it, 371 of 456 hold.
+    /// failure of this path. Without it, 408 of 513 hold.
     /// </remarks>
     [CorpusFact]
-    public void WithoutTheKnownHalvingItIsNinetyTwoPercent()
+    public void WithoutTheKnownHalvingFourInFiveCurvesHold()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         List<Rebuilt> done = Rebuild(cache, out _, out _);
@@ -145,15 +147,15 @@ public sealed class StructuralRebuildTests
 
         List<Rebuilt> rest = [.. done.Where(r => r.Project != "HMDaedra")];
 
-        Assert.Equal(456, rest.Sum(r => r.Total));
-        Assert.Equal(371, rest.Sum(r => r.Held));
+        Assert.Equal(513, rest.Sum(r => r.Total));
+        Assert.Equal(408, rest.Sum(r => r.Held));
     }
 
     /// <summary>
     /// Most blocks cannot be reached this way, and the reason is structural.
     /// </summary>
     /// <remarks>
-    /// 53 of the 78 are left. A project with several blocks and several locomotion
+    /// 50 of the 78 are left. A project with several blocks and several locomotion
     /// states needs something to pair them, and for the 30 projects whose graph
     /// never writes <c>iState</c> there is nothing in the behaviour that does --
     /// the game writes it from the movement type. That is the boundary of what the
@@ -161,12 +163,12 @@ public sealed class StructuralRebuildTests
     /// than a convenience.
     /// </remarks>
     [CorpusFact]
-    public void FiftyThreeBlocksCannotBeReachedFromTheGraphAlone()
+    public void FiftyBlocksCannotBeReachedFromTheGraphAlone()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Rebuild(cache, out int keys, out int unmapped);
 
         Assert.Equal(78, keys);
-        Assert.Equal(53, unmapped);
+        Assert.Equal(50, unmapped);
     }
 }

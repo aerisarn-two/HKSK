@@ -101,7 +101,7 @@ public static partial class LocomotionStates
 
             yield return new LocomotionState(
                 machine, state, groups[(machine, state)],
-                selection, variable, walk.TagOf(state), at.File);
+                selection, variable, walk.KeyOf(state), at.File);
         }
     }
 

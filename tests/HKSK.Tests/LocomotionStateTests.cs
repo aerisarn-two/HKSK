@@ -243,17 +243,20 @@ public sealed class LocomotionStateTests
     }
 
     /// <summary>
-    /// A locomotion state carries the table key when something tags it, which is
-    /// rare.
+    /// A locomotion state carries the table key when the graph declares it, which
+    /// it does for about a third of them.
     /// </summary>
     /// <remarks>
-    /// 41 of the 177 states sit under a <c>BSiStateTaggingGenerator</c> and so know
-    /// their <c>iState</c> from the graph alone. The other 136 do not, and for those
-    /// the key has to come from the movement types -- which is the whole reason
-    /// those are a required input rather than a convenience.
+    /// 56 of the 177 states know their <c>iState</c> from the graph alone, by either
+    /// route it offers: a <c>BSiStateTaggingGenerator</c> above them, or a
+    /// <c>BSIStateManagerModifier</c> naming their (machine, state) pair. Reading
+    /// only the tag finds 41, so the second route is worth a third again.
+    /// The other 121 declare nothing, and for those the key has to come from the
+    /// movement types -- which is why those are a required input rather than a
+    /// convenience.
     /// </remarks>
     [CorpusFact]
-    public void FortyOneOfTheStatesCarryTheirKeyInTheGraph()
+    public void FiftySixOfTheStatesCarryTheirKeyInTheGraph()
     {
         (_, var projects) = Load();
         int tagged = 0, untagged = 0;
@@ -262,7 +265,7 @@ public sealed class LocomotionStateTests
             foreach (LocomotionState state in LocomotionStates.In(walk, variables))
                 if (state.Key is not null) tagged++; else untagged++;
 
-        Assert.Equal(41, tagged);
-        Assert.Equal(136, untagged);
+        Assert.Equal(56, tagged);
+        Assert.Equal(121, untagged);
     }
 }

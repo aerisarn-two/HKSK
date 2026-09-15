@@ -22,6 +22,7 @@ public sealed class VariableSpace
 {
     private readonly Dictionary<string, int> _words = new(StringComparer.Ordinal);
     private readonly Dictionary<string, VariableType> _types = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _pinned = new(StringComparer.Ordinal);
 
     /// <summary>Declares a name, keeping the first declaration's value and type.</summary>
     public void Declare(string name, int word, VariableType type)
@@ -42,8 +43,27 @@ public sealed class VariableSpace
     public VariableType TypeOf(string name) =>
         _types.TryGetValue(name, out VariableType type) ? type : VariableType.VARIABLE_TYPE_INT32;
 
-    /// <summary>Writes a slot, in the representation its declared type calls for.</summary>
-    public void Set(string name, int word) => _words[name] = word;
+    /// <summary>Writes a slot, unless the name is pinned.</summary>
+    public void Set(string name, int word)
+    {
+        if (!_pinned.Contains(name)) _words[name] = word;
+    }
+
+    /// <summary>
+    /// Holds a variable at its current value, so the graph reads it but cannot
+    /// write it.
+    /// </summary>
+    /// <remarks>
+    /// In play <c>iState</c> is an output: an expression computes it from the
+    /// character's speed and stance. Building a table is the other way round -- the
+    /// question is what the graph does <em>in</em> a given state -- so the state is
+    /// held and the graph is read under it. Without this the modifier pass
+    /// recomputes it and every state samples the same one.
+    /// </remarks>
+    public void Pin(string name) => _pinned.Add(name);
+
+    /// <summary>Whether a name is held.</summary>
+    public bool Pinned(string name) => _pinned.Contains(name);
 
     /// <summary>Every name the character declares.</summary>
     public IEnumerable<string> Names => _words.Keys;
