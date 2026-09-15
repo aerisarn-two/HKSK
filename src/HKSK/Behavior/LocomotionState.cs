@@ -101,9 +101,17 @@ public static partial class LocomotionStates
 
             List<SpeedConsumer> blends = groups[(machine, state)];
 
+            // A machine that chooses on iState says which key each of its states is,
+            // because the state it sits in *is* the value: the key is the state id.
+            int? selected = selection != SelectedBy.Transitions &&
+                            string.Equals(variable, "iState", StringComparison.OrdinalIgnoreCase)
+                ? state.m_stateId
+                : null;
+
             yield return new LocomotionState(
                 machine, state, blends,
-                selection, variable, walk.KeyOf(state) ?? KeyUnder(walk, blends), at.File);
+                selection, variable,
+                walk.KeyOf(state) ?? KeyUnder(walk, blends) ?? selected, at.File);
         }
     }
 

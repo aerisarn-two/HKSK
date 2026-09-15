@@ -547,21 +547,21 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1444, records);
         Assert.Equal(16592, points);
 
-        // 13853 against the 10145 the pairing alone reached, over 76 blocks against
-        // 51. The rate falls from 87% to 83% because the 17 blocks only the
+        // 13857 against the 10145 the pairing alone reached, over 76 blocks against
+        // 51. The rate falls from 87% to 84% because the 17 blocks only the
         // evaluator reaches are the harder ones -- 1914 of 3007 -- but every
         // absolute count is up.
-        Assert.Equal(13853, pointsHeld);
+        Assert.Equal(13857, pointsHeld);
         Assert.Equal(996, recordsHeld);
         Assert.Equal(38, blocksHeld);
 
-        Assert.Equal(23, _declared);
+        Assert.Equal(25, _declared);
         Assert.Equal(59, _sharedBlocks);
         Assert.Equal(17, _newBlocks);
-        Assert.Equal(11939, _sharedHeld);
+        Assert.Equal(11943, _sharedHeld);
 
-        // On the 23 the graph declares, running it lands in the right state 5 times.
-        // Every one of the 17 differences is a stance -- sneaking, bow drawn,
+        // On the 25 the graph declares, running it lands in the right state 6 times.
+        // Every one of the 18 differences is a stance -- sneaking, bow drawn,
         // blocking, one- and two-handed, magic ready, casting -- and the key's own
         // name says which: iState_NPCSneaking, iState_NPCBowDrawn, iState_NPC1HM and
         // the rest. The movement selectors alone leave the graph in default
@@ -569,8 +569,8 @@ public sealed class SpeedDataRebuildTests
         // them is known: iIsInSneak = 1 reaches Sneak_Locomotion_State, found by
         // searching the player's 301 variables against these declarations. The
         // others need a combination, and nothing here sets any of them yet.
-        Assert.Equal(5, _evaluatorAgreed);
-        Assert.Equal(17, _evaluatorDiffered);
+        Assert.Equal(6, _evaluatorAgreed);
+        Assert.Equal(18, _evaluatorDiffered);
         Assert.Equal(1, _evaluatorMissed);
     }
 

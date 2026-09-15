@@ -96,18 +96,19 @@ public sealed class StructuralRebuildTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 35 of the 78 blocks can be reached without reading a single name -- 23
+    /// 37 of the 78 blocks can be reached without reading a single name -- 25
     /// because the graph declares their key, by a <c>BSiStateTaggingGenerator</c>
-    /// above the state, one below it guarding the state's own blends, or a
-    /// <c>BSIStateManagerModifier</c> naming its (machine, state) pair, and 12
+    /// above the state, one below it guarding the state's own blends, a
+    /// <c>BSIStateManagerModifier</c> naming its (machine, state) pair, or a
+    /// machine that chooses on <c>iState</c> itself, and 12
     /// because the project has one block and one locomotion state and there is
     /// nothing to choose between. Rebuilt from that state's arms and the root
-    /// motion under them, <strong>514 of their 665 curves are within 2% at every
+    /// motion under them, <strong>515 of their 703 curves are within 2% at every
     /// point</strong>.
     /// </para>
     /// <para>
-    /// Eighteen of the thirty-five are exact end to end. Reading only the tag above
-    /// a state finds 13 of the 23, and 25 blocks rather than 35.
+    /// Eighteen of the thirty-seven are exact end to end. Reading only the tag above
+    /// a state finds 13 of the 25, and 25 blocks rather than 37.
     /// </para>
     /// </remarks>
     [CorpusFact]
@@ -117,11 +118,11 @@ public sealed class StructuralRebuildTests
         List<Rebuilt> done = Rebuild(cache, out int keys, out _);
 
         Assert.Equal(78, keys);
-        Assert.Equal(35, done.Count);
-        Assert.Equal(23, done.Count(r => r.ByTag));
+        Assert.Equal(37, done.Count);
+        Assert.Equal(25, done.Count(r => r.ByTag));
 
-        Assert.Equal(665, done.Sum(r => r.Total));
-        Assert.Equal(514, done.Sum(r => r.Held));
+        Assert.Equal(703, done.Sum(r => r.Total));
+        Assert.Equal(515, done.Sum(r => r.Held));
 
         Assert.Equal(18, done.Count(r => r.Held == r.Total));
     }
@@ -137,7 +138,7 @@ public sealed class StructuralRebuildTests
     /// rebuilds from the ladder and does not run the graph, so it cannot see that
     /// -- the engine's <c>ActiveNode.Motion</c> is what does, and the full rebuild
     /// in <c>SpeedDataRebuildTests</c> recovers 65 of the daedra's 77 points with
-    /// it. Without the daedra, 514 of 646 hold here.
+    /// it. Without the daedra, 515 of 684 hold here.
     /// </remarks>
     [CorpusFact]
     public void WithoutTheKnownHalvingFourInFiveCurvesHold()
@@ -151,15 +152,15 @@ public sealed class StructuralRebuildTests
 
         List<Rebuilt> rest = [.. done.Where(r => r.Project != "HMDaedra")];
 
-        Assert.Equal(646, rest.Sum(r => r.Total));
-        Assert.Equal(514, rest.Sum(r => r.Held));
+        Assert.Equal(684, rest.Sum(r => r.Total));
+        Assert.Equal(515, rest.Sum(r => r.Held));
     }
 
     /// <summary>
     /// Most blocks cannot be reached this way, and the reason is structural.
     /// </summary>
     /// <remarks>
-    /// 43 of the 78 are left. A project with several blocks and several locomotion
+    /// 41 of the 78 are left. A project with several blocks and several locomotion
     /// states needs something to pair them, and for the 30 projects whose graph
     /// never writes <c>iState</c> there is nothing in the behaviour that does --
     /// the game writes it from the movement type. That is the boundary of what the
@@ -167,12 +168,12 @@ public sealed class StructuralRebuildTests
     /// than a convenience.
     /// </remarks>
     [CorpusFact]
-    public void FortyThreeBlocksCannotBeReachedFromTheGraphAlone()
+    public void FortyOneBlocksCannotBeReachedFromTheGraphAlone()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Rebuild(cache, out int keys, out int unmapped);
 
         Assert.Equal(78, keys);
-        Assert.Equal(43, unmapped);
+        Assert.Equal(41, unmapped);
     }
 }

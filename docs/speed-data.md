@@ -936,6 +936,42 @@ elsewhere, and scaling by the travelling fraction of all live clips costs 1800 -
 the humanoids layer upper and lower body, so a live clip that does not travel is
 normal for them. Both were measured and reverted. What is settled is the cause.
 
+### 6.2b A ladder has a floor, and two creatures disagree about it
+
+A speed ladder's lowest rung is a floor: below it the blend clamps and the model
+says the creature travels at that rung's speed however slowly it is asked to go.
+Two creatures in the corpus are sampled below their floor and **they do not agree
+about what happens there.**
+
+`BenthicLurkerProject`'s combat machine holds `CombatDirectionalState_WALK` and
+`CombatDirectionalState_RUN` with transitions each way. Key 1 is the run state,
+whose forward ladder starts at 213.8, and its table is sampled from x = 0. Below
+about 215 every shipped value is **the walk ladder's, exactly** -- the same
+numbers key 0 carries, to four figures -- and above it every value is the run
+ladder's, also exactly. The two meet in a step, not a blend: 203.55 at x = 215
+and 217.65 at x = 215.5.
+
+`DeerProject`'s `ForwardLocomotionBehavior` holds `ForwardState_Deer` and
+`RunForwardState`, also with transitions, and key 21 is the run state, floor
+416.5, sampled from x = 400. That single point below the floor reads 391.5, which
+is **the run ladder clamped**, not the walk ladder.
+
+So one creature falls back to its slower state below the floor and the other
+clamps. Nothing in the files separates them that has been found: both pin their
+gait through a variable (the lurker's machine syncs to `iState`, the deer's binds
+`startStateId` to `iMovementSpeed`), both pairs of states carry transitions to
+each other, and in both the slower ladder's range covers the gap. The transitions
+themselves say nothing -- all four fire on an event with `FLAG_DISABLE_CONDITION`
+and an empty expression, so the game raises them and the behaviour data never
+names a speed.
+
+Falling back was implemented and measured: it takes the lurker from 101 of its
+531 points to 213 and costs the deer 17 of its 738, which is **+95 points but -17
+whole records**, since the lurker gains points without completing a record and
+the deer loses records outright. It is not in the tree. Separating the two cases
+needs something not yet found; a threshold fitted to the x grid would be fitting
+to the file being derived.
+
 ### 6.3 The horse compounds three separate things
 
 `HorseProject` holds 0 of its 289 curves, and looking at it shows why no single

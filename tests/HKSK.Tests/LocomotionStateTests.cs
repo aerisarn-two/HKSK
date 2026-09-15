@@ -248,10 +248,13 @@ public sealed class LocomotionStateTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 81 of the 177 states know their <c>iState</c> from the graph alone, by any of
-    /// the three routes it offers: a <c>BSiStateTaggingGenerator</c> above them, a
-    /// <c>BSIStateManagerModifier</c> naming their (machine, state) pair, or a
-    /// tagging generator <em>below</em> them, guarding the blends the state holds.
+    /// 84 of the 177 states know their <c>iState</c> from the graph alone, by any of
+    /// the four routes it offers: a <c>BSiStateTaggingGenerator</c> above them, a
+    /// <c>BSIStateManagerModifier</c> naming their (machine, state) pair, a tagging
+    /// generator <em>below</em> them guarding the blends the state holds, or a
+    /// machine that chooses on <c>iState</c> itself -- where it does, the state it
+    /// sits in <em>is</em> the value, so the key is the state id. Only the benthic
+    /// lurker's three states come that last way.
     /// </para>
     /// <para>
     /// <strong>The third route is worth 25 states and all of them are the player's.</strong>
@@ -262,13 +265,13 @@ public sealed class LocomotionStateTests
     /// declares them plainly.
     /// </para>
     /// <para>
-    /// The other 96 declare nothing, and for those the key has to come from the
+    /// The other 93 declare nothing, and for those the key has to come from the
     /// movement types -- which is why those are a required input rather than a
     /// convenience.
     /// </para>
     /// </remarks>
     [CorpusFact]
-    public void EightyOneOfTheStatesCarryTheirKeyInTheGraph()
+    public void EightyFourOfTheStatesCarryTheirKeyInTheGraph()
     {
         (_, var projects) = Load();
         int tagged = 0, untagged = 0;
@@ -277,7 +280,7 @@ public sealed class LocomotionStateTests
             foreach (LocomotionState state in LocomotionStates.In(walk, variables))
                 if (state.Key is not null) tagged++; else untagged++;
 
-        Assert.Equal(81, tagged);
-        Assert.Equal(96, untagged);
+        Assert.Equal(84, tagged);
+        Assert.Equal(93, untagged);
     }
 }

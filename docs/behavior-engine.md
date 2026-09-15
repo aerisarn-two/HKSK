@@ -336,6 +336,16 @@ weights say, while its shipped table is very nearly the identity -- and
 with the animation's own on both, checked against all 6,674 motion blocks (103
 disagree corpus-wide and none of them are these).
 
+### The ladder's floor
+
+A ladder's lowest rung is a floor and below it the blend clamps, so on its own
+the model says a creature runs at 214 units per second when asked for 50. The
+benthic lurker does not: its key-1 table is the walk ladder's numbers exactly
+below about 215 and the run ladder's exactly above, meeting in a step rather
+than a blend. The deer, in the same shape -- two gait states in one machine with
+transitions each way -- clamps instead. `docs/speed-data.md` §6.2b has both
+measurements and why falling back is not in the tree.
+
 ### The stance
 
 What remains on the player is one thing: the graph is not driven into a stance.
