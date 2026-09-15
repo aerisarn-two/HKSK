@@ -134,6 +134,8 @@ public sealed class SpeedDataRebuildTests
                 // get a turn.
                 var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
 
+                arms ??= FlatAt(walk, properties, actor, key);
+
                 if (arms is null)
                 {
                     (LocomotionState? paired, Pairing.By _) = Pairing.For(
@@ -225,6 +227,99 @@ public sealed class SpeedDataRebuildTests
         // no locomotion state in the ConsumersIn sense and no arms were built for
         // them. Take the compass straight off the graph instead.
         return live.Count == 0 ? null : ArmsAround(live[0].Blend, run.Walk ?? walk, actor);
+    }
+
+    /// <summary>
+    /// The flat curve a key gets when the graph tags it but gives it no ladder.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Not every locomotion is a blend of gaits.</strong> The player's
+    /// <c>MT_Drunk_iStateGen</c> guards a state machine whose moving state is one
+    /// clip, <c>IdleDrunk_Walk</c>, and <c>Sprint_iStateGen</c> guards a blend of
+    /// two manual selectors. Neither holds a blend the sampler drives, so neither
+    /// becomes a locomotion state and neither key could be answered -- both were
+    /// paired to an attack state and held 0 of their 83 points.
+    /// </para>
+    /// <para>
+    /// A creature playing one clip travels at that clip's own speed whatever speed
+    /// it is asked for, which is a ladder of one rung and therefore flat. The
+    /// shipped file agrees exactly: every point of the player's key 15 reads 29.47
+    /// and <c>IdleDrunk_Walk</c> delivers 29.469, and every point of key 1 reads
+    /// 370.37 against <c>MT_SprintForward</c>'s 370.365.
+    /// </para>
+    /// <para>
+    /// <strong>Which clip is not guessed.</strong> The subtree is evaluated, so the
+    /// machine settles into its moving state and the selectors resolve their own
+    /// bindings: the sprint's is driven by <c>iRightHandEquipped</c> and picks the
+    /// unarmed arm because that is what the variable starts at, which is the case
+    /// the shipped block records. Only a subtree with exactly one travelling clip
+    /// is answered -- several means a blend this does not model, and guessing one
+    /// would be worse than leaving the key to the heuristic.
+    /// </para>
+    /// </remarks>
+    private static List<(float Direction, SpeedLadder Ladder)>? FlatAt(
+        ProjectWalk walk, Properties properties, ActorProject actor, int key)
+    {
+        foreach (ProjectStep step in walk.Steps)
+        {
+            if (step.Node is not BSiStateTaggingGenerator tag) continue;
+            if (tag.m_iStateToSetAs != key || tag.m_pDefaultGenerator is not { } under) continue;
+
+            Evaluation run = ActiveGenerators.Evaluate(under, walk, tables =>
+            {
+                foreach (Variables variables in tables.Values)
+                {
+                    variables.Set("iSyncIdleLocomotion", 1);
+                    variables.Set("iSyncForwardState", 0);
+                    variables.Set("iSyncTurnState", 1);
+                    variables.Set("Direction", 0f);
+                    variables.Set("Speed", 100f);
+                }
+            }, properties, Moving);
+
+            // Only where the tag guards no speed-driven blend at all. Where it
+            // guards one, that ladder is the creature's locomotion and a single
+            // clip taken out of it is a moment, not a curve. The live set is what
+            // is asked, not the walk's parent chain: a node the walk reached by
+            // another route first records that route's parent, and the falmer's bow
+            // ladders do, so asking the ancestry says there is no ladder there when
+            // eight of them are running.
+            HashSet<IHavokObject> ladders = [];
+            foreach (SpeedConsumer consumer in Locomotion.ConsumersIn(walk.Steps))
+                ladders.Add(consumer.Node);
+
+            SpeedRung? only = null;
+            bool several = false;
+
+            foreach (ActiveNode node in run.Active)
+            {
+                if (ladders.Contains(node.Generator)) { several = true; break; }
+                if (node.Generator is not hkbClipGenerator clip) continue;
+                if (clip.m_animationName is not { Length: > 0 } animation) continue;
+                if (clip.m_playbackSpeed <= 0f) continue;
+
+                string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
+                if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion) continue;
+                if (motion.Translations.Count == 0 || motion.Translations[^1].Value.Length() <= 0f) continue;
+
+                if (only is not null) { several = true; break; }
+
+                    float duration = motion.Duration / clip.m_playbackSpeed;
+
+                // The rung sits on the speed axis at the speed it delivers, which is
+                // the only position a single clip has.
+                only = new SpeedRung(
+                    motion.Translations[^1].Value.Length() / duration,
+                    motion.Translations[^1].Value, duration, stem);
+            }
+
+            if (several || only is not { } rung) continue;
+
+            return [(0f, new SpeedLadder([rung]) { Name = tag.m_name })];
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -463,6 +558,12 @@ public sealed class SpeedDataRebuildTests
                 bool declared = arms is not null;
                 LocomotionState? paired = null;
 
+                arms ??= FlatAt(walk, properties, actor, (int)mine.Key);
+
+                // Reached by a tag over a subtree with no ladder, which is the graph
+                // declaring it as plainly as a tag over a locomotion state does.
+                bool flat = !declared && arms is not null;
+
                 if (arms is null)
                 {
                     (paired, _) = Pairing.For(
@@ -475,7 +576,7 @@ public sealed class SpeedDataRebuildTests
 
                 if (arms is null) continue;
 
-                bool shared = declared || paired is not null;
+                bool shared = declared || flat || paired is not null;
                 if (declared)
                 {
                     _declared++;
@@ -552,19 +653,19 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1463, records);
         Assert.Equal(17629, points);
 
-        // 14158 against the 10145 the pairing alone reached, over 77 blocks against
-        // 51. The rate falls from 87% to 80% because the blocks reached late are
-        // the harder ones -- the 17 the evaluator supplies hold 1914 of 3007, and
+        // 14324 against the 10145 the pairing alone reached, over 77 blocks against
+        // 51. The rate falls from 87% to 81% because the blocks reached late are
+        // the harder ones -- the 15 the evaluator supplies hold 1914 of 2909, and
         // RieklingProject, the newest of them, holds 99 of 1037 whichever of its two
         // locomotion states is chosen -- but every absolute count is up.
-        Assert.Equal(14158, pointsHeld);
-        Assert.Equal(1020, recordsHeld);
-        Assert.Equal(40, blocksHeld);
+        Assert.Equal(14324, pointsHeld);
+        Assert.Equal(1096, recordsHeld);
+        Assert.Equal(44, blocksHeld);
 
         Assert.Equal(25, _declared);
-        Assert.Equal(60, _sharedBlocks);
-        Assert.Equal(17, _newBlocks);
-        Assert.Equal(12244, _sharedHeld);
+        Assert.Equal(62, _sharedBlocks);
+        Assert.Equal(15, _newBlocks);
+        Assert.Equal(12410, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,

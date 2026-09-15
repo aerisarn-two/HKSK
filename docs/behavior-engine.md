@@ -354,6 +354,31 @@ than a blend. The deer, in the same shape -- two gait states in one machine with
 transitions each way -- clamps instead. `docs/speed-data.md` §6.2b has both
 measurements and why falling back is not in the tree.
 
+### Not every locomotion is a ladder
+
+Two of the player's keys held none of their 83 points and both were paired to an
+attack state, because neither has a blend the sampler drives and so neither
+became a locomotion state at all. `MT_Drunk_iStateGen` guards a machine whose
+moving state is one clip, `IdleDrunk_Walk`; `Sprint_iStateGen` guards a blend of
+two manual selectors. A creature playing one clip travels at that clip's speed
+whatever it is asked for, which is a ladder of one rung and therefore flat, and
+the shipped file agrees to five figures: key 15 reads 29.47 at every point
+against the clip's 29.469, key 1 reads 370.37 against 370.365.
+
+**Which clip is not guessed.** The subtree is evaluated, so the machine settles
+into its moving state and the selectors resolve their own bindings. That matters:
+the sprint's selector is driven by `iRightHandEquipped` and has thirteen arms,
+one per weapon, and it picks the unarmed one because that is what the variable
+starts at -- which is the case the shipped block records. Across the corpus the
+selectors are driven by `iRightHandType` (250), `iLeftHandType` (191),
+`i1stPerson` (140) and `iRightHandEquipped` (50), so reading the stored index
+would have been wrong far more often than right.
+
+Only a subtree with exactly one travelling clip and no sampler-driven blend is
+answered. The second half of that is not optional: the falmer's `Bow_iStateGen`
+guards eight ladders, and taking one clip out of them is a moment rather than a
+curve -- it cost 150 of its points until the condition was added.
+
 ### The stance
 
 What remains on the player is one thing: the graph is not driven into a stance.
