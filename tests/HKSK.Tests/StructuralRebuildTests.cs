@@ -103,11 +103,11 @@ public sealed class StructuralRebuildTests
     /// machine that chooses on <c>iState</c> itself, and 12
     /// because the project has one block and one locomotion state and there is
     /// nothing to choose between. Rebuilt from that state's arms and the root
-    /// motion under them, <strong>515 of their 703 curves are within 2% at every
+    /// motion under them, <strong>537 of their 703 curves are within 2% at every
     /// point</strong>.
     /// </para>
     /// <para>
-    /// Eighteen of the thirty-seven are exact end to end. Reading only the tag above
+    /// Twenty of the thirty-seven are exact end to end. Reading only the tag above
     /// a state finds 13 of the 25, and 25 blocks rather than 37.
     /// </para>
     /// </remarks>
@@ -122,9 +122,9 @@ public sealed class StructuralRebuildTests
         Assert.Equal(25, done.Count(r => r.ByTag));
 
         Assert.Equal(703, done.Sum(r => r.Total));
-        Assert.Equal(515, done.Sum(r => r.Held));
+        Assert.Equal(537, done.Sum(r => r.Held));
 
-        Assert.Equal(18, done.Count(r => r.Held == r.Total));
+        Assert.Equal(20, done.Count(r => r.Held == r.Total));
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ public sealed class StructuralRebuildTests
     /// rebuilds from the ladder and does not run the graph, so it cannot see that
     /// -- the engine's <c>ActiveNode.Motion</c> is what does, and the full rebuild
     /// in <c>SpeedDataRebuildTests</c> recovers 65 of the daedra's 77 points with
-    /// it. Without the daedra, 515 of 684 hold here.
+    /// it. Without the daedra, 537 of 684 hold here.
     /// </remarks>
     [CorpusFact]
     public void WithoutTheKnownHalvingFourInFiveCurvesHold()
@@ -153,7 +153,7 @@ public sealed class StructuralRebuildTests
         List<Rebuilt> rest = [.. done.Where(r => r.Project != "HMDaedra")];
 
         Assert.Equal(684, rest.Sum(r => r.Total));
-        Assert.Equal(515, rest.Sum(r => r.Held));
+        Assert.Equal(537, rest.Sum(r => r.Held));
     }
 
     /// <summary>

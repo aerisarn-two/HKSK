@@ -324,8 +324,16 @@ lives, and it is not where it looks:
 
 A heading that lands between two arms fares only about five points worse than
 one that lands on an arm, so **interpolation is not the problem** -- identifying
-the ladder is. The sole exception is the player's 24-arm block, exact on every
-arm and half wrong between them, which is a compass carrying arms it should not.
+the ladder is.
+
+The 24-arm row was the exception and it is now fixed. A state can hold more than
+one compass: the player's `DefaultBlockLocomotion` holds three -- one-handed,
+two-handed and bow, eight arms each and near enough identical -- because which
+one runs is a weapon type the graph is told rather than something it decides.
+Reading the state's blends as one compass put three arms on every heading, so a
+heading between two interpolated between *different weapons*: exact on an arm,
+half wrong between them. Keeping the compasses apart and taking the widest takes
+key 4 from 146 of its 247 points to all 247.
 
 Nothing delivers zero any more, and the median ratio against the shipped file is
 within a percent of 1 on almost every key, so where a block is wrong it is wrong

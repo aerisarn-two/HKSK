@@ -46,15 +46,44 @@ public static class Compass
             return arms;
         }
 
-        // several: each is a weighted child of the compass, and the weight is the heading
+        // several: each is a weighted child of the compass, and the weight is the
+        // heading. A state can hold more than one compass, so they are kept apart.
+        var compasses = new Dictionary<IHavokObject, List<(float, SpeedLadder)>>();
+        var order = new List<IHavokObject>();
+
         foreach (SpeedConsumer blend in state.Blends)
         {
             if (blend.Node is not hkbBlenderGenerator ladder) continue;
             if (walk.StepOf(ladder)?.Parent is not hkbBlenderGeneratorChild child) continue;
 
             arms.Add((child.m_weight, SpeedLadder.FromBlender(ladder, project)));
+
+            // A blend whose compass cannot be named is kept in the flat list only,
+            // so grouping never loses an arm that the old reading had.
+            if (walk.StepOf(child)?.Parent is not { } compass) continue;
+
+            if (!compasses.TryGetValue(compass, out List<(float, SpeedLadder)>? group))
+            {
+                compasses[compass] = group = [];
+                order.Add(compass);
+            }
+
+            group.Add(arms[^1]);
         }
 
-        return arms;
+        // Nothing could be grouped: read them as one compass, as before.
+        if (order.Count == 0 || compasses[order[0]].Count == arms.Count) return arms;
+
+        // The widest compass, and the graph's own order where two are as wide. The
+        // player's block state holds three -- one-handed, two-handed and bow, eight
+        // arms each and near enough identical -- because which one runs is a weapon
+        // type the graph is told, not something it decides. Flattening them puts
+        // three arms on every heading, and a heading between two then interpolates
+        // between different weapons: exact on an arm, and half wrong between them.
+        IHavokObject widest = order[0];
+        foreach (IHavokObject compass in order)
+            if (compasses[compass].Count > compasses[widest].Count) widest = compass;
+
+        return compasses[widest];
     }
 }
