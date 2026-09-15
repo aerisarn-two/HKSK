@@ -43,7 +43,7 @@ public static class Masters
     /// directly and in order -- later ones overriding earlier, which is all a
     /// load order does for records nothing else touches.
     /// </remarks>
-    private static readonly string[] Order =
+    internal static readonly string[] Order =
         ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
 
     /// <summary>Every movement type the masters define, by name.</summary>
