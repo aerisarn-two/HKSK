@@ -297,6 +297,19 @@ vampire brute's initial values give — the machine falls back to its own
 Both were found by running the engine over the corpus and asking which machines
 resolved to nothing, which is what the census and the corpus test are for.
 
+## 4.6 Two traps in the ladder finder
+
+**An `Evaluation` carries the visit its nodes came from.** A project read twice
+gives two sets of objects, so asking a *different* `ProjectWalk` where one of
+these nodes lives returns nothing -- silently -- and anything filtering on that
+finds no ladders at all. `ActiveGenerators.Of` builds its own walk, so a caller
+that also has one must not mix them.
+
+**Not every ladder reads the sampler.** The netch's forward blend runs on
+`SpeedDamped` and the slaughterfish's on raw `Speed`, and both creatures ship a
+speed table regardless. Accepting only the sampler's output finds no ladder for
+them, so the search falls back through `SpeedDamped` and `Speed`.
+
 ## 5. Open
 
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and

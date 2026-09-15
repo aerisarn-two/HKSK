@@ -20,8 +20,15 @@ public readonly record struct ActiveNode(hkbGenerator Generator, float Weight, i
 /// <summary>What a graph selected, and the variables it read to get there.</summary>
 /// <param name="Active">The generators being evaluated, the root first.</param>
 /// <param name="Variables">Each behaviour file's own table, keyed by file.</param>
+/// <param name="Walk">
+/// The visit the nodes came from. It is carried because a project read twice gives
+/// two sets of objects: asking a <em>different</em> walk where one of these nodes
+/// lives returns nothing, silently, and anything filtering on that finds none.
+/// </param>
 public readonly record struct Evaluation(
-    IReadOnlyList<ActiveNode> Active, IReadOnlyDictionary<string, Variables> Variables);
+    IReadOnlyList<ActiveNode> Active,
+    IReadOnlyDictionary<string, Variables> Variables,
+    ProjectWalk? Walk = null);
 
 /// <summary>
 /// Which generators a graph is evaluating, given its variables.
@@ -104,13 +111,13 @@ public static class ActiveGenerators
         for (int pass = 0; pass < 4; pass++)
         {
             Trace trace = Run(root, reading);
-            if (Same(active, trace.Active)) return new Evaluation(trace.Active, tables);
+            if (Same(active, trace.Active)) return new Evaluation(trace.Active, tables, walk);
 
             active = trace.Active;
             Settle(trace, reading);
         }
 
-        return new Evaluation(active, tables);
+        return new Evaluation(active, tables, walk);
     }
 
     /// <summary>What one pass saw.</summary>

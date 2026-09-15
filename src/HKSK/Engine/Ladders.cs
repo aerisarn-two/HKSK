@@ -47,15 +47,41 @@ public static class Ladders
     }
 
     /// <summary>
+    /// The speed variables a ladder may run on, in the order they are preferred.
+    /// </summary>
+    /// <remarks>
+    /// Most ladders read what the sampler wrote, but not all: the netch's forward
+    /// blend runs on <c>SpeedDamped</c> and the slaughterfish's on raw <c>Speed</c>,
+    /// and both creatures ship a speed table all the same. Accepting only the
+    /// sampler's output finds no ladder for them at all.
+    /// </remarks>
+    private static readonly string[] Fallbacks = ["SpeedDamped", "Speed"];
+
+    /// <summary>
     /// The ladders the evaluation has live, outermost first, with the weight the
     /// graph gives each.
     /// </summary>
     public static IReadOnlyList<(hkbBlenderGenerator Blend, float Weight)> ActiveIn(
         Evaluation run, ProjectWalk walk, string? parameter = null)
     {
+        // The evaluation's own visit, because the caller's may be a second reading of
+        // the same project and so a different set of objects.
+        walk = run.Walk ?? walk;
         parameter ??= ParameterOf(walk);
-        if (parameter is null) return [];
 
+        foreach (string wanted in parameter is null ? Fallbacks : [parameter, .. Fallbacks])
+        {
+            List<(hkbBlenderGenerator, float)> found = On(run, walk, wanted);
+            if (found.Count > 0) return found;
+        }
+
+        return [];
+    }
+
+    /// <summary>The live parametric blends running on one named variable.</summary>
+    private static List<(hkbBlenderGenerator, float)> On(
+        Evaluation run, ProjectWalk walk, string parameter)
+    {
         List<(hkbBlenderGenerator, float)> found = [];
 
         foreach (ActiveNode node in run.Active)

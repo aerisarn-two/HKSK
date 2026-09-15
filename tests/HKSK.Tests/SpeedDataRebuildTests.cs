@@ -141,7 +141,7 @@ public sealed class SpeedDataRebuildTests
 
                     arms = paired is { } chosen
                         ? built.First(b => b.State.Equals(chosen)).Arms
-                        : StateAt(graph, walk, properties, built, parameter, key);
+                        : StateAt(graph, walk, properties, actor, built, parameter, key);
                 }
 
                 if (arms is null) { unbuildable++; continue; }
@@ -188,7 +188,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     private static List<(float Direction, SpeedLadder Ladder)>? StateAt(
-        hkbBehaviorGraph graph, ProjectWalk walk, Properties properties,
+        hkbBehaviorGraph graph, ProjectWalk walk, Properties properties, ActorProject actor,
         List<(LocomotionState State, List<(float Direction, SpeedLadder Ladder)> Arms)> built,
         string parameter, int key)
     {
@@ -210,13 +210,63 @@ public sealed class SpeedDataRebuildTests
             }
         }, properties, Moving);
 
-        foreach ((hkbBlenderGenerator blend, float _) in Ladders.ActiveIn(run, walk, parameter))
+        var live = Ladders.ActiveIn(run, walk, parameter);
+
+        foreach ((hkbBlenderGenerator blend, float _) in live)
             foreach ((LocomotionState state, var arms) in built)
                 foreach (SpeedConsumer consumer in state.Blends)
                     if (ReferenceEquals(consumer.Node, blend))
                         return arms;
 
-        return null;
+        // Nothing matched because nothing reads the sampler: the netch and the
+        // slaughterfish run their ladders on SpeedDamped and raw Speed, so they have
+        // no locomotion state in the ConsumersIn sense and no arms were built for
+        // them. Take the compass straight off the graph instead.
+        return live.Count == 0 ? null : ArmsAround(live[0].Blend, run.Walk ?? walk, actor);
+    }
+
+    /// <summary>
+    /// A compass built from the graph: the nearest parametric blend above a ladder
+    /// whose children lead to ladders, each child's weight being its heading.
+    /// </summary>
+    private static List<(float Direction, SpeedLadder Ladder)>? ArmsAround(
+        hkbBlenderGenerator ladder, ProjectWalk walk, ActorProject actor)
+    {
+        hkbBlenderGenerator? compass = null;
+        foreach (ProjectStep above in walk.Ancestors(ladder))
+            if (above.Node is hkbBlenderGenerator blend && (blend.m_flags & 16) != 0)
+            { compass = blend; break; }
+
+        if (compass is null)
+        {
+            SpeedLadder only = SpeedLadder.FromBlender(ladder, actor);
+            return only.Rungs.Count == 0 ? null : [(0f, only)];
+        }
+
+        List<(float, SpeedLadder)> arms = [];
+
+        foreach (hkbBlenderGeneratorChild child in compass.m_children ?? [])
+        {
+            if (child.m_generator is null) continue;
+
+            hkbBlenderGenerator? under = child.m_generator as hkbBlenderGenerator
+                ?? Descendants(child.m_generator, walk).FirstOrDefault(b => (b.m_flags & 16) != 0);
+
+            if (under is null) continue;
+
+            SpeedLadder built = SpeedLadder.FromBlender(under, actor);
+            if (built.Rungs.Count > 0) arms.Add((child.m_weight, built));
+        }
+
+        return arms.Count == 0 ? null : arms;
+    }
+
+    private static IEnumerable<hkbBlenderGenerator> Descendants(IHavokObject from, ProjectWalk walk)
+    {
+        foreach (ProjectStep step in walk.Steps)
+            if (step.Node is hkbBlenderGenerator blend)
+                foreach (ProjectStep above in walk.Ancestors(blend))
+                    if (ReferenceEquals(above.Node, from)) { yield return blend; break; }
     }
 
     /// <summary>
@@ -227,9 +277,27 @@ public sealed class SpeedDataRebuildTests
     /// <para>
     /// The project list comes out right -- all 49, because every project with an
     /// animation cache has a block and nothing else does. The key set does not.
-    /// It writes 136 blocks, of which <strong>73 are ones the game ships</strong> --
-    /// 85% of the file, against 51 before the evaluator. It misses 13 and invents
-    /// 63, and only 6 declared movement types cannot be placed at all, against 50.
+    /// It writes 140 blocks, of which <strong>76 are ones the game ships</strong> --
+    /// 88% of the file, against 51 before the evaluator. It misses 10 and invents
+    /// 64, and only 2 declared movement types cannot be placed at all, against 50.
+    /// </para>
+    /// <para>
+    /// <strong>Of the 10 it misses, 8 are impossible from the graph.</strong>
+    /// AtronachFlame, AtronachStorm, ChaurusFlyer, Dragon_Priest, DragonProject,
+    /// IceWraith, Wisp and Witchlight have no <c>BSSpeedSamplerModifier</c> at all,
+    /// and the game ships a one-key table for each -- nothing in those graphs reads
+    /// a speed table, so there is no ladder to rebuild from. The other two are the
+    /// dwarven spider, whose directional blend carries no binding at all, and the
+    /// riekling, whose combat machine syncs to a variable that starts at the equip
+    /// state.
+    /// </para>
+    /// <para>
+    /// <strong>All 64 inventions are movement types declared and never swept.</strong>
+    /// FirstPerson alone is 18 of them: it declares the full 19-key humanoid set and
+    /// the game ships one. DefaultMale and DefaultFemale declare 19 and ship 14. The
+    /// draugr pair proves no rule can tell a declared-and-swept type from a
+    /// declared-and-not: same graph, same constants, same animations, six blocks
+    /// against one.
     /// </para>
     /// <para>
     /// <strong>The evaluator is used where the heuristic cannot answer, not
@@ -276,16 +344,16 @@ public sealed class SpeedDataRebuildTests
             $"missed {shipped.Except(made).Count()}\n" +
             $"invented {made.Except(shipped).Count()}\n" +
             $"unbuildable {inferred.Unbuildable}\n\n" +
-            "missed:\n" + string.Join("\n", shipped.Except(made).OrderBy(x => x.Item1).Take(40)) +
-            "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1).Take(40)));
+            "missed:\n" + string.Join("\n", shipped.Except(made).OrderBy(x => x.Item1)) +
+            "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(137, made.Count);
+        Assert.Equal(140, made.Count);
 
-        Assert.Equal(74, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(12, shipped.Except(made).Count());      // missed, was 35
-        Assert.Equal(63, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(5, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(76, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(10, shipped.Except(made).Count());      // missed, was 35
+        Assert.Equal(64, made.Except(shipped).Count());      // invented, was 41
+        Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -363,7 +431,7 @@ public sealed class SpeedDataRebuildTests
 
                     arms = paired is { } chosen
                         ? built.First(b => b.State.Equals(chosen)).Arms
-                        : StateAt(graph, walk, properties, built, parameter, (int)mine.Key);
+                        : StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
                 }
 
                 if (arms is null) continue;
@@ -375,7 +443,7 @@ public sealed class SpeedDataRebuildTests
 
                     // Ground truth: the graph itself says this state carries this key.
                     // Does running it, driven by Bethesda's own selectors, land there?
-                    var found = StateAt(graph, walk, properties, built, parameter, (int)mine.Key);
+                    var found = StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
                     if (found is null) _evaluatorMissed++;
                     else if (ReferenceEquals(found, arms)) _evaluatorAgreed++;
                     else
@@ -440,21 +508,21 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)));
 
-        Assert.Equal(74, blocks);
-        Assert.Equal(1406, records);
-        Assert.Equal(16426, points);
+        Assert.Equal(76, blocks);
+        Assert.Equal(1444, records);
+        Assert.Equal(16592, points);
 
         // 12335 against the 10145 the pairing alone reached, over 73 blocks against
         // 51. The rate falls from 87% to 76% because the 22 blocks only the
         // evaluator reaches are the harder ones -- 2190 of 4558 -- but every
         // absolute count is up.
-        Assert.Equal(12363, pointsHeld);
-        Assert.Equal(857, recordsHeld);
-        Assert.Equal(33, blocksHeld);
+        Assert.Equal(12493, pointsHeld);
+        Assert.Equal(877, recordsHeld);
+        Assert.Equal(34, blocksHeld);
 
         Assert.Equal(16, _declared);
         Assert.Equal(53, _sharedBlocks);
-        Assert.Equal(21, _newBlocks);
+        Assert.Equal(23, _newBlocks);
         Assert.Equal(10396, _sharedHeld);
 
         // On the 16 the graph declares, running it lands in the right state 5 times.
