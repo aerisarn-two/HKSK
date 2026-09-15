@@ -122,12 +122,49 @@ Three sources, in descending order of trust, and each claim in §4 says which:
 
 ## 4. Implemented
 
-Nothing yet beyond the census. This section is the running record: each node gets
-a row when it is implemented, naming the source of its semantics and the test that
-holds it.
+`HKSK.Engine`. Tier 1, selection only: given a project and its variables, which
+generators the graph is evaluating at rest.
 
-| class | tier | source | test |
-| --- | :-: | --- | --- |
+| class | how it selects | source |
+| --- | --- | --- |
+| `hkbBehaviorGraph` | its `rootGenerator` | reflection |
+| `hkbStateMachine` | the state whose id is named — §4.1 | reflection + corpus |
+| `hkbBlenderGenerator` | every child whose weight, bound or stored, is above zero | reflection |
+| `hkbPoseMatchingGenerator` | **derives from `hkbBlenderGenerator`**, so the same rule | census |
+| `hkbModifierGenerator` | passes through to its generator | reflection |
+| `hkbManualSelectorGenerator` | `selectedGeneratorIndex`, bound or stored | reflection |
+| `BSiStateTaggingGenerator` | its default generator | reflection |
+| `BSCyclicBlendTransitionGenerator` | its blender | reflection |
+| `BSBoneSwitchGenerator` | its default plus every bone-data child | reflection |
+| `hkbBehaviorReferenceGenerator` | the named file's graph, resolved as `ProjectVisitor` resolves it | measured |
+| `hkbClipGenerator`, `BSSynchronizedClipGenerator`, `BSOffsetAnimationGenerator`, `hkbReferencePoseGenerator` | leaves: they sample, they do not select | census |
+
+Supporting: `hkbVariableBindingSet` for the members that select,
+`hkbBehaviorGraphData` / `StringData` / `VariableValueSet` / `VariableInfo` for the
+variable table.
+
+Held by `ActiveGeneratorTests`: all 49 projects resolve, **no state machine
+anywhere fails to pick a state**, and every project selects down to at least one
+clip.
+
+### 4.1 Two things the files do not say
+
+**Variable indices are per file.** Each behaviour packfile carries its own
+`hkbBehaviorGraphData`, so a binding's `variableIndex` means nothing except
+against the table of the file the bound node lives in. Resolving a referenced
+file's bindings against the root's table reads a different variable entirely: on
+the humanoids it turned `DrunkBehavior`'s `startStateId` into `fSpeedMin`, and the
+whole graph below it went unreached — 15 active nodes and no clip, against 31 and
+a clip once fixed.
+
+**`syncVariableIndex` is only consulted in `START_STATE_MODE_SYNC`.** The field is
+set on machines that do not use it, so reading it unconditionally picks an
+arbitrary state. And when the synced value names no state — which is what the
+vampire brute's initial values give — the machine falls back to its own
+`startStateId` rather than to nothing.
+
+Both were found by running the engine over the corpus and asking which machines
+resolved to nothing, which is what the census and the corpus test are for.
 
 ## 5. Open
 

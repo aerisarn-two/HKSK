@@ -38,6 +38,7 @@ public sealed class NodeCensusTests
         Dictionary<string, int> instances = [];
         Dictionary<string, HashSet<string>> projects = [];
         Dictionary<string, string> kinds = [];
+        Dictionary<string, string> bases = [];
 
         foreach (ProjectLocation at in cache.LocateSpeedProjects().Where(p => p.Found))
         {
@@ -51,6 +52,7 @@ public sealed class NodeCensusTests
 
                 instances[name] = instances.GetValueOrDefault(name) + 1;
                 kinds[name] = Kind(step.Node.GetType());
+                bases[name] = step.Node.GetType().BaseType?.Name ?? "-";
                 if (!projects.TryGetValue(name, out HashSet<string>? seen))
                     projects[name] = seen = [];
                 seen.Add(at.Name);
@@ -60,7 +62,7 @@ public sealed class NodeCensusTests
         StringBuilder text = new();
         text.AppendLine($"{instances.Count} classes");
         foreach ((string name, int count) in instances.OrderByDescending(p => p.Value))
-            text.AppendLine($"{count,8}  {projects[name].Count,3}  {name}  [{kinds[name]}]");
+            text.AppendLine($"{count,8}  {projects[name].Count,3}  {name}  [{kinds[name]}] : {bases[name]}");
 
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "node-census.txt"), text.ToString());
 
