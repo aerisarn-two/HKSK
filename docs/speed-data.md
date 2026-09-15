@@ -936,6 +936,22 @@ elsewhere, and scaling by the travelling fraction of all live clips costs 1800 -
 the humanoids layer upper and lower body, so a live clip that does not travel is
 normal for them. Both were measured and reverted. What is settled is the cause.
 
+### 6.3 The horse compounds three separate things
+
+`HorseProject` holds 0 of its 289 curves, and looking at it shows why no single
+correction would help.
+
+Its locomotion sits under `SaddleOffsetBlend` at **0.5**, mixed with
+`Saddle offset.hkx` -- the daedra's arrangement again. Its top rung is
+`RunForward`, and the animation cache records **one translation key of
+`<0,0,0>`** for it, so the fastest gait delivers nothing and the ladder tops out
+at the trot. And `WalkForwardSlow` and `Saddle offset` have **no cache slot at
+all**, so those children are skipped when the rungs are read.
+
+Three causes in one creature, of three different kinds: a blend that halves the
+pose, an animation the cache says does not travel, and clips the cache does not
+carry. Worth knowing before anyone reads its 0% as one bug.
+
 **The deviation is always below the chord, never above.** A faster rung is a shorter
 clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
 chord-based model tested came in short and never over.
