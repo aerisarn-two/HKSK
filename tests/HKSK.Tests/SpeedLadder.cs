@@ -225,16 +225,25 @@ public sealed class SpeedLadder
                 .OrderBy(c => (c.m_animationName ?? "").Length)
                 .FirstOrDefault();
 
-            if (clip?.m_animationName is not { } name || clip.m_playbackSpeed <= 0f) continue;
+            if (clip?.m_animationName is not { } name || clip.m_playbackSpeed == 0f) continue;
 
             AnimationSlot? slot = project.Animation(Path.GetFileNameWithoutExtension(name.Replace('\\', '/')));
             ClipMovement? motion = slot?.Motion;
             if (motion is null || motion.Duration <= 0f || motion.Translations.Count == 0) continue;
 
+            // A negative playback speed plays the animation backwards, so the clip
+            // takes the same time and the root travels the other way. 31 clips in
+            // the game do it and the names say what it is for: Unequip is Equip
+            // reversed, and the riekling's right strafe is its left one. Six of them
+            // are locomotion rungs, and reading the speed as authored dropped the
+            // whole heading -- Blend_MT_Right came out with no rungs at all.
+            float rate = MathF.Abs(clip.m_playbackSpeed);
+            Vector3 travel = motion.Translations[^1].Value;
+
             rungs.Add(new SpeedRung(
                 child.m_weight,
-                motion.Translations[^1].Value,
-                motion.Duration / clip.m_playbackSpeed,
+                clip.m_playbackSpeed < 0f ? -travel : travel,
+                motion.Duration / rate,
                 Path.GetFileNameWithoutExtension(name.Replace('\\', '/'))));
         }
 

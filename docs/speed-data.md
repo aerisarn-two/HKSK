@@ -972,6 +972,33 @@ the deer loses records outright. It is not in the tree. Separating the two cases
 needs something not yet found; a threshold fitted to the x grid would be fitting
 to the file being derived.
 
+### 6.2c A reversed clip, and the riekling
+
+`hkbClipGenerator.m_playbackSpeed` can be **negative**, which plays the animation
+backwards: the clip takes the same time and the root travels the other way. 31
+clips in the shipped game do it and their names say what it is for -- `Unequip`
+is `Equip` reversed, `Chair_CrossedVar1ToBaseVar1` is `Chair_BaseVar1ToCrossedVar1`
+reversed -- and six of them are locomotion rungs. All six are the riekling's,
+whose right strafe is its left one reversed (`MT WalkR` plays `MT_WalkL.HKX` at
+-1). Reading the rate as authored dropped them, so `Blend_MT_Right` came out with
+no rungs at all: a quarter of the compass simply missing.
+
+Fixing it costs a block, and the block is worth losing. The riekling's two
+candidate compasses -- one for its bare hands, one for its crossbow -- carry
+identical rung weights (5, 167.42, 275.82, 413.73), so with the right strafe
+restored the pairing scores them equally and returns nothing rather than choosing.
+It had been scoring them apart only because one of the four headings was empty.
+The graph cannot break the tie either: the riekling's combat machine is in
+`START_STATE_MODE_SYNC` on a variable that starts at the equip state, so running
+it rests in `MT_Equip` and never reaches locomotion at all.
+
+The block it used to emit held 99 of its 1037 points. What it needs is not a key
+but a model: **its forward and backward records are already exact** -- 12 of 12
+each, reproducing the shipped numbers to five figures at every goal speed -- while
+its right reads 1 of 24 and its left 14 of 67, and the shipped lateral curve is
+not a ladder response at all. At x = 4.5 it records 20.5 where the ladder gives 3,
+and it steps rather than curves.
+
 ### 6.3 The horse compounds three separate things
 
 `HorseProject` holds 0 of its 289 curves, and looking at it shows why no single

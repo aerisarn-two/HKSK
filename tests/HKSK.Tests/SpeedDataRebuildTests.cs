@@ -406,12 +406,12 @@ public sealed class SpeedDataRebuildTests
     /// <para>
     /// The project list comes out right -- all 49, because every project with an
     /// animation cache has a block and nothing else does. The key set does not.
-    /// It writes 141 blocks, of which <strong>77 are ones the game ships</strong> --
-    /// 90% of the file, against 51 before the evaluator. It misses 9 and invents
-    /// 64, and only 1 declared movement type cannot be placed at all, against 50.
+    /// It writes 140 blocks, of which <strong>76 are ones the game ships</strong> --
+    /// 88% of the file, against 51 before the evaluator. It misses 10 and invents
+    /// 64, and only 2 declared movement types cannot be placed at all, against 50.
     /// </para>
     /// <para>
-    /// <strong>Of the 9 it misses, 8 are impossible from the graph.</strong>
+    /// <strong>Of the 10 it misses, 8 are impossible from the graph.</strong>
     /// AtronachFlame, AtronachStorm, ChaurusFlyer, Dragon_Priest, DragonProject,
     /// IceWraith, Wisp and Witchlight have no <c>BSSpeedSamplerModifier</c> at all,
     /// and the game ships a one-key table for each -- nothing in those graphs reads
@@ -419,11 +419,15 @@ public sealed class SpeedDataRebuildTests
     /// dwarven spider, whose directional blend carries no binding at all.
     /// </para>
     /// <para>
-    /// The riekling used to be a tenth. Its combat state holds two compasses, and
-    /// read as one they cancelled: no arm carried a top weight, so nothing could be
-    /// built. Kept apart, the block builds -- but it holds only 99 of its 1037
-    /// points, and 149 with its other locomotion state, so what it needs now is a
-    /// model rather than a key.
+    /// <strong>The tenth is the riekling, and it is the honest kind of miss.</strong>
+    /// Its two candidate compasses carry identical rung weights, so the pairing
+    /// scores them equally and says so rather than choosing; and the graph cannot be
+    /// run into either, because its combat machine is in <c>START_STATE_MODE_SYNC</c>
+    /// on a variable that starts at the equip state and only the game moves it on.
+    /// Reading a reversed clip correctly is what exposed the tie -- before that one
+    /// of its four headings had no rungs at all, which scored the two apart by
+    /// accident. The block it used to emit held 99 of its 1037 points, so what was
+    /// lost is a block that was 90% wrong.
     /// </para>
     /// <para>
     /// <strong>All 64 inventions are movement types declared and never swept.</strong>
@@ -451,7 +455,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversSeventySevenOfTheEightySixBlocks()
+    public void TheInferenceRecoversSeventySixOfTheEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -482,12 +486,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(141, made.Count);
+        Assert.Equal(140, made.Count);
 
-        Assert.Equal(77, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(9, shipped.Except(made).Count());       // missed, was 35
+        Assert.Equal(76, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(10, shipped.Except(made).Count());      // missed, was 35
         Assert.Equal(64, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(1, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -649,23 +653,21 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)));
 
-        Assert.Equal(77, blocks);
-        Assert.Equal(1463, records);
-        Assert.Equal(17629, points);
+        Assert.Equal(76, blocks);
+        Assert.Equal(1444, records);
+        Assert.Equal(16592, points);
 
-        // 14324 against the 10145 the pairing alone reached, over 77 blocks against
-        // 51. The rate falls from 87% to 81% because the blocks reached late are
-        // the harder ones -- the 15 the evaluator supplies hold 1914 of 2909, and
-        // RieklingProject, the newest of them, holds 99 of 1037 whichever of its two
-        // locomotion states is chosen -- but every absolute count is up.
-        Assert.Equal(14324, pointsHeld);
-        Assert.Equal(1096, recordsHeld);
+        // 14225 against the 10145 the pairing alone reached, over 76 blocks against
+        // 51. The rate falls from 87% to 86% because the 15 blocks the evaluator
+        // supplies are the harder ones, holding 1914 of 2909.
+        Assert.Equal(14225, pointsHeld);
+        Assert.Equal(1094, recordsHeld);
         Assert.Equal(44, blocksHeld);
 
         Assert.Equal(25, _declared);
-        Assert.Equal(62, _sharedBlocks);
+        Assert.Equal(61, _sharedBlocks);
         Assert.Equal(15, _newBlocks);
-        Assert.Equal(12410, _sharedHeld);
+        Assert.Equal(12311, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,

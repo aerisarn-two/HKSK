@@ -163,7 +163,7 @@ public sealed class SpeedSamplerTests
         Assert.Equal(1038, ladders);
         Assert.Equal(142, compasses);
         Assert.Equal(996, arms);
-        Assert.Equal(3416, rungs);
+        Assert.Equal(3420, rungs);
 
         // A rung is allowed to stand still, and 101 of them do: a first-person
         // body clip does not translate because the camera does, and an in-place
@@ -331,8 +331,8 @@ public sealed class SpeedSamplerTests
     /// For others they are near but not equal — the player's forward ladder has a
     /// rung at 82.4541 against a movement type asking for 80.1 — and that gap is
     /// what the speed table exists to record (§0). So this is measured and not
-    /// asserted as a law: across 324 directions whose movement type is known, a
-    /// rung matches the walk speed 157 times and the run speed 140.
+    /// asserted as a law: across 325 directions whose movement type is known, a
+    /// rung matches the walk speed 158 times and the run speed 140.
     /// </para>
     /// </remarks>
     [MastersFact]
@@ -378,8 +378,8 @@ public sealed class SpeedSamplerTests
             }
         }
 
-        Assert.Equal(324, directions);
-        Assert.Equal(157, walk);
+        Assert.Equal(325, directions);
+        Assert.Equal(158, walk);
         Assert.Equal(140, run);
 
         // the falmer, where it is exact
