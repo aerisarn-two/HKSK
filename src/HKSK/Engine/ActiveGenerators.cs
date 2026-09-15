@@ -1,4 +1,5 @@
 using HKSK.Behavior;
+using HKSK.Cache;
 using HKX2;
 
 namespace HKSK.Engine;
@@ -55,13 +56,14 @@ public static class ActiveGenerators
 
     /// <summary>Evaluates a project from its packfile, character properties and all.</summary>
     public static Evaluation Of(
-        string projectHkx, Action<IReadOnlyDictionary<string, Variables>>? drive = null)
+        string projectHkx, Action<IReadOnlyDictionary<string, Variables>>? drive = null,
+        Events? events = null, SpeedProjectBlock? speeds = null)
     {
         ProjectWalk walk = ProjectWalk.Of(projectHkx);
         hkbBehaviorGraph graph = walk.Steps
             .Select(step => step.Node).OfType<hkbBehaviorGraph>().First();
 
-        return Evaluate(graph, walk, drive, Properties.OfProject(projectHkx));
+        return Evaluate(graph, walk, drive, Properties.OfProject(projectHkx), events, speeds);
     }
 
     /// <summary>
@@ -76,7 +78,8 @@ public static class ActiveGenerators
     public static Evaluation Evaluate(
         hkbGenerator root, ProjectWalk walk,
         Action<IReadOnlyDictionary<string, Variables>>? drive = null,
-        Properties? characterProperties = null)
+        Properties? characterProperties = null,
+        Events? events = null, SpeedProjectBlock? speeds = null)
     {
         Dictionary<string, Variables> tables = new(StringComparer.OrdinalIgnoreCase);
         VariableSpace space = new();
@@ -91,7 +94,7 @@ public static class ActiveGenerators
 
         Variables fallback = root is hkbBehaviorGraph top ? Variables.Of(top) : Variables.Empty;
         drive?.Invoke(tables);
-        Tables reading = new(fallback, walk, tables, properties);
+        Tables reading = new(fallback, walk, tables, properties, events ?? Events.None, speeds);
 
         // Modifiers write variables and variables decide what the machines below
         // select, so one pass is not enough: run until the selection stops moving.
@@ -158,7 +161,7 @@ public static class ActiveGenerators
     /// <summary>Which variable table a node's bindings are read against.</summary>
     private readonly record struct Tables(
         Variables Fallback, ProjectWalk? Walk, Dictionary<string, Variables>? ByFile,
-        Properties? Properties = null)
+        Properties? Properties = null, Events? Events = null, SpeedProjectBlock? Speeds = null)
     {
         public Variables For(IHavokObject node)
         {
@@ -191,7 +194,7 @@ public static class ActiveGenerators
 
             case hkbStateMachine machine:
             {
-                int? at = StateIdOf(machine, variables);
+                int? at = StateIdOf(machine, variables, tables.Events, properties);
                 if (at is not null) trace.States[machine] = at.Value;
 
                 Visit(Find(machine, at ?? int.MinValue), weight, depth + 1, tables, trace, seen);
@@ -199,18 +202,21 @@ public static class ActiveGenerators
             }
 
             case hkbBlenderGenerator blend:
-                foreach (hkbBlenderGeneratorChild child in blend.m_children ?? [])
-                {
-                    float share = Bindings.RealOf(child, "weight", child.m_weight, variables, properties);
-                    Visit(child.m_generator, weight * share, depth + 1, tables, trace, seen);
-                }
+            {
+                IList<hkbBlenderGeneratorChild> children = blend.m_children ?? [];
+                float[] shares = Shares(blend, children, variables, properties);
+
+                for (int i = 0; i < children.Count; i++)
+                    Visit(children[i].m_generator, weight * shares[i], depth + 1, tables, trace, seen);
 
                 break;
+            }
 
             case hkbModifierGenerator wrapper:
                 // The modifier runs before the generator below it, because what it
                 // writes is what that generator's machines and blends then read.
-                Modifiers.Apply(wrapper.m_modifier, variables, properties);
+                Modifiers.Apply(
+                    wrapper.m_modifier, variables, properties, tables.Events, tables.Speeds);
                 if (wrapper.m_modifier is { } modifier) trace.Managers.Add((modifier, variables));
 
                 Visit(wrapper.m_generator, weight, depth + 1, tables, trace, seen);
@@ -256,6 +262,79 @@ public static class ActiveGenerators
         }
     }
 
+    /// <summary>From the runtime's own <c>BlenderFlags</c>.</summary>
+    private const int FlagParametric = 16, FlagParametricCyclic = 32;
+
+    /// <summary>
+    /// How much of each child a blend takes, which is what decides which animation
+    /// is sampled and therefore how fast the creature travels.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A <strong>parametric</strong> blend -- <c>FLAG_PARAMETRIC_BLEND</c> -- does
+    /// not mix all its children. Each child's weight is a position on an axis, and
+    /// <c>blendParameter</c> picks the two it falls between, so only those two are
+    /// live. That is the shape the speed tables record: a ladder of clips indexed
+    /// by speed.
+    /// </para>
+    /// <para>
+    /// An ordinary blend mixes every child, normalised so the weights sum to one.
+    /// </para>
+    /// </remarks>
+    private static float[] Shares(
+        hkbBlenderGenerator blend, IList<hkbBlenderGeneratorChild> children,
+        Variables variables, Properties? properties)
+    {
+        float[] shares = new float[children.Count];
+        if (children.Count == 0) return shares;
+
+        float[] weights = new float[children.Count];
+        for (int i = 0; i < children.Count; i++)
+            weights[i] = Bindings.RealOf(
+                children[i], "weight", children[i].m_weight, variables, properties);
+
+        if ((blend.m_flags & FlagParametric) == 0)
+        {
+            float total = weights.Sum();
+            for (int i = 0; i < shares.Length; i++)
+                shares[i] = total > 0f ? weights[i] / total : 0f;
+
+            return shares;
+        }
+
+        float at = Bindings.RealOf(blend, "blendParameter", blend.m_blendParameter, variables, properties);
+        if ((blend.m_flags & FlagParametricCyclic) != 0)
+        {
+            float low = blend.m_minCyclicBlendParameter, high = blend.m_maxCyclicBlendParameter;
+            if (high > low) at = low + Wrap(at - low, high - low);
+        }
+
+        // Children are authored in order along the axis, so the pair that brackets
+        // the parameter is the pair to blend; outside the ends, one child carries it.
+        if (at <= weights[0]) { shares[0] = 1f; return shares; }
+        if (at >= weights[^1]) { shares[^1] = 1f; return shares; }
+
+        for (int i = 0; i + 1 < weights.Length; i++)
+        {
+            if (at < weights[i] || at > weights[i + 1]) continue;
+
+            float span = weights[i + 1] - weights[i];
+            float t = span > 0f ? (at - weights[i]) / span : 0f;
+            shares[i] = 1f - t;
+            shares[i + 1] = t;
+
+            return shares;
+        }
+
+        return shares;
+    }
+
+    private static float Wrap(float value, float period)
+    {
+        float wrapped = value % period;
+        return wrapped < 0f ? wrapped + period : wrapped;
+    }
+
     /// <summary>The generator of the state a machine rests in.</summary>
     /// <remarks>
     /// Three things can name the state, and they are checked in the order the
@@ -267,7 +346,9 @@ public static class ActiveGenerators
         Find(machine, StateIdOf(machine, variables) ?? int.MinValue);
 
     /// <summary>The id of the state a machine rests in, or null when none matches.</summary>
-    public static int? StateIdOf(hkbStateMachine machine, Variables variables)
+    public static int? StateIdOf(
+        hkbStateMachine machine, Variables variables, Events? events = null,
+        Properties? properties = null)
     {
         int wanted = Bindings.IntOf(machine, "startStateId", machine.m_startStateId, variables);
 
@@ -283,7 +364,12 @@ public static class ActiveGenerators
             if (Find(machine, synced) is not null) wanted = synced;
         }
 
-        return Find(machine, wanted) is null ? null : wanted;
+        if (Find(machine, wanted) is null) return null;
+
+        // Whatever the machine starts in, a raised event may carry it elsewhere.
+        return events is null
+            ? wanted
+            : Transitions.Settle(machine, wanted, events, variables, properties);
     }
 
     private static hkbGenerator? Find(hkbStateMachine machine, int stateId)

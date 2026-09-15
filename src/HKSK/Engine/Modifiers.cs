@@ -1,3 +1,4 @@
+using HKSK.Cache;
 using HKX2;
 
 namespace HKSK.Engine;
@@ -31,7 +32,9 @@ public static class Modifiers
     /// <c>enable</c>, so reading the field instead of the binding runs all nine and
     /// the last write wins: the deer came out with the skeever's <c>iState</c>.
     /// </remarks>
-    public static bool Apply(hkbModifier? modifier, Variables variables, Properties? properties = null)
+    public static bool Apply(
+        hkbModifier? modifier, Variables variables, Properties? properties = null,
+        Events? events = null, SpeedProjectBlock? speeds = null)
     {
         if (modifier is null || !Enabled(modifier, variables, properties)) return false;
 
@@ -41,7 +44,7 @@ public static class Modifiers
             {
                 bool wrote = false;
                 foreach (hkbModifier inner in list.m_modifiers ?? [])
-                    wrote |= Apply(inner, variables, properties);
+                    wrote |= Apply(inner, variables, properties, events, speeds);
 
                 return wrote;
             }
@@ -61,6 +64,37 @@ public static class Modifiers
 
                 return wrote;
             }
+
+            case BSSpeedSamplerModifier sampler:
+            {
+                // state, direction and goalSpeed come in through bindings; speedOut
+                // goes back out through one. With no table the query is skipped and
+                // the goal passes through unchanged, which is what the game does
+                // when the database is absent.
+                float goal = Bindings.RealOf(sampler, "goalSpeed", sampler.m_goalSpeed, variables, properties);
+                float answer = goal;
+
+                if (speeds is not null)
+                {
+                    int state = Bindings.IntOf(sampler, "state", sampler.m_state, variables, properties);
+                    float direction = Bindings.RealOf(
+                        sampler, "direction", sampler.m_direction, variables, properties);
+
+                    answer = speeds.Entry((uint)state) is { } entry
+                        ? entry.Sample(direction, goal)
+                        : goal;
+                }
+
+                return Bindings.Write(sampler, "speedOut", answer, variables);
+            }
+
+            case hkbEventDrivenModifier driven:
+                // It wraps a modifier that runs only between its activate and
+                // deactivate events. With no queue to remember, the activate event
+                // being raised is what makes it active.
+                return (driven.m_activeByDefault ||
+                        (events?.Raised(variables.EventNameOf(driven.m_activateEventId)) ?? false)) &&
+                       Apply(driven.m_modifier, variables, properties, events, speeds);
 
             default:
                 return false;

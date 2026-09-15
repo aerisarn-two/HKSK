@@ -53,6 +53,26 @@ public static class Bindings
         return stored;
     }
 
+    /// <summary>
+    /// Writes a value out through the variable bound to a member, and says whether
+    /// there was one.
+    /// </summary>
+    /// <remarks>
+    /// Some members are outputs: <c>BSSpeedSamplerModifier</c>'s <c>speedOut</c> is
+    /// bound to <c>SpeedSampled</c> so that the modifier can put its answer there.
+    /// The file does not mark the direction -- the flags that would are computed at
+    /// activation -- so which members are outputs is known per node.
+    /// </remarks>
+    public static bool Write(
+        hkbBindable? node, string memberPath, float value, Variables variables)
+    {
+        int at = VariableFor(node, memberPath);
+        if (at < 0 || at >= variables.Count) return false;
+
+        variables.Set(at, value);
+        return true;
+    }
+
     /// <inheritdoc cref="RealOf"/>
     public static int IntOf(
         hkbBindable? node, string memberPath, int stored, Variables variables,

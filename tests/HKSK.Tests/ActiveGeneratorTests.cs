@@ -136,4 +136,70 @@ public sealed class ActiveGeneratorTests
 
         return 0;
     }
+
+    /// <summary>An event carries the deer out of idle and into locomotion.</summary>
+    [CorpusFact]
+    public void MoveStartReachesLocomotion()
+    {
+        string project = Project("DeerProject");
+
+        Assert.Equal(["CLIP_Idle_Default"], ClipsOf(project, Events.None, 0f));
+        Assert.Equal(["WalkSlowForwardL"], ClipsOf(project, Moving, 0f));
+    }
+
+    /// <summary>
+    /// iState picks the block and SpeedSampled picks the rung within it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two separate mechanisms, and the speed tables need both.
+    /// <c>iMovementSpeed = cond((Speed &lt; 100), 0, 1)</c> moves the deer from the
+    /// walk block to the run block at 100, through <c>iState</c>. Within a block a
+    /// parametric blend picks the rung, and its parameter is <strong>not</strong>
+    /// <c>Speed</c> but <c>SpeedSampled</c> -- the value
+    /// <c>BSSpeedSamplerModifier</c> writes by looking the creature up in
+    /// <c>speeddatasinglefile.txt</c>.
+    /// </para>
+    /// <para>
+    /// So the engine reaches exactly the point the speed file exists to supply, and
+    /// the ladder it indexes is the one the file records: the deer's run blend is
+    /// knotted at 416.5 and 833.
+    /// </para>
+    /// </remarks>
+    [CorpusFact]
+    public void SpeedSampledPicksTheRung()
+    {
+        string project = Project("DeerProject");
+
+        // With no table the sampler passes the goal through, so SpeedSampled is
+        // Speed and the ladder is driven directly -- which is what isolates the
+        // ladder from the table.
+        Assert.Equal(["SlowRunForwardL"], ClipsOf(project, Moving, 300f));
+
+        // The deer's run ladder is knotted at 416.5 and 833: between them both rungs
+        // carry weight, past the top one only the faster does.
+        Assert.Equal(["SlowRunForwardL", "RunForwardL"], ClipsOf(project, Moving, 600f));
+        Assert.Equal(["RunForwardL"], ClipsOf(project, Moving, 1000f));
+    }
+
+    private static readonly Events Moving = Events.Of("moveStart", "moveForward");
+
+    private static string Project(string name)
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        return cache.LocateSpeedProjects().First(p => p.Name == name).ProjectFile!;
+    }
+
+    private static string[] ClipsOf(string project, Events events, float speed)
+    {
+        Evaluation run = ActiveGenerators.Of(project, tables =>
+        {
+            foreach (Variables variables in tables.Values) variables.Set("Speed", speed);
+        }, events);
+
+        return [.. run.Active
+            .Where(a => a.Generator is hkbClipGenerator or BSSynchronizedClipGenerator)
+            .Where(a => a.Weight > 0f)
+            .Select(a => a.Name ?? "")];
+    }
 }

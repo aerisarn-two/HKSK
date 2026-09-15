@@ -23,12 +23,15 @@ public sealed class Variables
     private readonly Dictionary<string, int> _byName;
     private readonly VariableSpace _space;
     private readonly string[] _propertyNames;
+    private readonly string[] _eventNames;
 
     private Variables(int[] words, VariableType[] types, string[] names,
-                      VariableSpace? space = null, string[]? propertyNames = null)
+                      VariableSpace? space = null, string[]? propertyNames = null,
+                      string[]? eventNames = null)
     {
         _names = names;
         _propertyNames = propertyNames ?? [];
+        _eventNames = eventNames ?? [];
         _space = space ?? new VariableSpace();
 
         _byName = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -67,7 +70,8 @@ public sealed class Variables
         }
 
         return new Variables(words, types, named, space,
-            [.. data?.m_stringData?.m_characterPropertyNames ?? []]);
+            [.. data?.m_stringData?.m_characterPropertyNames ?? []],
+            [.. data?.m_stringData?.m_eventNames ?? []]);
     }
 
     /// <summary>A table built directly, for a graph assembled rather than read.</summary>
@@ -162,4 +166,8 @@ public sealed class Variables
     /// </summary>
     public string? PropertyNameOf(int index) =>
         index >= 0 && index < _propertyNames.Length ? _propertyNames[index] : null;
+
+    /// <summary>The event an id names, in this file. Event ids are per file too.</summary>
+    public string? EventNameOf(int id) =>
+        id >= 0 && id < _eventNames.Length ? _eventNames[id] : null;
 }

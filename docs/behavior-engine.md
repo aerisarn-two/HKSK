@@ -194,7 +194,91 @@ Held by `TheDeersStateFollowsItsSpeed`: the deer's `iState` is **20 at rest and 
 at speed 300**, through `iMovementSpeed = cond((Speed < 100), 0, 1)` and
 `iState = iState_DeerDefault + iMovementSpeed`.
 
-### 4.3 Two things the files do not say
+### 4.3 Events, transitions and the two blend kinds
+
+Events are raised by name and the graph is read where it settles. Ids are per
+file like everything else, so what is shared between files is the name.
+
+A machine follows transitions from its start state while a raised event keeps
+taking it somewhere new: its own state's transitions first, then the machine's
+wildcards, higher `m_priority` first within each. Two flags from the runtime's
+own `TransitionFlags` matter and are honoured -- `FLAG_DISABLED` (32) and
+`FLAG_DISABLE_CONDITION` (256). `hkbExpressionCondition` is read as a boolean;
+`hkbStringCondition` carries a string the runtime hands to the game, so nothing
+in the files says what it means and it is treated as holding.
+
+**A blend is one of two quite different things**, and the flag says which.
+`FLAG_PARAMETRIC_BLEND` (16) means the children are not mixed: each child's
+weight is a position on an axis and `blendParameter` picks the two it falls
+between. An ordinary blend mixes all its children, normalised to sum to one.
+Treating a parametric blend as an ordinary one gives weights in the thousands
+and every arm live at once.
+
+### 4.4 Where the speed file joins the graph
+
+The deer, driven with `moveStart`:
+
+| | |
+| --- | --- |
+| at rest | `CLIP_Idle_Default` |
+| moving, `Speed` 50 | `iState` 20, `WalkSlowForwardL` |
+| moving, `Speed` 300 | `iState` 21, `SlowRunForwardL` |
+
+Two mechanisms, one above the other. **`iState` picks the block**:
+`iMovementSpeed = cond((Speed < 100), 0, 1)` moves the deer from the walk block
+to the run block at 100. **A parametric blend picks the rung within it** -- and
+its parameter is not `Speed` but **`SpeedSampled`**, which is the value
+`BSSpeedSamplerModifier` writes by looking the creature up in
+`speeddatasinglefile.txt`. Below that sits a second parametric blend on
+`TurnDeltaDamped`, knotted at 270, 0, -270: a speed ladder over a direction
+compass, which is the shape the file records.
+
+### 4.5 The sampler, and the whole join
+
+`BSSpeedSamplerModifier` is implemented, so nothing has to be told which rung to
+stand on. It takes `state`, `direction` and `goalSpeed` in through bindings --
+`iState`, `Direction`, `Speed` -- and writes its answer **out** through the
+binding on `speedOut`, which is `SpeedSampled`. Output bindings are not marked in
+the file, since the flags that would say so are computed at activation, so which
+members are outputs is known per node.
+
+The query itself was already read out of the game binary and lives in
+`SpeedDataFile` (`docs/speed-data.md` §4.2): exact key or nothing, the heading as
+a ceiling that wraps, and past the last point the goal passes through unchanged.
+The engine only supplies the inputs and takes the answer.
+
+The deer, driven with `moveStart`, `Direction` 0, and the shipped table:
+
+| `Speed` | `SpeedSampled` | live clips |
+| ---: | ---: | --- |
+| 0 | 4.924 | `WalkSlowForwardL` |
+| 50 | 8.523 | `WalkSlowForwardL`, `WalkForwardL` |
+| 100 | 97.875 | `SlowRunForwardL` |
+| 450 | 431.9 | `SlowRunForwardL`, `RunForwardL` |
+| 900 | 900 | `RunForwardL` |
+
+Three separate mechanisms are visible in that table. **`iState` changes the block
+at 100** -- a different ladder, not a different rung. **The table maps the goal**,
+50 down to 8.5 and 450 down to 431.9. **The ladder's knots bracket the answer**:
+431.9 is just past 416.5, so two rungs blend; at 900 the query passes the goal
+through untouched and the top rung carries it alone.
+
+That is the join, end to end, from a raw speed to which animation plays, computed
+from the shipped files and nothing else.
+
+**It reaches 47 of the 49 projects** at a goal of 200. The two it does not are one
+whose graph computes an `iState` its block has no entry for, and one with no
+sampler. At a goal of 600 only 20 are driven, because most creatures' curves end
+below that and the query then passes the goal through -- the documented behaviour,
+not a gap. Held by `SpeedSamplerEngineTests`.
+
+`SpeedSampledPicksTheRung` isolates the ladder by leaving the table out: with no
+block the sampler passes the goal through, so `SpeedSampled` *is* `Speed` and the
+ladder can be driven directly. Worth knowing when writing such a test -- the
+sampler overwrites whatever `SpeedSampled` was set to, so setting it by hand does
+nothing once the modifier runs.
+
+### 4.5 Two things the files do not say
 
 **Variable indices are per file.** Each behaviour packfile carries its own
 `hkbBehaviorGraphData`, so a binding's `variableIndex` means nothing except
