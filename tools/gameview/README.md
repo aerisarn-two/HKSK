@@ -99,14 +99,43 @@ and is then strcmp'd, so write `.xml`. And a node's children only exist if the
 child member is actually set -- a blender whose arms are built but never
 assigned loads happily and evaluates nothing.
 
-**Open: bindings in a generated file are not applied.** The graph loads,
-activates and evaluates -- two arms live, both clips active -- and its
-`variableInitialValues` read back correctly from memory. But the live variable
-set stays zero, and writing either side of a binding shows neither is copied to
-the other, so with no node using them the variables are discarded each frame.
-`offsetInObjectPlusOne` is computed at activation by resolving `memberPath`
-against the node's class; that resolution is where to look next. Until then a
-run is parameterised by writing node members directly, which does persist.
+## Running a tree and tracing it
+
+`runtest.py` stages the three files, runs the graph and samples the live nodes:
+
+    --- sample 0
+       hkbBlenderGenerator  blendParameter: 0.42  numActiveChildren: 1
+         hkbBlenderGeneratorChild  weight: 1.0  isActive: 1
+           hkbClipGenerator  mode: 1  time: 8.096
+         hkbBlenderGeneratorChild  worldFromModelWeight: 1.0
+           hkbClipGenerator  mode: 1  time: -1.0
+
+Clip time advances between samples, and the zero-weight arm never starts --
+`numActiveChildren: 1`, no `isActive`, `time` still -1. Which arm the evaluator
+chose is read off, not inferred.
+
+A run is driven by **writing node members**: those writes persist.
+`blendParameter` above is ours.
+
+## Bindings resolve, but a raw write to a variable does not reach them
+
+Worth being exact, because the obvious reading is wrong. The bindings in a
+generated file **are** resolved: read out of memory they are identical to a
+working one from the tutorial project -- `offsetInObjectPlusOne` 53, which is
+`userControlledTimeFraction`'s offset plus one, and `memberType` 11, REAL. The
+copy step runs too; `hkbBehaviorGraph::copyVariablesToMembersRoot` appears in
+the monitor stream for our graph.
+
+What does not work is driving a run by writing the variable array directly: the
+bound member never follows, and the array returns to zero as soon as we stop
+writing it. The demo's own gamepad path does reach variables, which is how the
+tutorial graph gets its values, so something about a variable's value changing
+is tracked outside the array itself. Ruled out along the way: the min/max
+arrays, `variableMode` (the runtime resets it whatever the file says, while
+`userData` on the same object is honoured), and the binding fields themselves.
+
+Until that is found, drive by member instead of by variable -- which is what
+`runtest.py` does.
 
 ## The runtime tells you none of this by itself
 
