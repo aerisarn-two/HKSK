@@ -117,25 +117,28 @@ chose is read off, not inferred.
 A run is driven by **writing node members**: those writes persist.
 `blendParameter` above is ours.
 
-## Bindings resolve, but a raw write to a variable does not reach them
+## Enums must go into the file by name
 
-Worth being exact, because the obvious reading is wrong. The bindings in a
-generated file **are** resolved: read out of memory they are identical to a
-working one from the tutorial project -- `offsetInObjectPlusOne` 53, which is
-`userControlledTimeFraction`'s offset plus one, and `memberType` 11, REAL. The
-copy step runs too; `hkbBehaviorGraph::copyVariablesToMembersRoot` appears in
-the monitor stream for our graph.
+This build leaves the per-member enum pointer null, so the reader resolves an
+enum against its own class -- **by name only**. A bare number is read as zero
+and nothing complains.
 
-What does not work is driving a run by writing the variable array directly: the
-bound member never follows, and the array returns to zero as soon as we stop
-writing it. The demo's own gamepad path does reach variables, which is how the
-tutorial graph gets its values, so something about a variable's value changing
-is tracked outside the array itself. Ruled out along the way: the min/max
-arrays, `variableMode` (the runtime resets it whatever the file says, while
-`userData` on the same object is honoured), and the binding fields themselves.
+That is what stopped every binding on a generated graph. `variableInfos[].type`
+went out as `4` and was read as `0`: `VARIABLE_TYPE_REAL` became
+`VARIABLE_TYPE_BOOL`. The binding itself was fine -- resolved exactly like a
+working one, `offsetInObjectPlusOne` 53 and `memberType` 11 -- and
+`copyVariablesToMembers` ran every frame; it just switched on the variable's
+declared type, found BOOL, and never wrote the real member. With no node using
+them the variables were then discarded each frame, which looked like something
+overwriting them.
 
-Until that is found, drive by member instead of by variable -- which is what
-`runtest.py` does.
+`hkbVariableBindingSet` copies per binding: it resolves `offsetInObjectPlusOne`
+lazily if zero, skips the binding if it stays zero, branches on `bindingType`,
+and then reads `variableInfos[variableIndex].type` out of the graph's data to
+choose how to copy. That last read is the one that was being fed a zero.
+
+The emitter now writes enums by name and raises on an integer it cannot name,
+so this cannot recur silently.
 
 ## The runtime tells you none of this by itself
 

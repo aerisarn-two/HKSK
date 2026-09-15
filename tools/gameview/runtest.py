@@ -38,9 +38,10 @@ def stage(gv, graph, animations, project='proj/', data='Lesson01.hkx'):
         '-r null -g GameView -bload -l60 -bconfig Gameview/GameViewConfig.xml\n')
 
 
-def trace(gv, samples=6, interval=0.25, drive=None):
-    """Sample the live graph `samples` times.  `drive(mem, nodes)` is called
-    once before sampling and may write node members."""
+def trace(gv, samples=6, interval=0.25, variables=None, drive=None):
+    """Sample the live graph `samples` times.  `variables` sets the graph's
+    variable table -- which reaches the members bound to it -- and
+    `drive(mem, nodes)` may additionally write node members."""
     exe = os.path.join(gv, 'GameView_Release.exe')
     img, cs, byname = hkpack.load(exe)
     proc, mem = L.launch(gv)
@@ -50,6 +51,8 @@ def trace(gv, samples=6, interval=0.25, drive=None):
         if not found:
             raise RuntimeError('no live behaviour graph')
         graph = found[0]
+        if variables:
+            L.set_variables(mem, graph, variables)
         if drive:
             drive(mem, L.walk(mem, img, cs, byname, vtmap, mem.u32(graph + 0x28)))
         out = []
@@ -66,17 +69,14 @@ if __name__ == '__main__':
     graph = gvbehavior.Behaviour(
         variables={'Left': 0.0, 'Right': 0.0},
         root=gvbehavior.Blend('Root', [
-            (1.0, gvbehavior.Clip('ClipL', ANIM_A, mode='MODE_LOOPING', binding=0)),
-            (0.0, gvbehavior.Clip('ClipR', ANIM_B, mode='MODE_LOOPING', binding=1)),
+            (1.0, gvbehavior.Clip('ClipL', ANIM_A, binding=0,
+                                  bind={'userControlledTimeFraction': 'Left'})),
+            (0.0, gvbehavior.Clip('ClipR', ANIM_B, binding=1,
+                                  bind={'userControlledTimeFraction': 'Right'})),
         ]))
     stage(gv, graph, [ANIM_A, ANIM_B])
 
-    def drive(mem, nodes):
-        for _, addr, name, _ in nodes:
-            if name == 'hkbBlenderGenerator':
-                mem.write(addr + 0x1c, struct.pack('<f', 0.42))   # blendParameter
-
-    for i, frame in enumerate(trace(gv, drive=drive)):
+    for i, frame in enumerate(trace(gv, variables=[0.3, 0.8])):
         print(f'--- sample {i}')
         for depth, addr, name, state in frame:
             live = {k: v for k, v in state if v}

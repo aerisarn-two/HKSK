@@ -25,6 +25,20 @@ UNTYPED = {'hkbClipTriggerArray', 'hkbBoneWeightArray', 'hkbEventInfo',
            'hkbGenerator', 'hkbNode'}
 
 
+def enum_names(img, cs, byname, name):
+    """Every value the class chain's declared enums can take.  Enums have to go
+    into the file by name: this build leaves the per-member enum pointer null,
+    and a bare number is read as zero without complaint -- which is how
+    VARIABLE_TYPE_REAL became VARIABLE_TYPE_BOOL and silently stopped every
+    binding on the graph."""
+    out = {}
+    for k in chain(cs, byname, name):
+        for _, items in R.enums(img, k).items():
+            for item, value in items.items():
+                out.setdefault(value, []).append(item)
+    return {v: names[0] for v, names in out.items() if len(names) == 1}
+
+
 def chain(cs, byname, name):
     """A class and its ancestors, base first -- the order a packfile wants."""
     out, k = [], byname[name]
@@ -99,7 +113,7 @@ class Behaviour:
             return struct.unpack('<i', struct.pack('<f', float(x)))[0]
 
         data = Node('hkbBehaviorGraphData',
-                    variableInfos=[{'role': {'role': 0, 'flags': 0}, 'type': 4} for _ in names],
+                    variableInfos=[{'role': {'role': 0, 'flags': 0}, 'type': 'VARIABLE_TYPE_REAL'} for _ in names],
                     wordMinVariableValues=[{'value': bits(0.0)} for _ in names],
                     wordMaxVariableValues=[{'value': bits(1.0)} for _ in names])
         initial = Node('hkbVariableValueSet',
@@ -146,20 +160,22 @@ class Behaviour:
             own = R.members(img, k, cs)
             fallback.update(R.defaults(img, k, own))
             rows += own
+        enums = enum_names(img, cs, byname, obj.cls)
         lines = [f'\t\t<hkobject name="{obj.id}" class="{obj.cls}">']
         for r in rows:
             value = obj.values.get(r['name'], fallback.get(r['name']))
-            lines.append(self._member(img, cs, byname, r, value))
+            lines.append(self._member(img, cs, byname, r, value, enums=enums))
         lines.append('\t\t</hkobject>\n')
         return '\n'.join(lines)
 
-    def _member(self, img, cs, byname, r, value, indent='\t\t\t'):
-        name, t, sub = r['name'], r['type'], r['subtype']
+    def _member(self, img, cs, byname, r, value, indent='\t\t\t', enums=None):
+        name = r['name']
         if r['flags'] & SERIALIZE_IGNORED:
             return f'{indent}<hkparam name="{name}"><!-- zero {name} --></hkparam>'
-        return f'{indent}<hkparam name="{name}"{self._value(img, cs, byname, r, value, indent)}'
+        body = self._value(img, cs, byname, r, value, indent, enums or {})
+        return f'{indent}<hkparam name="{name}"{body}'
 
-    def _value(self, img, cs, byname, r, value, indent):
+    def _value(self, img, cs, byname, r, value, indent, enums):
         t, sub = r['type'], r['subtype']
         if t == 'TYPE_ARRAY':
             items = value or []
@@ -178,7 +194,7 @@ class Behaviour:
         if t == 'TYPE_STRUCT':
             return '>\n' + self._struct(img, cs, byname, r['cls'], value or {}, indent + '\t') \
                    + f'\n{indent}</hkparam>'
-        return f'>{self._scalar(t, value)}</hkparam>'
+        return f'>{self._scalar(r, value, enums)}</hkparam>'
 
     def _struct(self, img, cs, byname, cls, values, indent):
         rows, fallback = [], {}
@@ -186,15 +202,26 @@ class Behaviour:
             own = R.members(img, k, cs)
             fallback.update(R.defaults(img, k, own))
             rows += own
+        enums = enum_names(img, cs, byname, cls)
         lines = [f'{indent}<hkobject>']
         for r in rows:
             lines.append(self._member(img, cs, byname, r,
-                                      values.get(r['name'], fallback.get(r['name'])), indent + '\t'))
+                                      values.get(r['name'], fallback.get(r['name'])),
+                                      indent + '\t', enums))
         lines.append(f'{indent}</hkobject>')
         return '\n'.join(lines)
 
     @staticmethod
-    def _scalar(t, value):
+    def _scalar(r, value, enums):
+        t = r['type']
+        if t in ('TYPE_ENUM', 'TYPE_FLAGS') and not isinstance(value, str):
+            value = value or 0
+            if value == 0:
+                return '0'
+            if value in enums:
+                return enums[value]
+            raise ValueError(f'{r["name"]}: enum value {value} has no unique name; '
+                             f'pass the name, a number is read as zero')
         if t == 'TYPE_REAL':
             return f'{float(value or 0):.6f}'
         if t == 'TYPE_BOOL':
