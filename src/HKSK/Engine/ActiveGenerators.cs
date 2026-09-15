@@ -8,7 +8,15 @@ namespace HKSK.Engine;
 /// <param name="Generator">The generator itself.</param>
 /// <param name="Weight">Its weight within its parent blend, or 1 when nothing blends it.</param>
 /// <param name="Depth">How far below the root it sits.</param>
-public readonly record struct ActiveNode(hkbGenerator Generator, float Weight, int Depth)
+/// <param name="Motion">
+/// Its share of the character's <em>movement</em>, which is not its share of the
+/// pose. A blend mixes root motion over <c>weight * worldFromModelWeight</c>, and
+/// that second field is a plain flag in practice -- across the 49 projects it is 1
+/// on 7584 children and 0 on 668, never anything else. A child at 0 contributes
+/// how the character looks and nothing to where it goes.
+/// </param>
+public readonly record struct ActiveNode(
+    hkbGenerator Generator, float Weight, int Depth, float Motion = 1f)
 {
     /// <summary>The generator's own name.</summary>
     public string? Name => Generator.m_name;
@@ -183,12 +191,12 @@ public static class ActiveGenerators
 
     private static void Visit(
         hkbGenerator? node, float weight, int depth, Tables tables,
-        Trace trace, HashSet<hkbGenerator> seen)
+        Trace trace, HashSet<hkbGenerator> seen, float motion = 1f)
     {
         if (node is null || weight <= 0f || depth > 64 || !seen.Add(node)) return;
 
         List<ActiveNode> found = trace.Active;
-        found.Add(new ActiveNode(node, weight, depth));
+        found.Add(new ActiveNode(node, weight, depth, motion));
         Variables variables = tables.For(node);
         Properties? properties = tables.Properties;
         ProjectWalk? walk = tables.Walk;
@@ -196,7 +204,7 @@ public static class ActiveGenerators
         switch (node)
         {
             case hkbBehaviorGraph graph:
-                Visit(graph.m_rootGenerator, weight, depth + 1, tables, trace, seen);
+                Visit(graph.m_rootGenerator, weight, depth + 1, tables, trace, seen, motion);
                 break;
 
             case hkbStateMachine machine:
@@ -204,7 +212,7 @@ public static class ActiveGenerators
                 int? at = StateIdOf(machine, variables, tables.Events, properties);
                 if (at is not null) trace.States[machine] = at.Value;
 
-                Visit(Find(machine, at ?? int.MinValue), weight, depth + 1, tables, trace, seen);
+                Visit(Find(machine, at ?? int.MinValue), weight, depth + 1, tables, trace, seen, motion);
                 break;
             }
 
@@ -212,10 +220,21 @@ public static class ActiveGenerators
             {
                 IList<hkbBlenderGeneratorChild> children = blend.m_children ?? [];
                 float[] shares = Shares(blend, children, variables, properties);
+                float[] moving = Moving(children, shares);
+
+                // Where each child's subtree lands in the trace, so that the ones
+                // that turn out to sample nothing can give their motion back.
+                int[] from = new int[children.Count + 1];
 
                 for (int i = 0; i < children.Count; i++)
-                    Visit(children[i].m_generator, weight * shares[i], depth + 1, tables, trace, seen);
+                {
+                    from[i] = found.Count;
+                    Visit(children[i].m_generator, weight * shares[i], depth + 1, tables, trace, seen,
+                        motion * moving[i]);
+                }
 
+                from[^1] = found.Count;
+                Settle(found, from, moving, motion);
                 break;
             }
 
@@ -226,7 +245,7 @@ public static class ActiveGenerators
                     wrapper.m_modifier, variables, properties, tables.Events, tables.Speeds);
                 if (wrapper.m_modifier is { } modifier) trace.Managers.Add((modifier, variables));
 
-                Visit(wrapper.m_generator, weight, depth + 1, tables, trace, seen);
+                Visit(wrapper.m_generator, weight, depth + 1, tables, trace, seen, motion);
                 break;
 
             case hkbManualSelectorGenerator selector:
@@ -237,7 +256,7 @@ public static class ActiveGenerators
                     variables, properties);
 
                 if (pick >= 0 && pick < arms.Count)
-                    Visit(arms[pick], weight, depth + 1, tables, trace, seen);
+                    Visit(arms[pick], weight, depth + 1, tables, trace, seen, motion);
 
                 break;
             }
@@ -246,27 +265,90 @@ public static class ActiveGenerators
                 // It tags the subtree it guards: iState holds its value from here down.
                 // Which variable is not stored anywhere, so it is the one named iState.
                 variables.Set("iState", tagging.m_iStateToSetAs);
-                Visit(tagging.m_pDefaultGenerator, weight, depth + 1, tables, trace, seen);
+                Visit(tagging.m_pDefaultGenerator, weight, depth + 1, tables, trace, seen, motion);
                 break;
 
             case BSCyclicBlendTransitionGenerator cyclic:
-                Visit(cyclic.m_pBlenderGenerator, weight, depth + 1, tables, trace, seen);
+                Visit(cyclic.m_pBlenderGenerator, weight, depth + 1, tables, trace, seen, motion);
                 break;
 
             case BSBoneSwitchGenerator bones:
-                Visit(bones.m_pDefaultGenerator, weight, depth + 1, tables, trace, seen);
+                Visit(bones.m_pDefaultGenerator, weight, depth + 1, tables, trace, seen, motion);
                 foreach (BSBoneSwitchGeneratorBoneData data in bones.m_ChildrenA ?? [])
-                    Visit(data.m_pGenerator, weight, depth + 1, tables, trace, seen);
+                    Visit(data.m_pGenerator, weight, depth + 1, tables, trace, seen, motion);
 
                 break;
 
             case hkbBehaviorReferenceGenerator reference when walk is not null:
-                Visit(Referenced(reference, walk), weight, depth + 1, tables, trace, seen);
+                Visit(Referenced(reference, walk), weight, depth + 1, tables, trace, seen, motion);
                 break;
 
             // hkbClipGenerator, BSSynchronizedClipGenerator, hkbReferencePoseGenerator
             // and BSOffsetAnimationGenerator are leaves: they sample, they do not select.
         }
+    }
+
+    /// <summary>
+    /// Gives a blend's motion back from the children that sample nothing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Moving"/> shares a blend's root motion over its children as
+    /// authored, but a child only moves the character if something under it
+    /// actually samples an animation. A branch whose state machine has no live
+    /// state produces no pose and no travel, and the runtime is left blending what
+    /// it does have -- so the share it was holding belongs to its siblings.
+    /// </para>
+    /// <para>
+    /// This is what tells the two halving creatures apart, and both are 0.5 before
+    /// it runs. The daedra's locomotion is mixed against <c>MT Idle</c>, a real
+    /// clip that stands still, and it keeps its half: the daedra travels at half
+    /// the speed its ladder delivers, which is what its shipped table records. The
+    /// netch's is mixed against a lower-body state machine that selects nothing,
+    /// so its half comes back and it travels at the ladder's full speed -- also
+    /// what its table records.
+    /// </para>
+    /// </remarks>
+    private static void Settle(List<ActiveNode> found, int[] from, float[] moving, float motion)
+    {
+        float live = 0f;
+        bool dead = false;
+
+        for (int i = 0; i < moving.Length; i++)
+        {
+            if (Samples(found, from[i], from[i + 1])) live += moving[i];
+            else if (moving[i] > 0f) dead = true;
+        }
+
+        if (!dead || live <= 0f) return;
+
+        for (int i = 0; i < moving.Length; i++)
+        {
+            if (!Samples(found, from[i], from[i + 1])) continue;
+
+            float now = motion * moving[i] / live;
+            for (int at = from[i]; at < from[i + 1]; at++)
+            {
+                ActiveNode node = found[at];
+                float within = moving[i] > 0f ? node.Motion / (motion * moving[i]) : 0f;
+                found[at] = node with { Motion = now * within };
+            }
+        }
+    }
+
+    /// <summary>Whether anything in a span of the trace samples an animation.</summary>
+    /// <remarks>
+    /// The four leaves. A generator that only selects moves nothing by itself, so
+    /// a branch made entirely of them is a branch the character does not follow.
+    /// </remarks>
+    private static bool Samples(List<ActiveNode> found, int from, int to)
+    {
+        for (int at = from; at < to; at++)
+            if (found[at].Generator is hkbClipGenerator or BSSynchronizedClipGenerator
+                or hkbReferencePoseGenerator or BSOffsetAnimationGenerator)
+                return true;
+
+        return false;
     }
 
     /// <summary>From the runtime's own <c>BlenderFlags</c>.</summary>
@@ -334,6 +416,35 @@ public static class ActiveGenerators
         }
 
         return shares;
+    }
+
+    /// <summary>
+    /// How a blend divides the character's movement, as against its pose.
+    /// </summary>
+    /// <remarks>
+    /// Root motion is mixed over <c>weight * worldFromModelWeight</c> and
+    /// renormalised, so a child flagged out of the world-from-model blend does not
+    /// dilute the others -- while one flagged in, carrying an animation that stands
+    /// still, does. That is why the daedra travels at half the speed its ladder
+    /// delivers: its locomotion is mixed half and half with an idle that is in the
+    /// blend and goes nowhere.
+    /// </remarks>
+    private static float[] Moving(IList<hkbBlenderGeneratorChild> children, float[] shares)
+    {
+        float[] moving = new float[shares.Length];
+        float total = 0f;
+
+        for (int i = 0; i < shares.Length; i++)
+        {
+            moving[i] = shares[i] * children[i].m_worldFromModelWeight;
+            total += moving[i];
+        }
+
+        if (total <= 0f) return moving;
+
+        for (int i = 0; i < moving.Length; i++) moving[i] /= total;
+
+        return moving;
     }
 
     private static float Wrap(float value, float period)

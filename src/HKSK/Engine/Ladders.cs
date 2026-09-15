@@ -61,7 +61,7 @@ public static class Ladders
     /// The ladders the evaluation has live, outermost first, with the weight the
     /// graph gives each.
     /// </summary>
-    public static IReadOnlyList<(hkbBlenderGenerator Blend, float Weight)> ActiveIn(
+    public static IReadOnlyList<(hkbBlenderGenerator Blend, float Weight, float Motion)> ActiveIn(
         Evaluation run, ProjectWalk walk, string? parameter = null)
     {
         // The evaluation's own visit, because the caller's may be a second reading of
@@ -71,7 +71,7 @@ public static class Ladders
 
         foreach (string wanted in parameter is null ? Fallbacks : [parameter, .. Fallbacks])
         {
-            List<(hkbBlenderGenerator, float)> found = On(run, walk, wanted);
+            List<(hkbBlenderGenerator, float, float)> found = On(run, walk, wanted);
             if (found.Count > 0) return found;
         }
 
@@ -79,10 +79,10 @@ public static class Ladders
     }
 
     /// <summary>The live parametric blends running on one named variable.</summary>
-    private static List<(hkbBlenderGenerator, float)> On(
+    private static List<(hkbBlenderGenerator, float, float)> On(
         Evaluation run, ProjectWalk walk, string parameter)
     {
-        List<(hkbBlenderGenerator, float)> found = [];
+        List<(hkbBlenderGenerator, float, float)> found = [];
 
         foreach (ActiveNode node in run.Active)
         {
@@ -96,7 +96,7 @@ public static class Ladders
             if (!run.Variables.TryGetValue(step.File, out Variables? variables)) continue;
             if (at >= variables.Count || variables.NameOf(at) != parameter) continue;
 
-            found.Add((blend, node.Weight));
+            found.Add((blend, node.Weight, node.Motion));
         }
 
         return found;

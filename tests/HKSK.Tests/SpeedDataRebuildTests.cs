@@ -153,6 +153,8 @@ public sealed class SpeedDataRebuildTests
                 block.Entries.Add(entry);
                 blocks++;
 
+                float share = Share(graph, walk, properties, parameter);
+
                 foreach (float heading in Headings())
                 {
                     var record = new SpeedRecord { Direction = heading };
@@ -162,7 +164,7 @@ public sealed class SpeedDataRebuildTests
                     {
                         float x = top * i / 16f;
                         record.Points.Add(new SpeedPoint(
-                            x, SpeedSampler.Sample(arms, heading, x - SpeedLadder.SamplerOffset)));
+                            x, share * SpeedSampler.Sample(arms, heading, x - SpeedLadder.SamplerOffset)));
                     }
                 }
             }
@@ -212,7 +214,7 @@ public sealed class SpeedDataRebuildTests
 
         var live = Ladders.ActiveIn(run, walk, parameter);
 
-        foreach ((hkbBlenderGenerator blend, float _) in live)
+        foreach ((hkbBlenderGenerator blend, float _, float _) in live)
             foreach ((LocomotionState state, var arms) in built)
                 foreach (SpeedConsumer consumer in state.Blends)
                     if (ReferenceEquals(consumer.Node, blend))
@@ -223,6 +225,38 @@ public sealed class SpeedDataRebuildTests
         // no locomotion state in the ConsumersIn sense and no arms were built for
         // them. Take the compass straight off the graph instead.
         return live.Count == 0 ? null : ArmsAround(live[0].Blend, run.Walk ?? walk, actor);
+    }
+
+    /// <summary>
+    /// The share of the character's movement the locomotion ladder accounts for.
+    /// </summary>
+    /// <remarks>
+    /// A blend mixes root motion over <c>weight * worldFromModelWeight</c>, so a
+    /// ladder mixed against an animation that is in the world-from-model blend and
+    /// stands still delivers only its share of the travel. The daedra's locomotion
+    /// sits under a blend that mixes it half and half with an idle, and its table is
+    /// exactly half what the ladder alone gives.
+    /// </remarks>
+    private static float Share(
+        hkbBehaviorGraph graph, ProjectWalk walk, Properties properties, string parameter)
+    {
+        Evaluation run = ActiveGenerators.Evaluate(graph, walk, tables =>
+        {
+            foreach (Variables variables in tables.Values)
+            {
+                variables.Set("iSyncIdleLocomotion", 1);
+                variables.Set("iSyncForwardState", 0);
+                variables.Set("iSyncTurnState", 1);
+                variables.Set("Direction", 0f);
+                variables.Set("Speed", 0f);
+            }
+        }, properties, Moving);
+
+        foreach ((hkbBlenderGenerator _, float _, float motion) in
+                 Ladders.ActiveIn(run, walk, parameter))
+            return motion;
+
+        return 1f;
     }
 
     /// <summary>
@@ -460,6 +494,7 @@ public sealed class SpeedDataRebuildTests
 
                 blocks++;
                 bool blockHolds = true;
+                float share = Share(graph, walk, properties, parameter);
 
                 foreach (SpeedRecord record in yours.Records)
                 {
@@ -473,7 +508,7 @@ public sealed class SpeedDataRebuildTests
 
                         // The record's own heading picks the arm; the ladder under it
                         // answers at the shipped goal speed.
-                        double y = SpeedSampler.Sample(
+                        double y = share * SpeedSampler.Sample(
                             arms, record.Direction, point.X - SpeedLadder.SamplerOffset);
 
                         _projectPoints++;
@@ -512,18 +547,18 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1444, records);
         Assert.Equal(16592, points);
 
-        // 12335 against the 10145 the pairing alone reached, over 73 blocks against
-        // 51. The rate falls from 87% to 76% because the 22 blocks only the
-        // evaluator reaches are the harder ones -- 2190 of 4558 -- but every
+        // 12558 against the 10145 the pairing alone reached, over 76 blocks against
+        // 51. The rate falls from 87% to 76% because the 23 blocks only the
+        // evaluator reaches are the harder ones -- 2097 of 4501 -- but every
         // absolute count is up.
-        Assert.Equal(12493, pointsHeld);
-        Assert.Equal(877, recordsHeld);
+        Assert.Equal(12558, pointsHeld);
+        Assert.Equal(890, recordsHeld);
         Assert.Equal(34, blocksHeld);
 
         Assert.Equal(16, _declared);
         Assert.Equal(53, _sharedBlocks);
         Assert.Equal(23, _newBlocks);
-        Assert.Equal(10396, _sharedHeld);
+        Assert.Equal(10461, _sharedHeld);
 
         // On the 16 the graph declares, running it lands in the right state 5 times.
         // Every one of the 10 differences is a stance -- sneaking, bow drawn,

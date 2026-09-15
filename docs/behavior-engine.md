@@ -330,8 +330,43 @@ changed the score by nothing at all, so it is not in the tree. The zero-deliveri
 arms are still counted as recovered blocks, which flatters the recall figure: some
 of the 76 carry curves that are entirely wrong.
 
+## 4.8 Which clips move the character
+
+Selection says which animation is sampled, and that is not the same question as
+how fast the creature travels. A blend mixes root motion over `weight *
+worldFromModelWeight`, and the second field is a flag in practice: across the 49
+projects it is 1 on 7,584 children and 0 on 668, never anything else. A child at
+0 decides how the character *looks* and contributes nothing to where it goes --
+the player's `MT_ForwardCameraBobBlend` is one, a whole parametric ladder that
+moves nobody.
+
+So `ActiveNode` carries `Motion` beside `Weight`: its share of the movement,
+normalised over the children that are in the world-from-model blend. Two
+creatures in the corpus end up below 1, and both at exactly 0.5, and they are
+not the same case:
+
+| | mixed with | share | table |
+| --- | --- | --- | --- |
+| `HMDaedra` | `MT Idle`, a clip that stands still | 0.5 | halved |
+| `NetchProject` | a lower-body state machine that selects nothing | 1 | not halved |
+
+**A child that samples nothing gives its share back.** The netch's
+`StandingLocomotionBlend` mixes an upper-body and a lower-body machine at equal
+weight, but the lower body has no live state, so there is no second pose to blend
+and the runtime is left with what it has. The daedra's sibling is a real clip
+that happens to travel zero, and it keeps its half -- the daedra genuinely moves
+at half the speed its ladder delivers, which is what its shipped table records.
+
+Authored weight alone cannot tell the two apart. Only running the graph and
+looking at what each branch actually sampled can, which is
+`ActiveGenerators.Settle`. Applying it takes `HMDaedra` from 0 of 77 points to 65
+and leaves `NetchProject` at 45 of 45.
+
 ## 5. Open
 
+- `Settle` corrects the motion channel only. A branch that samples nothing takes
+  its authored share of the *pose* as well, and the runtime renormalises that the
+  same way; nothing measured so far depends on it, so it has not been changed.
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
   the transition durations.
 - `cond()` in expressions is a Bethesda extension — 6.6's compiler emits zero
