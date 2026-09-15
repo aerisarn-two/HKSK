@@ -999,6 +999,35 @@ its right reads 1 of 24 and its left 14 of 67, and the shipped lateral curve is
 not a ladder response at all. At x = 4.5 it records 20.5 where the ladder gives 3,
 and it steps rather than curves.
 
+### 6.2d Which input the shipped table followed
+
+A rung carries two numbers that ought to agree: the weight the author gave it, and
+the speed the clip beneath it travels at. Replacing the second with the first
+everywhere asks which one Bethesda's sampler followed, and over the 6,140 points
+of the keys the graph declares the answer is emphatic -- **the cache holds 5,047
+and the weights 3,864.** `VampireLord` falls from 223 of its 223 points to 7 and
+`BallistaCenturion` from 224 to 14, which is §0's whole claim made visible: the
+table exists because the two numbers differ.
+
+**Two creatures prefer the weights, and both have damaged root motion.**
+`HorseProject` goes from 0 to 213 and `WerewolfBeastProject` from 28 to 67. The
+werewolf is the horse's case again -- its forward clips deliver 0.9 and 197.15
+where the rungs say 5 and 303.04, a constant 5.55 and 1.537 per animation rather
+than per rung, while its sideways arms deliver their weights to four figures and
+four of its arms record no travel at all. So 491 of the points still missing are
+bounded by the cache rather than by the model.
+
+**That is not a licence to mend them.** The two look identifiable from the inputs
+alone: their rung weights are their movement type's own speeds to within a tenth
+of a percent while the cache says something else, and two inputs agreeing against
+the third is a tempting rule. Mending only those rungs does help them, the horse
+by 57 and the werewolf by 8 -- and `VampireLord` falls from 223 to 90. Its rungs
+are authored at its movement type's speeds too, its clips genuinely deliver
+something else, and the shipped table faithfully records the something else. **The
+signature of a damaged cache and the signature of a creature this file was written
+for are the same signature.** The rule is a net loss across the corpus and is not
+in the rebuild; `CacheDamageTests` keeps the refutation.
+
 ### 6.3 The horse: the one creature whose cache is the problem
 
 A ladder child's weight is a position on the speed axis and the clip beneath it
