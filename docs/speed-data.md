@@ -999,21 +999,38 @@ its right reads 1 of 24 and its left 14 of 67, and the shipped lateral curve is
 not a ladder response at all. At x = 4.5 it records 20.5 where the ladder gives 3,
 and it steps rather than curves.
 
-### 6.3 The horse compounds three separate things
+### 6.3 The horse: the one creature whose cache is the problem
 
-`HorseProject` holds 0 of its 289 curves, and looking at it shows why no single
-correction would help.
+A ladder child's weight is a position on the speed axis and the clip beneath it
+travels at some speed of its own. §0 says the two are meant to be the same number
+and that this file exists to record where they are not -- and measuring how near
+they are says the agreement is very close indeed: **32 of the 40 projects with a
+ladder sit within 1% at the median, most of them exactly 1.**
 
-Its locomotion sits under `SaddleOffsetBlend` at **0.5**, mixed with
-`Saddle offset.hkx` -- the daedra's arrangement again. Its top rung is
-`RunForward`, and the animation cache records **one translation key of
-`<0,0,0>`** for it, so the fastest gait delivers nothing and the ladder tops out
-at the trot. And `WalkForwardSlow` and `Saddle offset` have **no cache slot at
-all**, so those children are skipped when the rungs are read.
+`HorseProject` is the extreme outlier at **2.4291**, and three separate things say
+the horse is right and the measurement is wrong.
 
-Three causes in one creature, of three different kinds: a blend that halves the
-pose, an animation the cache says does not travel, and clips the cache does not
-carry. Worth knowing before anyone reads its 0% as one bug.
+Its forward ladder's rungs are 5, 125.112, 214, 303.906 and 450. Its **movement
+type** asks for a forward walk of 125.11 and a run of 450 -- the rungs are
+authored at the game's own numbers. Its **shipped table** then reads very nearly
+the identity: 121.46 at a goal speed of 125, 312.57 at 324.5. So the graph, the
+masters and the table all agree the horse travels at about what it is asked for.
+
+The **animation cache** does not. It records `WalkForward` as 182.344 units in 0.6
+seconds, which is 303.9 u/s, and every rung playing that animation is out by the
+same 2.429 while every rung playing `TrotForward` is out by the same 1.5387 -- a
+constant per animation rather than per rung, so it is the recorded motion and not
+the blend. The cache duration agrees with the animation's own, checked against all
+6,674 motion blocks, so it is the displacement that is wrong and not the span.
+
+**The horse's cache is independently known to be damaged.** `RunForward` is
+recorded as travelling zero and `SprintForward` carries no motion block at all, so
+two of its four gaits are already missing before any of this. That is why it holds
+0 of its 289 points and why no correction here would help: only the cache
+disagrees with the shipped table, and the cache is the one input that cannot be
+checked against anything else.
+
+Held by `RungDeliveryTests`.
 
 **The deviation is always below the chord, never above.** A faster rung is a shorter
 clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
