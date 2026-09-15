@@ -50,3 +50,21 @@ int per member (-1 for none) followed by the values.
 A project's search paths are the **absolute** authoring paths, baked into its
 `hkbProjectStringData` — `C:\work\tremor\...` for the shipped tutorials. `rootPath`
 in the config does not override them, so symlink them into the Wine prefix.
+
+## There is no state log, and this is why
+
+The runtime reports no behaviour state. Checked and ruled out:
+
+- `-rl0..5` is the physics report level; it prints nothing here and writes no file.
+- The statistics packet is the monitor stream: 71 named timers a frame, but they
+  name classes and phases (`hkbClipGenerator::generate`, `UpdateActiveNodes2`),
+  never instances. Only the `Lt`/`St`/`Tt` commands appear -- no
+  `TimerBeginObjectName` -- so no node, state, variable or transition is named.
+  Searching a frame for the graph's own node and variable names finds nothing.
+- The `Behaviors` viewer sends no text; it draws through the debug display.
+- `ObjectInspection` publishes one top-level object, an `hkpRigidBody`.
+- `-video` writes frames, but under Wine they come out black.
+
+So what the runtime yields is the evaluated pose, plus a profile of which code
+paths ran. Which node was active has to be inferred from the pose -- run a
+candidate generator alone and compare -- rather than read.
