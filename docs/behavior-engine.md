@@ -379,6 +379,31 @@ answered. The second half of that is not optional: the falmer's `Bow_iStateGen`
 guards eight ladders, and taking one clip out of them is a moment rather than a
 curve -- it cost 150 of its points until the condition was added.
 
+### An intro animation has finished
+
+A graph read at rest is not a graph on its first frame, and the difference is one
+rule: **a clip that has been playing has reached its end, so a trigger the author
+placed there has fired.** Only those -- `m_relativeToEndOfClip` marks the event as
+belonging to the clip finishing rather than to a moment inside it, which is what a
+footstep or a hit frame is.
+
+Without it an intro animation holds the graph forever. The player's
+`BleedOut_iStateGen` guards a machine that starts in `BleedOut_Transition_State`,
+and the only way out is event 128, `bleedOut_TransInEnd`, which `BleedOut_TransIn`
+raises at its own end -- so the bleedout rested in its transition-in clip and
+never reached the four-way blend its table describes. The riekling was stuck the
+same way in `MT_Equip`, which is why its two compasses could not be told apart by
+running the graph.
+
+Its own compass then follows: `BleedOut_Moving_Blend` is a cyclic parametric blend
+of four clips at 0.25, 0.5, 0.75 and 1 with no ladder under it, because a creature
+bleeding out has one animation per direction and no gait to choose. So the curve
+is flat in the goal speed and varies only with the heading, and the file agrees --
+20.5 forward against `BleedOut_Forward`'s 20.500, 17.96 sideways against
+`BleedOut_Right`'s 17.957, and 13.51 between them, below both, which is the same
+vector blend as anywhere else. A blend is read as a compass rather than a ladder
+when every child weight is at most 1, which is `SpeedSampler`'s own test.
+
 ### A perk is not a stance
 
 Two of the player's movement types change what the game *allows* rather than what

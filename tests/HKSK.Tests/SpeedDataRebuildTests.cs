@@ -1,3 +1,4 @@
+using System.Numerics;
 using HKSK.Behavior;
 using HKSK.Engine;
 using HKSK.Cache;
@@ -303,6 +304,76 @@ public sealed class SpeedDataRebuildTests
     }
 
     /// <summary>
+    /// A compass whose arms are single clips rather than ladders.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>BleedOut_iStateGen</c> guards a machine whose moving state is
+    /// <c>BleedOut_Moving_Blend</c>: a cyclic parametric blend of four clips at
+    /// 0.25, 0.5, 0.75 and 1, and no speed ladder anywhere under it. A creature
+    /// bleeding out has one animation per direction and no gait to choose, so the
+    /// curve is flat in the goal speed and varies only with the heading -- and the
+    /// shipped table says exactly that, 20.5 at every goal speed forward against
+    /// <c>BleedOut_Forward</c>'s 20.500, and 17.96 sideways against
+    /// <c>BleedOut_Right</c>'s 17.957.
+    /// </para>
+    /// <para>
+    /// The dip between the arms is the same vector blend as anywhere else: at 0.15
+    /// the file reads 13.51, below both of its neighbours, because the two clips
+    /// point in different directions and their travel is mixed as a vector before
+    /// it is divided.
+    /// </para>
+    /// <para>
+    /// A blend is read as a compass rather than a ladder when every child weight is
+    /// at most 1, which is <c>SpeedSampler</c>'s own test -- a rung is a speed in
+    /// units per second and a heading is a fraction of a turn.
+    /// </para>
+    /// </remarks>
+    private static List<(float Direction, SpeedLadder Ladder)>? CompassOfClips(
+        Evaluation run, ActorProject actor)
+    {
+        foreach (ActiveNode node in run.Active)
+        {
+            if (node.Generator is not hkbBlenderGenerator blend) continue;
+            if ((blend.m_flags & 16) == 0) continue;                       // FLAG_PARAMETRIC_BLEND
+
+            IList<hkbBlenderGeneratorChild> children = blend.m_children ?? [];
+            if (children.Count < 3) continue;
+
+            List<(float, SpeedLadder)> arms = [];
+            bool headings = true;
+
+            foreach (hkbBlenderGeneratorChild child in children)
+            {
+                if (child.m_weight > 1.001f) { headings = false; break; }
+                if (child.m_generator is not hkbClipGenerator clip) { headings = false; break; }
+                if (clip.m_animationName is not { Length: > 0 } animation || clip.m_playbackSpeed == 0f)
+                { headings = false; break; }
+
+                string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
+                if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion ||
+                    motion.Translations.Count == 0)
+                { headings = false; break; }
+
+                float rate = MathF.Abs(clip.m_playbackSpeed);
+                Vector3 travel = motion.Translations[^1].Value;
+                float duration = motion.Duration / rate;
+
+                var rung = new SpeedRung(
+                    travel.Length() / duration,
+                    clip.m_playbackSpeed < 0f ? -travel : travel,
+                    duration, stem);
+
+                arms.Add((child.m_weight, new SpeedLadder([rung]) { Name = blend.m_name }));
+            }
+
+            if (headings && arms.Count == children.Count) return arms;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The flat curve a key gets when the graph tags it but gives it no ladder.
     /// </summary>
     /// <remarks>
@@ -361,6 +432,10 @@ public sealed class SpeedDataRebuildTests
             HashSet<IHavokObject> ladders = [];
             foreach (SpeedConsumer consumer in Locomotion.ConsumersIn(walk.Steps))
                 ladders.Add(consumer.Node);
+
+            // A compass of flat clips, where the subtree has one: the bleedout is
+            // four clips on a cyclic parametric blend and nothing else.
+            if (CompassOfClips(run, actor) is { } compass) return compass;
 
             SpeedRung? only = null;
             bool several = false;
@@ -479,12 +554,12 @@ public sealed class SpeedDataRebuildTests
     /// <para>
     /// The project list comes out right -- all 49, because every project with an
     /// animation cache has a block and nothing else does. The key set does not.
-    /// It writes 140 blocks, of which <strong>76 are ones the game ships</strong> --
-    /// 88% of the file, against 51 before the evaluator. It misses 10 and invents
-    /// 64, and only 2 declared movement types cannot be placed at all, against 50.
+    /// It writes 141 blocks, of which <strong>77 are ones the game ships</strong> --
+    /// 90% of the file, against 51 before the evaluator. It misses 9 and invents
+    /// 64, and only 1 declared movement type cannot be placed at all, against 50.
     /// </para>
     /// <para>
-    /// <strong>Of the 10 it misses, 8 are impossible from the graph.</strong>
+    /// <strong>Of the 9 it misses, 8 are impossible from the graph.</strong>
     /// AtronachFlame, AtronachStorm, ChaurusFlyer, Dragon_Priest, DragonProject,
     /// IceWraith, Wisp and Witchlight have no <c>BSSpeedSamplerModifier</c> at all,
     /// and the game ships a one-key table for each -- nothing in those graphs reads
@@ -492,15 +567,16 @@ public sealed class SpeedDataRebuildTests
     /// dwarven spider, whose directional blend carries no binding at all.
     /// </para>
     /// <para>
-    /// <strong>The tenth is the riekling, and it is the honest kind of miss.</strong>
-    /// Its two candidate compasses carry identical rung weights, so the pairing
-    /// scores them equally and says so rather than choosing; and the graph cannot be
-    /// run into either, because its combat machine is in <c>START_STATE_MODE_SYNC</c>
-    /// on a variable that starts at the equip state and only the game moves it on.
-    /// Reading a reversed clip correctly is what exposed the tie -- before that one
-    /// of its four headings had no rungs at all, which scored the two apart by
-    /// accident. The block it used to emit held 99 of its 1037 points, so what was
-    /// lost is a block that was 90% wrong.
+    /// The riekling was a tenth until the engine learned that an intro animation
+    /// has finished. Its two candidate compasses carry identical rung weights, so
+    /// the pairing scores them equally and says nothing; what settles it is running
+    /// the graph, and that used to rest in <c>MT_Equip</c> because its combat
+    /// machine is in <c>START_STATE_MODE_SYNC</c> on a variable starting at the
+    /// equip state. Raising the equip clip's own end trigger carries it through, and
+    /// the evaluator picks the bare-handed compass -- 138 of its 1037 points against
+    /// 99 for the crossbow one. It is still the worst block in the file and what it
+    /// needs is a model: its forward and backward records are exact and its lateral
+    /// ones are not a ladder response at all.
     /// </para>
     /// <para>
     /// <strong>All 64 inventions are movement types declared and never swept.</strong>
@@ -528,7 +604,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversSeventySixOfTheEightySixBlocks()
+    public void TheInferenceRecoversSeventySevenOfTheEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -559,12 +635,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(140, made.Count);
+        Assert.Equal(141, made.Count);
 
-        Assert.Equal(76, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(10, shipped.Except(made).Count());      // missed, was 35
+        Assert.Equal(77, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(9, shipped.Except(made).Count());       // missed, was 35
         Assert.Equal(64, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(1, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -739,22 +815,22 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(76, blocks);
-        Assert.Equal(1444, records);
-        Assert.Equal(16592, points);
+        Assert.Equal(77, blocks);
+        Assert.Equal(1463, records);
+        Assert.Equal(17629, points);
 
-        // 14989 against the 10145 the pairing alone reached, over 76 blocks against
-        // 51, and 90% of the shipped points rather than 87% -- so the blocks added
-        // since are no longer the harder ones on average. The 11 the evaluator still
-        // supplies hold 1822 of 2041.
-        Assert.Equal(14989, pointsHeld);
-        Assert.Equal(1164, recordsHeld);
+        // 15205 against the 10145 the pairing alone reached, over 77 blocks against
+        // 51. The rate reads 86% rather than 90% only because RieklingProject is
+        // back in the denominator with 1037 points and 138 of them right; on the
+        // other 76 blocks it is 13245 of 14551, which is 91%.
+        Assert.Equal(15205, pointsHeld);
+        Assert.Equal(1196, recordsHeld);
         Assert.Equal(46, blocksHeld);
 
         Assert.Equal(25, _declared);
         Assert.Equal(65, _sharedBlocks);
-        Assert.Equal(11, _newBlocks);
-        Assert.Equal(13167, _sharedHeld);
+        Assert.Equal(12, _newBlocks);
+        Assert.Equal(13245, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,
@@ -765,9 +841,9 @@ public sealed class SpeedDataRebuildTests
         // them is known: iIsInSneak = 1 reaches Sneak_Locomotion_State, found by
         // searching the player's 301 variables against these declarations. The
         // others need a combination, and nothing here sets any of them yet.
-        Assert.Equal(6, _evaluatorAgreed);
+        Assert.Equal(7, _evaluatorAgreed);
         Assert.Equal(18, _evaluatorDiffered);
-        Assert.Equal(1, _evaluatorMissed);
+        Assert.Equal(0, _evaluatorMissed);
     }
 
     /// <summary>The inferred table writes back as a well-formed file.</summary>

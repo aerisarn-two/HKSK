@@ -109,7 +109,10 @@ public static class ActiveGenerators
 
         Variables fallback = root is hkbBehaviorGraph top ? Variables.Of(top) : Variables.Empty;
         drive?.Invoke(tables);
-        Tables reading = new(fallback, walk, tables, properties, events ?? Events.None, speeds);
+
+        // The caller's own set is left alone: the run adds to its copy.
+        Events raised = Events.Of([.. (events ?? Events.None).Names]);
+        Tables reading = new(fallback, walk, tables, properties, raised, speeds);
 
         // Modifiers write variables and variables decide what the machines below
         // select, so one pass is not enough: run until the selection stops moving.
@@ -123,9 +126,56 @@ public static class ActiveGenerators
 
             active = trace.Active;
             Settle(trace, reading);
+            Finished(trace.Active, walk, tables, raised);
         }
 
         return new Evaluation(active, tables, walk);
+    }
+
+    /// <summary>
+    /// Raises the end-of-clip triggers of the clips a pass landed on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A graph is read at rest, and a clip that has been playing has reached its
+    /// end -- so a trigger the author placed there has fired. Only those are
+    /// raised: <c>m_relativeToEndOfClip</c> says the event belongs to the clip
+    /// finishing rather than to a moment inside it, which is what a footstep or a
+    /// hit frame is.
+    /// </para>
+    /// <para>
+    /// It matters because an intro animation otherwise holds the graph forever.
+    /// The player's <c>BleedOut_iStateGen</c> guards a machine that starts in
+    /// <c>BleedOut_Transition_State</c>, and the only way out is event 128,
+    /// <c>bleedOut_TransInEnd</c>, which <c>BleedOut_TransIn</c> raises at its own
+    /// end. Without this the bleedout rests in its transition-in clip and never
+    /// reaches the four-way blend that its speed table describes.
+    /// </para>
+    /// <para>
+    /// Event ids are per file, like variable indices, so each clip's triggers are
+    /// named against the table of the file the clip lives in.
+    /// </para>
+    /// </remarks>
+    private static void Finished(
+        IReadOnlyList<ActiveNode> active, ProjectWalk? walk,
+        Dictionary<string, Variables>? tables, Events raised)
+    {
+        if (walk is null || tables is null) return;
+
+        foreach (ActiveNode node in active)
+        {
+            if (node.Generator is not hkbClipGenerator clip) continue;
+            if (clip.m_triggers?.m_triggers is not { Count: > 0 } triggers) continue;
+            if (walk.StepOf(clip) is not { } step) continue;
+            if (!tables.TryGetValue(step.File, out Variables? variables)) continue;
+
+            foreach (hkbClipTrigger trigger in triggers)
+            {
+                if (!trigger.m_relativeToEndOfClip) continue;
+                if (trigger.m_event?.m_id is not { } id) continue;
+                if (variables.EventNameOf(id) is { } name) raised.Raise(name);
+            }
+        }
     }
 
     /// <summary>What one pass saw.</summary>
