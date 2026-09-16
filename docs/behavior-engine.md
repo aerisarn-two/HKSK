@@ -608,8 +608,12 @@ and leaves `NetchProject` at 45 of 45.
   with Havok's. `cond()` could never be: it is a Bethesda extension and 6.6's
   compiler emits zero tokens for it. The rest could in principle, through
   `hkmeasure`'s `states` mode, which drives a machine from an expression and
-  sweeps a variable — but **that mode does not run**. `Methods.setCharacter`
-  throws a null reference inside the managed assembly even with the context's
-  project data and character set up, which is the same place the blend path had to
-  be worked around. So the expression semantics are the weakest-evidenced part of
-  the engine, and the gap is wider than `cond`.
+  sweeps a variable — but **that mode does not run**. The managed
+  `NullReferenceException` it used to throw is understood and fixed: the public
+  `Methods.generate` calls a non-public inner method that takes a
+  `List<hkbGeneratorOutput>` and passes nothing for it, and invoking the inner one
+  directly with the list supplied clears the exception. What remains is a **native
+  crash** inside the 32-bit Havok DLL, past every managed frame, which would need
+  a debugger on that side. See `tools/hkmeasure/README.md`. So the expression
+  semantics are the weakest-evidenced part of the engine, and the gap is wider
+  than `cond`.

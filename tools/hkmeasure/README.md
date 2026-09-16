@@ -93,24 +93,38 @@ That is worth knowing before modelling a branch as producing nothing. It is not 
 state a shipped graph can be in, so where the engine sees one it is looking at
 something else -- for the netch, at the same subtree reached twice.
 
-## The `states` mode does not run
+## The `states` mode does not run, and how far it gets
 
 `hkmeasure states rigrf.xml 0 200 5` builds a machine driven by an
 `hkbEvaluateExpressionModifier` and sweeps `Speed`, which would make it an oracle
-for the expression language. It gets as far as printing its header and then
-`Methods.setCharacter` throws a `NullReferenceException` inside the managed
-assembly, with the context reporting `projectData=ok characterSetup=ok`. That is
-the same call the blend path had to be worked around, and the workaround there
-does not carry over.
+for the expression language. It still does not run, but the failure is no longer
+where it looked.
 
-So nothing has compared the engine's expression answers against Havok's. The blend
-sweep is the only mode that runs.
+**The managed NullReferenceException is the public overload's fault, and it is
+solved.** `Methods.generate` calls the non-public
+`Methods.generateUpToSceneModifiers`, which takes one argument the public one does
+not: a `List<hkbGeneratorOutput>`. `generate` passes nothing for it, and the
+faulting `setCharacter` deeper in is a symptom of that rather than of anything
+wrong with the context or the character -- `setCharacter(ctx, ch)` and
+`setCharacter(ctxs[0], chars[0])` both succeed when called by hand from the line
+before. Invoking the inner method by reflection with the list supplied clears the
+exception outright.
 
-Two things narrow the search for anyone returning to it. The inner
-per-character `generate` the blend sweep uses **skips the modifier pass**, so an
-expression compiles and never runs -- the public list overload is the only one
-that evaluates, and it is the one that throws. And `Methods` carries no
-`addCharacter` at all, only `setCharacter` and `getCharacterSetup`, so the
-character is never registered anywhere and the comment above the call names a
-method that is not on that type. Whatever the public overload dereferences, it is
-not something `Methods` offers a way to set up.
+**What is left is a native crash**, inside the 32-bit Havok DLL, past every
+managed frame. `OUTS=` chooses what the list holds -- empty, one null, one
+`hkbGeneratorOutput` -- and all three reach it.
+
+**`addCharacter` exists and is callable**, contrary to what this file said before.
+It is on `hbtHavokEnvironment` rather than `Methods`, it takes the native
+`hkbCharacter*`, and the managed wrapper converts: `Havok.hkbCharacter` carries
+`op_Explicit` to both `hkbCharacter*` and `IntPtr`, which the `api` dump hides
+because it skips special names. `(IntPtr)ch` gives the address and
+`Pointer.Box` types it for the parameter. Calling it crashes natively too, so the
+registry wants more setup than a character and a skeleton -- but it is a call that
+can be made, not a method that is missing.
+
+The environment is initialised and `getWorld()` already returns non-null, so a
+world is not what is absent. `poke` prints all of this: the environment's state,
+the character wrapper's full hierarchy with its conversions, and whether
+`addCharacter` resolves.
+

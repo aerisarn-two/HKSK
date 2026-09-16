@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using Havok;
 using HavokManaged;
@@ -221,9 +222,74 @@ static class Probe
         //          eventQueueOut) -- worldUp is a value type and must not be null.
         var worldUp = new hkVector4(0, 0, 1, 0);
 
+        // The listener is what the public overload hangs its generator outputs
+        // off; passed null it has nowhere to put them.
+        var listener = Root(new hkbPoseStoringGeneratorOutputListener());
+
+        var outs = new List<hkbGeneratorOutput>();
+
         Action Step = () => Methods.generate(
-            chars, graphs, qIn, ctxs, null, flagsA, flagsB, bones, worldUp,
+            chars, graphs, qIn, ctxs, listener, flagsA, flagsB, bones, worldUp,
             1f / FPS, true, false, qOut);
+
+        // The environment keeps a character registry and nothing was ever put in
+        // it. addCharacter takes the native hkbCharacter*, which the managed
+        // wrapper converts to through an op_Explicit the API dump hides because it
+        // is a special name.
+        var addCh = typeof(hbtHavokEnvironment).GetMethod("addCharacter",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+        if (addCh != null && Environment.GetEnvironmentVariable("NOADD") == null)
+        {
+            try
+            {
+                // the wrapper converts to IntPtr; the parameter wants that same
+                // address typed as hkbCharacter*
+                IntPtr addr = (IntPtr)ch;
+                object boxed;
+                unsafe { boxed = Pointer.Box((void*)addr, addCh.GetParameters()[0].ParameterType); }
+                addCh.Invoke(env, new object[] { boxed });
+                Console.WriteLine($"[env] addCharacter({addr.ToInt64():x}): ok");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("[env] addCharacter: " + (e.InnerException?.GetType().Name ?? e.GetType().Name));
+            }
+        }
+
+        // The public overload will not run: it calls the non-public
+        // generateUpToSceneModifiers, which faults inside setCharacter on something
+        // that is not our context or our character -- both of those still work when
+        // called by hand from right here. The inner method takes one argument the
+        // public one does not, a list of generator outputs, so try it directly with
+        // that supplied.
+        var inner = typeof(Methods).GetMethod("generateUpToSceneModifiers",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        if (inner == null) Console.WriteLine("[inner] generateUpToSceneModifiers not found");
+
+        foreach (var shape in new[] { Environment.GetEnvironmentVariable("OUTS") ?? "one output" })
+        {
+            var probe = new List<hkbGeneratorOutput>();
+            if (shape == "one null") probe.Add(null);
+            if (shape == "one output") { try { probe.Add(Root(new hkbGeneratorOutput())); } catch { Console.WriteLine("[inner] cannot construct an output"); continue; } }
+
+            try
+            {
+                inner.Invoke(null, new object[]
+                {
+                    chars, graphs, qIn, listener, flagsA, flagsB, bones, worldUp,
+                    probe, ctxs, 1f / FPS, true, false, qOut,
+                });
+                Console.WriteLine($"[inner] generatorOutputs {shape}: RAN, outputs now {probe.Count}");
+                break;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[inner] generatorOutputs {shape}: {e.InnerException?.GetType().Name ?? e.GetType().Name}");
+            }
+        }
+
+
 
         Console.WriteLine();
         Console.WriteLine("     Speed     sel   iState   stateId  stateName");
@@ -290,6 +356,60 @@ static class Probe
 
     // Discovery, not production: the assembly only loads under its own runtime,
     // so the one way to see what it offers is to ask it there.
+    /// Looks for the way a managed wrapper carries its native pointer, and for
+    /// whatever the environment needs before the public generate path will run.
+    static void Poke()
+    {
+        var env = Root(new hbtHavokEnvironment());
+        Console.WriteLine($"[env] isInitialised={hbtHavokEnvironment.isInitialised()}");
+
+        var envT = typeof(hbtHavokEnvironment);
+        foreach (var m in new[] { "getWorld", "getEventLinker", "getAttachmentManager" })
+        {
+            var mi = envT.GetMethod(m, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            object got = null;
+            try { got = mi?.Invoke(env, null); } catch (Exception e) { got = "threw " + e.InnerException?.GetType().Name; }
+            Console.WriteLine($"[env] {m} -> {Describe(got)}");
+        }
+
+        var ch = Root(Methods.createCharacter());
+        Console.WriteLine($"[char] {ch.GetType().FullName}");
+        foreach (var f in ch.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic |
+                                                 BindingFlags.Instance | BindingFlags.Static))
+            Console.WriteLine($"    field {f.FieldType.Name} {f.Name} = {Describe(SafeGet(f, ch))}");
+        foreach (var pr in ch.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic |
+                                                      BindingFlags.Instance))
+            Console.WriteLine($"    prop  {pr.PropertyType.Name} {pr.Name}");
+        for (System.Type t = ch.GetType(); t != null && t != typeof(object); t = t.BaseType)
+        {
+            Console.WriteLine($"    --- {t.FullName}");
+            foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic |
+                                          BindingFlags.Instance | BindingFlags.Static |
+                                          BindingFlags.DeclaredOnly))
+                Console.WriteLine($"        field {f.FieldType.Name} {f.Name} = {Describe(SafeGet(f, ch))}");
+            foreach (var pr in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic |
+                                               BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                Console.WriteLine($"        prop {pr.PropertyType.Name} {pr.Name}");
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
+                                           BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                if (m.Name.IndexOf("ptr", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    m.Name.IndexOf("native", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    m.Name.StartsWith("op_"))
+                    Console.WriteLine($"        method {m.ReturnType.Name} {m.Name}({m.GetParameters().Length})");
+        }
+
+        var add = envT.GetMethod("addCharacter", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        Console.WriteLine($"[add] {add?.ToString() ?? "not found"}  param={add?.GetParameters()[0].ParameterType}");
+    }
+
+    static object SafeGet(FieldInfo f, object o)
+    {
+        try { return f.GetValue(o); } catch (Exception e) { return "threw " + e.GetType().Name; }
+    }
+
+    static string Describe(object o) =>
+        o == null ? "null" : $"{o.GetType().Name}:{o}";
+
     static void Api(string filter)
     {
         var asm = typeof(Methods).Assembly;
@@ -320,6 +440,14 @@ static class Probe
 
     static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "poke")
+        {
+            HavokSystem.Init();
+            Poke();
+            HavokSystem.Terminate();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "api")
         {
             Api(args.Length > 1 ? args[1] : null);
