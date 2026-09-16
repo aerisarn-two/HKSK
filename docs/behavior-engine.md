@@ -404,6 +404,13 @@ placed there has fired.** Only those -- `m_relativeToEndOfClip` marks the event 
 belonging to the clip finishing rather than to a moment inside it, which is what a
 footstep or a hit frame is.
 
+**Measured against the runtime** (`tools/gameview/triggertest.py`), which is the
+strongest of the three sources in §3 and the only rule added recently that has
+it. Two graphs differing in exactly this: a two-state machine whose first state
+plays a clip carrying one trigger at `relativeToEndOfClip` raising the only event,
+with the only transition firing on that event. Havok 6.6 rests in state 1 with the
+trigger and in state 0 without it, so nothing but the trigger moved it.
+
 Without it an intro animation holds the graph forever. The player's
 `BleedOut_iStateGen` guards a machine that starts in `BleedOut_Transition_State`,
 and the only way out is event 128, `bleedOut_TransInEnd`, which `BleedOut_TransIn`

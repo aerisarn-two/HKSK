@@ -62,7 +62,14 @@ class Node:
         self.id = None
 
     def children(self):
-        return []
+        """Every node this one points at, wherever it sits in the members."""
+        out = []
+        for v in self.values.values():
+            if isinstance(v, Node):
+                out.append(v)
+            elif isinstance(v, list):
+                out += [x for x in v if isinstance(x, Node)]
+        return out
 
 
 class Clip(Node):
@@ -79,6 +86,8 @@ class Blend(Node):
         self.values['children'] = self.arms
 
     def children(self):
+        # the arms before the generators they hold, which is the order the
+        # bindings were written against
         return self.arms + [a.values['generator'] for a in self.arms]
 
 

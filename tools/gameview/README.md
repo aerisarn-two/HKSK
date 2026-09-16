@@ -29,7 +29,7 @@ registry entries and memory-tracker layouts — plausible, and not the definitio
 The versioner keeps historical copies of a class under the same name. The live one
 is the instance whose member table lies in `.rdata`.
 
-## Four things the reader insists on
+## Five things the reader insists on
 
 Each was found by disassembling the failure, and none of them announces itself:
 
@@ -41,6 +41,11 @@ Each was found by disassembling the failure, and none of them announces itself:
   of `0xffffffff`.
 - **The character asset is not in the project.** `Characters/<name>.hkx` is the rig
   scene; HBT exports `hkbCharacterData` separately, so `gvchar.py` writes it.
+- **The graph must declare at least one variable.** With an empty variable table
+  nothing is instantiated and no `hkbBehaviorGraph` is ever found in memory, with
+  no message of any kind -- the demo comes up and runs an empty world. One unused
+  variable is enough. The demo config binds twelve `stickVariables` by name, which
+  is the likeliest reason.
 
 Class defaults are worth reading rather than guessing: `hkClass::m_defaults` is one
 int per member (-1 for none) followed by the values.
@@ -158,3 +163,34 @@ ruled out:
 So what the runtime yields is the evaluated pose, plus a profile of which code
 paths ran. Which node was active has to be inferred from the pose -- run a
 candidate generator alone and compare -- rather than read.
+
+## Measuring a semantic rule against the runtime
+
+`triggertest.py` is the worked example, and the pattern generalises: describe two
+graphs that differ in exactly the thing being tested, run each, and read the
+member that answers.
+
+    python3 triggertest.py /tmp/claude-1000/gv
+
+    with an end-of-clip trigger   currentStateId over time: [1, 1, 1, 1, 1, 1, 1, 1]
+    without one                   currentStateId over time: [0, 0, 0, 0, 0, 0, 0, 0]
+
+A two-state machine whose first state plays a clip carrying one trigger at
+`relativeToEndOfClip`, raising the only event, with the only transition firing on
+that event. Nothing else can move it, so state 1 means the trigger fired on its
+own. That is `ActiveGenerators.Finished` measured rather than reasoned.
+
+## Staging it again
+
+The tutorial assets live outside the Wine prefix and the staging directory is in
+`/tmp`, so it does not survive a reboot:
+
+    SRC="$HOME/.wine/drive_c/Program Files (x86)/Havok/Havok Behavior/gameview"
+    TUT="$HOME/Documents/Havok/Havok Behavior 6.6.0/Tutorial Projects/Tutorial01/Lesson01"
+    GV=/tmp/claude-1000/gv
+    mkdir -p "$GV" && cp -r "$SRC"/* "$GV"/ && cp -r "$TUT" "$GV/proj" && mkdir -p "$GV/Gameview"
+
+`c:/work/tremor/Tutorial Projects/Tutorial01/Lesson01` must symlink to `$GV/proj`
+and `.../Shared Animations` to the real one, because the search paths are baked
+into the project's own `hkbProjectStringData` and the config's `rootPath` does not
+override them.
