@@ -379,6 +379,23 @@ answered. The second half of that is not optional: the falmer's `Bow_iStateGen`
 guards eight ladders, and taking one clip out of them is a moment rather than a
 curve -- it cost 150 of its points until the condition was added.
 
+### An expression that undoes itself
+
+`BSModifyOnceModifier` carries two modifiers, one run on entering its subtree and
+one on leaving, and Bethesda uses the pair to set a variable and put it back. The
+horker's swim state holds both, on one node in one list:
+`HorkerSwimmingStart_EEM` writing `iState = iState_HorkerSwimDefault` and
+`HorkerSwimmingStop_EEM` writing `iState = iState_HorkerDefault`.
+
+Reading where an expression sits is how an undeclared key finds its state, and
+both of these sit in the swim branch -- so `iState_HorkerDefault` was read as
+naming the swim locomotion, and `HorkerProject` rebuilt its walking curve from
+`ForwardSwimState`, holding 19 of its 119 points. An expression reached through
+`m_pOnDeactivateModifier` describes leaving a subtree and so governs nothing;
+with it ignored the key falls through to the movement-type route, which matches
+`ForwardState_Horker`'s rungs to its own 32.77 and 83.41 exactly, and the block
+holds all 119.
+
 ### An intro animation has finished
 
 A graph read at rest is not a graph on its first frame, and the difference is one

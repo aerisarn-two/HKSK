@@ -819,18 +819,18 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1463, records);
         Assert.Equal(17629, points);
 
-        // 15205 against the 10145 the pairing alone reached, over 77 blocks against
-        // 51. The rate reads 86% rather than 90% only because RieklingProject is
-        // back in the denominator with 1037 points and 138 of them right; on the
-        // other 76 blocks it is 13245 of 14551, which is 91%.
-        Assert.Equal(15205, pointsHeld);
-        Assert.Equal(1196, recordsHeld);
-        Assert.Equal(46, blocksHeld);
+        // 15305 against the 10145 the pairing alone reached, over 77 blocks against
+        // 51. The rate reads 87% rather than 92% only because RieklingProject is in
+        // the denominator with 1037 points and 138 of them right; on the other 76
+        // blocks it is 13345 of 14551.
+        Assert.Equal(15305, pointsHeld);
+        Assert.Equal(1215, recordsHeld);
+        Assert.Equal(47, blocksHeld);
 
         Assert.Equal(25, _declared);
         Assert.Equal(65, _sharedBlocks);
         Assert.Equal(12, _newBlocks);
-        Assert.Equal(13245, _sharedHeld);
+        Assert.Equal(13345, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,

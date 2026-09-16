@@ -74,12 +74,25 @@ public static class StateExpressions
     /// The locomotion state an assignment governs, when it governs exactly one.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// An expression sits inside the subtree it applies to: the draugr writes
     /// <c>iState = iState_DraugrH2H</c> inside the hand-to-hand branch and
     /// <c>iState = iState_DraugrBow</c> inside the bow branch. So the state it means
     /// is the one below the nearest ancestor they share -- and only when that
     /// ancestor has a single locomotion state under it, since an ancestor high
     /// enough covers them all and says nothing.
+    /// </para>
+    /// <para>
+    /// <strong>Unless it is the one that undoes it.</strong>
+    /// <c>BSModifyOnceModifier</c> carries two modifiers, one run on entering its
+    /// subtree and one on leaving, and Bethesda uses the pair to set a variable and
+    /// put it back. The horker's swim state holds both: <c>HorkerSwimmingStart_EEM</c>
+    /// writing <c>iState = iState_HorkerSwimDefault</c> and
+    /// <c>HorkerSwimmingStop_EEM</c> writing <c>iState = iState_HorkerDefault</c>,
+    /// on the same node, in the same list. The second sits inside the swim branch
+    /// and means the opposite of it, so an expression reached through
+    /// <c>m_pOnDeactivateModifier</c> governs nothing.
+    /// </para>
     /// </remarks>
     public static IHavokObject? GovernedBy(
         ProjectWalk walk, IHavokObject expression, IReadOnlyList<IHavokObject> states)
@@ -87,8 +100,17 @@ public static class StateExpressions
         ArgumentNullException.ThrowIfNull(walk);
         ArgumentNullException.ThrowIfNull(states);
 
+        IHavokObject below = expression;
+
         foreach (ProjectStep above in walk.Ancestors(expression))
         {
+            if (above.Node is BSModifyOnceModifier once &&
+                once.m_pOnDeactivateModifier is { } leaving &&
+                ReferenceEquals(leaving, below))
+                return null;
+
+            below = above.Node;
+
             var under = new List<IHavokObject>();
 
             foreach (IHavokObject state in states)
