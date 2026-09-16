@@ -448,6 +448,9 @@ static class Probe
                 rungM[i] = float.Parse(parts[i], CultureInfo.InvariantCulture);
         }
         Console.WriteLine("[blend] worldFromModelWeights " + string.Join(", ", Array.ConvertAll(rungM, F)));
+
+        string denv = Environment.GetEnvironmentVariable("DEAD");
+        int dead = denv == null ? -1 : int.Parse(denv);
         // A clip played at p takes duration/p, so that is the rung's duration.
         for (int i = 0; i < pb.Length; i++)
         {
@@ -471,6 +474,34 @@ static class Probe
             kid.m_generator = clip;
             kid.m_weight = rungW[i];
             kid.m_worldFromModelWeight = rungM[i];
+
+            // DEAD=<index> gives that child a state machine with no states at all,
+            // so it is in the blend and samples nothing. That is the netch's lower
+            // body, and what the engine's Settle claims about it is that its share
+            // of the motion goes back to the children that do sample something.
+            if (i == dead)
+            {
+                var empty = Root(new hkbStateMachine());
+                empty.m_name = "Empty";
+                empty.m_startStateId = 0;
+                empty.m_syncVariableIndex = -1;
+                empty.m_maxSimultaneousTransitions = 32;
+
+                // One state, and nothing under it. A machine with no states at all
+                // faults the runtime, so this is the shape the netch actually has:
+                // a branch that is selected and generates nothing.
+                var hollow = Root(new hkbStateMachine.StateInfo());
+                hollow.m_name = "Hollow";
+                hollow.m_stateId = 0;
+                hollow.m_probability = 1f;
+                hollow.m_enable = true;
+                hollow.m_generator = null;
+                empty.m_states.Add(hollow);
+
+                kid.m_generator = empty;
+                Console.WriteLine("[blend] rung " + i + " samples nothing");
+            }
+
             blender.m_children.Add(kid);
             clips.Add(clip);
         }

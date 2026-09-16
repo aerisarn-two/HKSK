@@ -81,3 +81,14 @@ interpolates duration, and equal ones take that out of the measurement.
 
 This is `HKSK.Engine.ActiveGenerators.Moving`, and it is why `HMDaedra` travels at
 half what its ladder delivers while `NetchProject` does not.
+
+## What Havok does with a child that generates nothing
+
+`DEAD=<index>` gives that child a state machine instead of its clip -- one with no
+states, or with a single state whose generator is null. Either way the runtime
+**faults** as soon as the blend parameter gives that child any weight: the sweep
+prints its first row, at the parameter where the child has none, and dies.
+
+That is worth knowing before modelling a branch as producing nothing. It is not a
+state a shipped graph can be in, so where the engine sees one it is looking at
+something else -- for the netch, at the same subtree reached twice.

@@ -527,12 +527,34 @@ not the same case:
 | `HMDaedra` | `MT Idle`, a clip that stands still | 0.5 | halved |
 | `NetchProject` | a lower-body state machine that selects nothing | 1 | not halved |
 
-**A child that samples nothing gives its share back.** The netch's
-`StandingLocomotionBlend` mixes an upper-body and a lower-body machine at equal
-weight, but the lower body has no live state, so there is no second pose to blend
-and the runtime is left with what it has. The daedra's sibling is a real clip
-that happens to travel zero, and it keeps its half -- the daedra genuinely moves
-at half the speed its ladder delivers, which is what its shipped table records.
+**A child that samples nothing gives its share back**, which is what the engine
+does and what separates the two creatures in practice. **The mechanism is not
+what it looks like**, and the difference is worth stating because it is the kind
+of thing that reads as understood when it is not.
+
+The daedra is straightforward: its sibling is `MT Idle`, a real clip that travels
+zero, so it keeps its half and the creature moves at half its ladder's speed.
+
+The netch is not. Its lower body is *the same subtree as its upper body* --
+`MoveForwardRootBehavior`, `ForwardBlend`, `NetchRunForward` at 400 units a
+second, the same node objects reached twice -- so both halves of the body blend
+travel at 400 and nothing is halved. The reason the engine sees the second half as
+empty is its own visit-wide `seen` set, which stops a node being entered twice
+even under different parents. The right answer for the wrong reason.
+
+**Havok will not run the state the rule describes.** A blend child whose generator
+is a state machine with no states, or with a state whose generator is null, faults
+the 6.6 runtime as soon as the child takes weight -- measured with
+`tools/hkmeasure`, `DEAD=`. So "a branch that generates nothing" is not something
+a shipped graph can contain, and no creature is really in that case.
+
+Correcting the traversal was implemented and measured. Scoping the cycle guard to
+the path rather than the visit -- which is what a cycle guard should be -- and
+summing a ladder's motion over the instances that then appear gives **15,227
+points and 1,177 records against 15,305 and 1,215**. So the corrected traversal is
+not yet an improvement: something else is relying on the visit-wide set, and it
+has not been found. Both changes are out of the tree and this paragraph is the
+record.
 
 Authored weight alone cannot tell the two apart. Only running the graph and
 looking at what each branch actually sampled can, which is
