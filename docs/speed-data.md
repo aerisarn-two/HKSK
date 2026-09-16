@@ -1096,8 +1096,19 @@ speeds, 99.52 either way, matching the strafe rungs exactly; its graph carries
 eight directional blends like any other creature's; its compass's
 `blendParameter` is stored rather than bound, but so is every other creature's
 (120 of the corpus's 122 compasses); and its own key 1 still prefers the compass,
-78 points against 30, so it is not even a property of the creature. Applying it
-would be reading the answer. `CompassNeededTests` keeps the measurement.
+78 points against 30, so it is not even a property of the creature.
+
+**`FirstPerson` is the second and last instance**, left out of the count above only
+because its key is reached by running the graph rather than declared. Its block is
+the same shape and more extreme: all nineteen records are one curve, and the
+forward arm of `LocomotionDefault` alone answers **all 209 of its points** where
+its eight-arm compass answers 42. For a camera that is what one would expect --
+the view travels at the character's speed whichever way the body strafes -- but
+the name of a project is not an input, and the third-person player builds its own
+block from the *same* `LocomotionDefault` state in the *same* shared graph and
+holds 226 of 226 points **with** its compass. So the two cases that would have to
+be told apart are told apart by nothing that has been found, and applying either
+would be reading the answer. `CompassNeededTests` keeps both measurements.
 
 ### 6.3 The horse: the one creature whose cache is the problem
 
