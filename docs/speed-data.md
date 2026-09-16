@@ -936,41 +936,43 @@ elsewhere, and scaling by the travelling fraction of all live clips costs 1800 -
 the humanoids layer upper and lower body, so a live clip that does not travel is
 normal for them. Both were measured and reverted. What is settled is the cause.
 
-### 6.2b A ladder has a floor, and two creatures disagree about it
+### 6.2b A ladder has a range, and creatures disagree at both ends
 
-A speed ladder's lowest rung is a floor: below it the blend clamps and the model
-says the creature travels at that rung's speed however slowly it is asked to go.
-Two creatures in the corpus are sampled below their floor and **they do not agree
-about what happens there.**
+A speed ladder covers its lowest rung to its highest, and outside that the blend
+clamps: on its own it says a creature runs at 214 when asked for 50 and walks at
+176 when asked for 300. Real creatures change gait instead, and the graph says
+which gait -- the two states sit in one machine with transitions between them. So
+this should be derivable, and **it is not, in either direction.**
 
-`BenthicLurkerProject`'s combat machine holds `CombatDirectionalState_WALK` and
-`CombatDirectionalState_RUN` with transitions each way. Key 1 is the run state,
-whose forward ladder starts at 213.8, and its table is sampled from x = 0. Below
-about 215 every shipped value is **the walk ladder's, exactly** -- the same
-numbers key 0 carries, to four figures -- and above it every value is the run
-ladder's, also exactly. The two meet in a step, not a blend: 203.55 at x = 215
-and 217.65 at x = 215.5.
+**Above the top.** `FalmerProject` key 2 is declared as
+`1HM_DirectionalState_Walk`, whose ladder stops at 175.8, and above that the
+shipped table keeps climbing to 397 -- which is `1HM_DirectionalState_Run`, the
+state the walk transitions to. Reading both holds 226 of its 275 points against
+the walk alone's 134. But `BearProject` is built identically --
+`ForwardWalkState` to 285.2 and `ForwardRunState` from 447.1, one machine,
+transitions between -- and at a goal speed of 324.5 its table reads **285.23**,
+the walk clamped. `GiantProject` the same: `LocomotionState` stops at 123.7,
+`CombatDirectionalState_RUN` reaches 622.5, and the table reads 123.1 at 324.5.
 
-`DeerProject`'s `ForwardLocomotionBehavior` holds `ForwardState_Deer` and
-`RunForwardState`, also with transitions, and key 21 is the run state, floor
-416.5, sampled from x = 400. That single point below the floor reads 391.5, which
-is **the run ladder clamped**, not the walk ladder.
+**Below the floor.** `BenthicLurkerProject` key 1 is the run state, whose forward
+ladder starts at 213.8, and below that every shipped value is the walk ladder's
+exactly -- the same numbers key 0 carries, to four figures, meeting the run in a
+step rather than a blend: 203.55 at x = 215 and 217.65 at 215.5. `DeerProject` key
+21 is built the same way, floor 416.5, and its one point below that reads 391.5,
+which is the run clamped.
 
-So one creature falls back to its slower state below the floor and the other
-clamps. Nothing in the files separates them that has been found: both pin their
-gait through a variable (the lurker's machine syncs to `iState`, the deer's binds
-`startStateId` to `iMovementSpeed`), both pairs of states carry transitions to
-each other, and in both the slower ladder's range covers the gap. The transitions
-themselves say nothing -- all four fire on an event with `FLAG_DISABLE_CONDITION`
-and an empty expression, so the game raises them and the behaviour data never
-names a speed.
+So the falmer and the lurker cross and the bear, the giant and the deer clamp.
+Nothing found separates them: all five pin their gait through a variable, all five
+have transitions between the two states, and in all five the other ladder's range
+covers the gap. The transitions say nothing either -- they fire on events with
+`FLAG_DISABLE_CONDITION` and empty expressions, so the game raises them and the
+behaviour data never names a speed.
 
-Falling back was implemented and measured: it takes the lurker from 101 of its
-531 points to 213 and costs the deer 17 of its 738, which is **+95 points but -17
-whole records**, since the lurker gains points without completing a record and
-the deer loses records outright. It is not in the tree. Separating the two cases
-needs something not yet found; a threshold fitted to the x grid would be fitting
-to the file being derived.
+Both halves were implemented and measured. Together they are +150 points and -22
+whole records; the top half alone is +66 on the falmer, -41 on the bear and -5 on
+the giant, which is +20 points for -24 records. Neither is in the tree. Separating
+the cases needs something not yet found, and a threshold fitted to the goal speeds
+the file happens to carry would be fitting to the file being derived.
 
 ### 6.2c A reversed clip, and the riekling
 
