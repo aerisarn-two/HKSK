@@ -631,39 +631,64 @@ and leaves `NetchProject` at 45 of 45.
 
 Every rule the rebuild rests on was switched off in turn and the corpus
 re-measured, because a rule can stop earning its place when something beneath it
-is fixed -- which is exactly how `Settle` came to be deleted.
+is fixed -- which is exactly how `Settle` came to be deleted. This is the second
+pass; the first was taken at 15,305 points and 77 blocks, before the flyers
+(`docs/speed-data.md` §6.2f) added four rules of their own.
 
-| turned off | points | records | blocks whole | recovered |
-| --- | --- | --- | --- | --- |
-| nothing | 15305 | 1215 | 47 | 77 |
-| the tag below a state (§4.2) | 14010 | 1109 | 43 | 77 |
-| borrowing from a key that walks alike | 14541 | 1145 | 45 | 77 |
-| keeping a state's compasses apart | 14885 | 1171 | 43 | 77 |
-| the flat-clip route | 15061 | 1109 | 43 | 77 |
-| end-of-clip triggers | 15089 | 1183 | 47 | **76** |
-| the compass of flat clips | 15243 | 1191 | 47 | 77 |
-| the motion share | 15240 | 1202 | 47 | 77 |
-| reading a reversed clip | 15266 | 1215 | 47 | 77 |
-| a machine that chooses on `iState` | 15301 | 1215 | 47 | 77 |
-| **the path-scoped cycle guard** | **15305** | **1215** | **47** | **77** |
+| turned off | points held | of | records | blocks whole | built |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| nothing | 15835 | 18195 | 1312 | 52 | 84 |
+| the tag below a state (§4.2) | 14540 | 18195 | 1206 | 48 | 84 |
+| borrowing from a key that walks alike | 15071 | 18195 | 1242 | 50 | 84 |
+| keeping a state's compasses apart | 15415 | 18195 | 1268 | 48 | 84 |
+| the flat-clip route | 15591 | 18195 | 1206 | 48 | 84 |
+| standing the graph at its root | 15628 | 17988 | 1217 | 47 | 79 |
+| end-of-clip triggers | 15619 | 17158 | 1280 | 52 | 83 |
+| the compass of flat clips | 15739 | 18195 | 1273 | 51 | 84 |
+| the motion share | 15770 | 18195 | 1299 | 52 | 84 |
+| its four-arm floor | 15787 | 18195 | 1294 | 51 | 84 |
+| the path-scoped cycle guard | 15790 | 18195 | 1293 | 51 | 84 |
+| start-of-clip triggers | 15793 | 18153 | 1293 | 51 | 83 |
+| reading a reversed clip | 15796 | 18195 | 1312 | 52 | 84 |
+| the zero curve | 15797 | 18157 | 1293 | 51 | 83 |
+| a machine that chooses on `iState` | 15831 | 18195 | 1312 | 52 | 84 |
+| **holding a reading to the pose's motion** | **15835** | **18302** | **1312** | **52** | **86** |
 
-**No rule is now wrong**: every one of them costs points when removed, or costs
-nothing. Two are worth a note.
+**No rule is now wrong**, and every one of them but the last costs points when
+removed. Four things are worth a note.
 
-The `iState`-selected key is worth four points, which is the benthic lurker and
+**The scorer was lying about one row, and was changed rather than the rule.**
+Taken first, the motion guard's row read *better* with the guard off -- 15,853
+points and all 86 blocks against 15,835 and 84 -- which says delete it. The two
+blocks it refuses are `ChaurusFlyer` and `DwarvenSpiderCenturionProject`, and they
+hold **0 of 28 and 0 of 61** either way. The 18 points came from the scorer
+counting every shipped zero as held without asking what was built there, and the
+chaurus has 18 exact zeros. Judging a zero by building zero there, within one
+unit, changes the baseline by nothing -- all 114 shipped zeros in the rebuild are
+ones it builds -- and makes the row read true: the guard costs no point and
+refuses 107 that would all be wrong. It stays, on the same terms as any rule that
+declines to build what it cannot build right.
+
+**The path-scoped cycle guard now earns its place.** The first pass found it worth
+nothing and kept it for being correct. It is worth 45 points, 19 records and a
+whole block now, and the block is `NetchProject`, **45 of 45 with it and 0 of 45
+without** -- the creature whose lower body is one subtree reached by two parents,
+which is what the guard was written for. What stopped covering for it since the
+first pass is not isolated: it is not the start-of-clip triggers and not the
+motion guard, each switched off together with the cycle guard and the netch still
+at 0.
+
+**Keeping compasses apart is worth 420 points; picking the widest of them is
+worth none.** Grouping arms by the compass that owns them is what stops the
+player's block state interpolating between one-handed, two-handed and bow on the
+same heading. Which group then wins is decided by width, and taking the graph's
+first instead changes no number: in every shipped state that has several, the
+first is also the widest. It stays because first-in-order is an accident of
+authoring and width is the reason.
+
+The `iState`-selected key is still worth four points, the benthic lurker and
 nothing else. It stays because it is a declaration the graph makes rather than a
 guess, and a route the next creature may use.
-
-**The path-scoped cycle guard is worth nothing at all**, and it is kept anyway. A
-cycle guard should be scoped to the path -- one generator can be live under two
-parents, and only a path may not repeat a node -- and the visit-wide version is
-simply wrong. It happens not to bite, because the two rules it was introduced
-alongside cover for it: a ladder's motion is summed over its instances, so one
-instance or two gives the netch the same answer, and the flat route asks whether
-the travelling clips agree on a speed rather than whether there is one of them.
-Keeping a correct guard that currently changes no number is the opposite trade
-from `Settle`, which was deleted because it was both dead **and** describing a
-state Havok will not run.
 
 ## 5. Open
 

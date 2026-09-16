@@ -499,8 +499,7 @@ public sealed class SpeedDataRebuildTests
 
             // A compass of flat clips, where the subtree has one: the bleedout is
             // four clips on a cyclic parametric blend and nothing else.
-            if (CompassOfClips(run, actor) is { } compass)
- return compass;
+            if (CompassOfClips(run, actor) is { } compass) return compass;
 
             // Every travelling clip the subtree plays. They may be several -- the
             // sprint blends a right-side and a left-side variant of the same stride
@@ -908,12 +907,24 @@ public sealed class SpeedDataRebuildTests
                     foreach (SpeedPoint point in record.Points)
                     {
                         points++;
-                        if (point.Y <= 0f) { pointsHeld++; _projectHeld++; _projectPoints++; continue; }
 
                         // The record's own heading picks the arm; the ladder under it
                         // answers at the shipped goal speed.
                         double y = share * SpeedSampler.Sample(
                             arms, record.Direction, point.X - SpeedLadder.SamplerOffset);
+
+                        // A shipped zero is held by building zero there, not by being
+                        // zero: a relative tolerance means nothing at 0, so it is
+                        // judged absolutely. Counting every zero as held credited the
+                        // chaurus flyer with 18 points for a block whose other 28 are
+                        // all wrong, which made refusing that block look like a loss.
+                        if (point.Y <= 0f)
+                        {
+                            _projectPoints++;
+                            if (Math.Abs(y) <= 1.0) { pointsHeld++; _projectHeld++; }
+                            else recordHolds = false;
+                            continue;
+                        }
 
                         _projectPoints++;
                         bool ok = Math.Abs(y - point.Y) / point.Y <= Tolerance;
