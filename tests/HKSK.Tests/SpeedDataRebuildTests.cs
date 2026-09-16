@@ -103,8 +103,9 @@ public sealed class SpeedDataRebuildTests
             if (BehaviorRoot.Of(path) is not { } root) continue;
 
             ProjectWalk walk = ProjectWalk.Of(path);
-            string? parameter = Ladders.ParameterOf(walk);
-            if (parameter is null) continue;
+            // No sampler means no sampled speed to read; the blends that move such
+            // a creature read Speed directly.
+            string parameter = Ladders.ParameterOf(walk) ?? "Speed";
 
             // The project is read once and evaluated many times -- one run per state
             // per heading -- so the walk and the character properties are hoisted.
@@ -573,17 +574,25 @@ public sealed class SpeedDataRebuildTests
     /// <para>
     /// The project list comes out right -- all 49, because every project with an
     /// animation cache has a block and nothing else does. The key set does not.
-    /// It writes 141 blocks, of which <strong>77 are ones the game ships</strong> --
-    /// 90% of the file, against 51 before the evaluator. It misses 9 and invents
-    /// 64, and only 1 declared movement type cannot be placed at all, against 50.
+    /// It writes 144 blocks, of which <strong>79 are ones the game ships</strong> --
+    /// 92% of the file, against 51 before the evaluator. It misses 7 and invents
+    /// 65, and 10 declared movement types cannot be placed at all.
     /// </para>
     /// <para>
-    /// <strong>Of the 9 it misses, 8 are impossible from the graph.</strong>
-    /// AtronachFlame, AtronachStorm, ChaurusFlyer, Dragon_Priest, DragonProject,
-    /// IceWraith, Wisp and Witchlight have no <c>BSSpeedSamplerModifier</c> at all,
-    /// and the game ships a one-key table for each -- nothing in those graphs reads
-    /// a speed table, so there is no ladder to rebuild from. The ninth is the
-    /// dwarven spider, whose directional blend carries no binding at all.
+    /// <strong>Eight projects carry no <c>BSSpeedSamplerModifier</c> at all</strong>
+    /// and the game ships a one-key table for each. Having no sampler does not mean
+    /// having no ladder: <c>AtronachFlame</c> and <c>Dragon_Priest</c> drive their
+    /// locomotion blends straight from <c>Speed</c>, and reading that where no
+    /// sampled speed exists recovers both -- 242 of the atronach's 260 points and
+    /// 81 of the priest's 99.
+    /// </para>
+    /// <para>
+    /// The other six do not move on a curve at all. <c>AtronachStorm</c>,
+    /// <c>Wisp</c> and <c>Witchlight</c> ship a table of flat zero;
+    /// <c>DragonProject</c> ships a flat 384 and <c>IceWraith</c> a flat 319.67;
+    /// <c>ChaurusFlyer</c> is zero at most headings and not at the rest. With the
+    /// dwarven spider, whose directional blend carries no binding at all, they are
+    /// the 7 still missed.
     /// </para>
     /// <para>
     /// The riekling was a tenth until the engine learned that an intro animation
@@ -623,7 +632,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversSeventySevenOfTheEightySixBlocks()
+    public void TheInferenceRecoversSeventyNineOfTheEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -654,12 +663,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(141, made.Count);
+        Assert.Equal(144, made.Count);
 
-        Assert.Equal(77, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(9, shipped.Except(made).Count());       // missed, was 35
-        Assert.Equal(64, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(1, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(79, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(7, shipped.Except(made).Count());       // missed, was 35
+        Assert.Equal(65, made.Except(shipped).Count());      // invented, was 41
+        Assert.Equal(10, inferred.Unbuildable);              // unplaceable, was 50
     }
 
     /// <summary>
@@ -698,8 +707,9 @@ public sealed class SpeedDataRebuildTests
             string? path = cache.FindProjectFile(name);
             ActorProject actor = (ActorProject)cache.OpenActor(name)!;
             ProjectWalk walk = ProjectWalk.Of(path!);
-            string? parameter = Ladders.ParameterOf(walk);
-            if (parameter is null) continue;
+            // No sampler means no sampled speed to read; the blends that move such
+            // a creature read Speed directly.
+            string parameter = Ladders.ParameterOf(walk) ?? "Speed";
 
             hkbBehaviorGraph? graph = null;
             foreach (ProjectStep step in walk.Steps)
@@ -834,22 +844,22 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(77, blocks);
-        Assert.Equal(1463, records);
-        Assert.Equal(17629, points);
+        Assert.Equal(79, blocks);
+        Assert.Equal(1501, records);
+        Assert.Equal(17988, points);
 
         // 15305 against the 10145 the pairing alone reached, over 77 blocks against
         // 51. The rate reads 87% rather than 92% only because RieklingProject is in
         // the denominator with 1037 points and 138 of them right; on the other 76
         // blocks it is 13345 of 14551.
-        Assert.Equal(15305, pointsHeld);
-        Assert.Equal(1215, recordsHeld);
+        Assert.Equal(15628, pointsHeld);
+        Assert.Equal(1217, recordsHeld);
         Assert.Equal(47, blocksHeld);
 
         Assert.Equal(25, _declared);
-        Assert.Equal(65, _sharedBlocks);
-        Assert.Equal(12, _newBlocks);
-        Assert.Equal(13345, _sharedHeld);
+        Assert.Equal(66, _sharedBlocks);
+        Assert.Equal(13, _newBlocks);
+        Assert.Equal(13587, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
         // Every one of the 18 differences is a stance -- sneaking, bow drawn,

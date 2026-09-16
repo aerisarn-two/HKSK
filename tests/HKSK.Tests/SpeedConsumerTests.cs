@@ -21,10 +21,18 @@ public sealed class SpeedConsumerTests(ITestOutputHelper output)
     /// Every consumer in the game is a blend parameter, with no second shape.
     /// </summary>
     /// <remarks>
-    /// 1,037 of them across the corpus and all are
+    /// 1,049 of them across the corpus and all are
     /// <c>hkbBlenderGenerator.blendParameter</c>. Nothing reads the sampled speed
     /// into a clip's playback rate, a condition or a selector, so the table only
     /// ever chooses a position within a blend.
+    ///
+    /// 1,037 read a sampler's own output. The other twelve are the two creatures
+    /// that have no sampler and a ladder anyway -- the flame atronach and the
+    /// dragon priest drive their locomotion blends straight from <c>Speed</c> --
+    /// and they are counted because they are the same thing doing the same job.
+    /// <c>Speed</c> is read by things a sampled speed never is, an interpolator on
+    /// the storm atronach among them, so where there is no sampler the search keeps
+    /// to blends.
     /// </remarks>
     [CorpusFact]
     public void EveryConsumerOfTheSampledSpeedIsABlendParameter()
@@ -40,7 +48,7 @@ public sealed class SpeedConsumerTests(ITestOutputHelper output)
                 kinds[key] = count + 1;
             }
 
-        Assert.Equal(new Dictionary<string, int> { ["hkbBlenderGenerator.blendParameter"] = 1037 }, kinds);
+        Assert.Equal(new Dictionary<string, int> { ["hkbBlenderGenerator.blendParameter"] = 1049 }, kinds);
     }
 
     /// <summary>

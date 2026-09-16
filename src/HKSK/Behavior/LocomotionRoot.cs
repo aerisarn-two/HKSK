@@ -127,7 +127,13 @@ public static class Locomotion
         var variables = new ProjectVariables(steps);
         IReadOnlyCollection<string> outputs = OutputsIn(steps, variables);
 
-        if (outputs.Count == 0) yield break;
+        // Eight projects carry no sampler at all and the game still ships a table
+        // for each: the flame atronach and the dragon priest drive their locomotion
+        // blends straight from Speed, and the rest do not move on a curve. So where
+        // nothing writes a sampled speed, the speed itself is what a blend would be
+        // reading -- which is the same fallback Ladders.ActiveIn already makes.
+        bool fallback = outputs.Count == 0;
+        if (fallback) outputs = ["Speed"];
 
         foreach (ProjectStep step in steps)
         {
@@ -138,6 +144,12 @@ public static class Locomotion
             {
                 string? name = variables.NameOf(step.File, binding.m_variableIndex);
                 if (name is null || !outputs.Contains(name)) continue;
+
+                // Speed is read by things a sampled speed never is -- an
+                // interpolator on the storm atronach reads and writes it -- so the
+                // fallback keeps to what a ladder looks like.
+                if (fallback && (node is not hkbBlenderGenerator || binding.m_memberPath != "blendParameter"))
+                    continue;
 
                 yield return new SpeedConsumer(
                     node, binding.m_memberPath, name, step.File, step.Depth);

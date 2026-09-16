@@ -1076,6 +1076,31 @@ signature of a damaged cache and the signature of a creature this file was writt
 for are the same signature.** The rule is a net loss across the corpus and is not
 in the rebuild; `CacheDamageTests` keeps the refutation.
 
+### 6.2f Having no sampler is not having no ladder
+
+Eight projects carry no `BSSpeedSamplerModifier` anywhere -- `AtronachFlame`,
+`AtronachStorm`, `ChaurusFlyer`, `Dragon_Priest`, `DragonProject`, `IceWraith`,
+`Wisp`, `Witchlight` -- and the game ships a one-key table for every one of them.
+They are the hovering and flying creatures. Because the sampler is what names the
+speed variable, a project without one was skipped entirely, and all eight counted
+as out of reach.
+
+**Two of them have ordinary ladders.** The flame atronach's `ForwardBlend` and the
+dragon priest's `ForwardLocomotionBlend` bind `blendParameter` straight to
+`Speed`, with rungs up to 200 and 300, and their shipped tables top out at exactly
+that. Reading `Speed` where nothing writes a sampled speed recovers both:
+**242 of the atronach's 260 points and 81 of the priest's 99.**
+
+`Speed` is read by things a sampled speed never is -- an interpolator on the storm
+atronach reads and writes it -- so where there is no sampler the search keeps to
+blends binding `blendParameter`, which is what a ladder is.
+
+**The other six do not move on a curve.** `AtronachStorm`, `Wisp` and
+`Witchlight` ship a table of flat zero; `DragonProject` ships a flat 384 and
+`IceWraith` a flat 319.67; `ChaurusFlyer` is zero at most headings and not at the
+rest. Nothing in their graphs reads a speed into a blend, which is consistent with
+a flat table -- but flat *at what* is not yet derived, and they are still missed.
+
 ### 6.2e Does the compass earn its place
 
 A heading picks an arm and the arms are blended as vectors, which is most of what
