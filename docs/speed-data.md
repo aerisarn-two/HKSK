@@ -1028,6 +1028,29 @@ signature of a damaged cache and the signature of a creature this file was writt
 for are the same signature.** The rule is a net loss across the corpus and is not
 in the rebuild; `CacheDamageTests` keeps the refutation.
 
+### 6.2e Does the compass earn its place
+
+A heading picks an arm and the arms are blended as vectors, which is most of what
+the sampler does. Answering every heading with the forward arm instead asks
+whether that machinery is needed, and over the 5,851 points of the declared keys
+that have a compass the answer is emphatic: **the compass holds 5,047 and the
+forward arm alone 1,089.**
+
+**One block is the other way round, and completely so.**
+`BenthicLurkerProject` key 0 holds 23 of its 253 points through the compass and
+**all 253** through its forward arm. Every record, at every heading, is the
+forward walk ladder to four figures -- its sideways record climbs to 232.09, the
+forward ladder's top rung and well past its own 99.52, so at speed the creature
+turns to face rather than strafing.
+
+Nothing in the inputs asks for that. Its movement type gives it real lateral
+speeds, 99.52 either way, matching the strafe rungs exactly; its graph carries
+eight directional blends like any other creature's; its compass's
+`blendParameter` is stored rather than bound, but so is every other creature's
+(120 of the corpus's 122 compasses); and its own key 1 still prefers the compass,
+78 points against 30, so it is not even a property of the creature. Applying it
+would be reading the answer. `CompassNeededTests` keeps the measurement.
+
 ### 6.3 The horse: the one creature whose cache is the problem
 
 A ladder child's weight is a position on the speed axis and the clip beneath it
