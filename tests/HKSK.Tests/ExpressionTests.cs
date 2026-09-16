@@ -45,6 +45,54 @@ public sealed class ExpressionTests
         Assert.Equal(4f, Value("out = cond(!flag, missingVariable, b)", variables));
     }
 
+    /// <summary>
+    /// The answers Havok itself gives, for the part of the language 6.6 compiles.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// These are not chosen cases: they are what the 6.6 runtime does, read out of
+    /// it by <c>tools/hkmeasure states</c>, which drives a state machine from an
+    /// <c>hkbEvaluateExpressionModifier</c> and sweeps a variable. Setting
+    /// <c>EXPR="sel = Speed &gt; 100|iState = iState_Base + sel"</c> and sweeping
+    /// <c>Speed</c> from 0 to 200 gives <c>sel</c> 0 at 0, 40 and 80 and 1 at 120,
+    /// 160 and 200, with <c>iState</c> following at 20 and 21 against an
+    /// <c>iState_Base</c> of 20.
+    /// </para>
+    /// <para>
+    /// So a comparison yields 1 or 0 and is a value like any other, and the
+    /// parentheses are optional -- <c>sel = (Speed &gt; 100)</c> compiles to the
+    /// same six tokens and answers identically.
+    /// </para>
+    /// <para>
+    /// <strong><c>cond</c> compiles to nothing</strong>, which the same harness
+    /// shows directly rather than by inference: <c>sel = cond((Speed &lt; 100), 0,
+    /// 1)</c> alongside <c>iState = iState_Base + sel</c> compiles to three tokens
+    /// in total, and reading the compiled RPN back gives only
+    /// <c>iState_Base</c>, <c>sel</c>, <c>OP_ADD</c>. The first expression
+    /// contributes none, never assigns <c>sel</c>, and the sweep reads 20 at every
+    /// speed. The engine implements it anyway because Bethesda's own runtime does.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ItAgreesWithTheRuntimeOnWhatSixSixCompiles()
+    {
+        Variables variables = Variables.Of(("Speed", 0f), ("sel", 0f), ("iState", 0f), ("iState_Base", 20f));
+
+        foreach ((float speed, float expected) in new[]
+        {
+            (0f, 0f), (40f, 0f), (80f, 0f), (120f, 1f), (160f, 1f), (200f, 1f),
+        })
+        {
+            variables.Set("Speed", speed);
+
+            Assert.Equal(expected, Value("sel = Speed > 100", variables));
+            Assert.Equal(expected, Value("sel = (Speed > 100)", variables));
+
+            variables.Set("sel", expected);
+            Assert.Equal(20f + expected, Value("iState = iState_Base + sel", variables));
+        }
+    }
+
     /// <summary>A name the graph does not declare makes the expression unevaluable.</summary>
     [Fact]
     public void AnUndeclaredNameIsNotZero()

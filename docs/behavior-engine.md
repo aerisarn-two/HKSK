@@ -163,10 +163,15 @@ Three things about it:
   resolves names itself.
 - **A variable name may begin with digits.** `1stPRot` is real; a leading run of
   digits is a name when a letter follows and a number when it does not.
-- **`cond` is Bethesda's.** Havok 6.6's compiler emits zero tokens for it, so it
-  cannot be checked against the oracle. It is a three-argument select, and only
-  the branch taken has to resolve -- a shared file names constants that only some
-  of its creatures declare.
+- **`cond` is Bethesda's, and 6.6 compiles nothing for it.** That is measured
+  rather than inferred: `hkmeasure states` with
+  `sel = cond((Speed < 100), 0, 1)` and `iState = iState_Base + sel` compiles
+  **three tokens in total**, and reading the RPN back gives only `iState_Base`,
+  `sel`, `OP_ADD`. The first expression contributes none, never assigns `sel`, and
+  the sweep reads 20 at every speed. It is a three-argument select, only the
+  branch taken has to resolve -- a shared file names constants that only some of
+  its creatures declare -- and the engine implements it because Bethesda's runtime
+  does.
 
 Modifiers run on the way down, before the generator they sit above, and the walk
 iterates to a fixed point because what a modifier writes decides what the machines
@@ -602,18 +607,12 @@ and leaves `NetchProject` at 45 of 45.
 
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
   the transition durations.
-- **The expression evaluator is checked by parsing, not by evaluating.** All 261
-  distinct expressions the game ships parse (`TheWholeCorpusParses`) and the
-  evaluator is tested against hand-written cases, but nothing compares its answers
-  with Havok's. `cond()` could never be: it is a Bethesda extension and 6.6's
-  compiler emits zero tokens for it. The rest could in principle, through
-  `hkmeasure`'s `states` mode, which drives a machine from an expression and
-  sweeps a variable — but **that mode does not run**. The managed
-  `NullReferenceException` it used to throw is understood and fixed: the public
-  `Methods.generate` calls a non-public inner method that takes a
-  `List<hkbGeneratorOutput>` and passes nothing for it, and invoking the inner one
-  directly with the list supplied clears the exception. What remains is a **native
-  crash** inside the 32-bit Havok DLL, past every managed frame, which would need
-  a debugger on that side. See `tools/hkmeasure/README.md`. So the expression
-  semantics are the weakest-evidenced part of the engine, and the gap is wider
-  than `cond`.
+- **The expression evaluator is measured for what 6.6 compiles, and that is not
+  all of it.** `hkmeasure states` runs now: sweeping `Speed` through
+  `sel = Speed > 100` and `iState = iState_Base + sel` gives `sel` 0 at 0, 40, 80
+  and 1 at 120, 160, 200, with `iState` following at 20 and 21 — so a comparison
+  yields 1 or 0 and is a value like any other, and the parentheses are optional.
+  The engine reproduces every one of those points
+  (`ItAgreesWithTheRuntimeOnWhatSixSixCompiles`). What is still unmeasured is
+  everything Bethesda added — `cond` above all, which 6.6 compiles to nothing —
+  and the operators and functions no shipped expression exercises here.

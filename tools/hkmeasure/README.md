@@ -93,38 +93,48 @@ That is worth knowing before modelling a branch as producing nothing. It is not 
 state a shipped graph can be in, so where the engine sees one it is looking at
 something else -- for the netch, at the same subtree reached twice.
 
-## The `states` mode does not run, and how far it gets
+## The `states` mode: an oracle for the expression language
 
-`hkmeasure states rigrf.xml 0 200 5` builds a machine driven by an
-`hkbEvaluateExpressionModifier` and sweeps `Speed`, which would make it an oracle
-for the expression language. It still does not run, but the failure is no longer
-where it looked.
+    EXPR="sel = Speed > 100|iState = iState_Base + sel" hkmeasure states rigrf.xml 0 200 5
 
-**The managed NullReferenceException is the public overload's fault, and it is
-solved.** `Methods.generate` calls the non-public
-`Methods.generateUpToSceneModifiers`, which takes one argument the public one does
-not: a `List<hkbGeneratorOutput>`. `generate` passes nothing for it, and the
-faulting `setCharacter` deeper in is a symptom of that rather than of anything
-wrong with the context or the character -- `setCharacter(ctx, ch)` and
-`setCharacter(ctxs[0], chars[0])` both succeed when called by hand from the line
-before. Invoking the inner method by reflection with the list supplied clears the
-exception outright.
+builds a state machine driven by an `hkbEvaluateExpressionModifier`, sweeps
+`Speed` between the two bounds, and prints what Havok made of it:
 
-**What is left is a native crash**, inside the 32-bit Havok DLL, past every
-managed frame. `OUTS=` chooses what the list holds -- empty, one null, one
-`hkbGeneratorOutput` -- and all three reach it.
+         Speed     sel   iState   stateId  stateName
+             0       0       20         0  WalkState
+            40       0       20         0  WalkState
+            80       0       20         0  WalkState
+           120       1       21         0  WalkState
+           160       1       21         0  WalkState
+           200       1       21         0  WalkState
 
-**`addCharacter` exists and is callable**, contrary to what this file said before.
-It is on `hbtHavokEnvironment` rather than `Methods`, it takes the native
-`hkbCharacter*`, and the managed wrapper converts: `Havok.hkbCharacter` carries
-`op_Explicit` to both `hkbCharacter*` and `IntPtr`, which the `api` dump hides
-because it skips special names. `(IntPtr)ch` gives the address and
-`Pointer.Box` types it for the parameter. Calling it crashes natively too, so the
-registry wants more setup than a character and a skeleton -- but it is a call that
-can be made, not a method that is missing.
+so a comparison yields 1 or 0 and is a value like any other. It also prints the
+compiled token count and the RPN, which is how `cond` is shown to compile to
+nothing: `sel = cond((Speed < 100), 0, 1)` and `iState = iState_Base + sel`
+together compile to three tokens, and the RPN holds only `iState_Base`, `sel`,
+`OP_ADD`.
 
-The environment is initialised and `getWorld()` already returns non-null, so a
-world is not what is absent. `poke` prints all of this: the environment's state,
-the character wrapper's full hierarchy with its conversions, and whether
-`addCharacter` resolves.
+**It took two fixes to run at all**, and both are worth knowing.
 
+The `NullReferenceException` inside `Methods.setCharacter` was never about the
+character. `Methods.generate` calls the non-public
+`Methods.generateUpToSceneModifiers`, which takes one argument the public overload
+does not — a `List<hkbGeneratorOutput>` — and passes nothing for it. Calling the
+inner method by reflection with the list supplied clears it. That the context and
+character were fine was settled by calling `setCharacter(ctx, ch)` by hand from
+the line before the one that failed: it succeeds.
+
+The native crash after that was **calling it before `activate()`**. The fault is a
+read of `0x8` inside `getAllVariableValues`, which reads what activation builds,
+and the probe was running before the sweep loop where `Methods.activate` is
+called. Stepping through the inner method from inside the loop is all it needed.
+
+`addCharacter` is a red herring for this, though it is real and callable:
+`hbtHavokEnvironment.addCharacter` takes the native `hkbCharacter*`, and
+`Havok.hkbCharacter` converts through an `op_Explicit` the `api` dump hides as a
+special name — `(IntPtr)ch` with `Pointer.Box`. It faults in
+`hkPointerMap<hkbCharacter*, hkpRigidBody*>::insert`, so it is the physics floor
+registry and behaviour evaluation does not need it.
+
+`poke` prints the environment's state, the character wrapper's hierarchy and its
+conversions, if any of this needs checking again.
