@@ -482,6 +482,23 @@ projects it is 1 on 7,584 children and 0 on 668, never anything else. A child at
 the player's `MT_ForwardCameraBobBlend` is one, a whole parametric ladder that
 moves nobody.
 
+**Measured against the runtime** (`tools/hkmeasure`, `WFM=`). Two clips of equal
+duration, one travelling at 100 units a second and one standing still, blended
+from all of the first to all of the second:
+
+| blend parameter | both at `worldFromModelWeight` 1 | the still one at 0 |
+| --- | --- | --- |
+| 0.00 | 100.0 | 100.0 |
+| 0.25 | 75.0 | **100.0** |
+| 0.50 | **50.0** | **100.0** |
+| 0.75 | 25.0 | **100.0** |
+| 1.00 | 0.0 | 0.0 |
+
+The first column is the daedra's halving, and the second is what a child excluded
+from the motion does: the character keeps its full speed however much of the pose
+that child takes. At 1.00 nothing is left in the motion blend at all and the
+answer is zero, which is the guard in `Moving`.
+
 So `ActiveNode` carries `Motion` beside `Weight`: its share of the movement,
 normalised over the children that are in the world-from-model blend. Two
 creatures in the corpus end up below 1, and both at exactly 0.5, and they are

@@ -433,6 +433,21 @@ static class Probe
                 rungW[i] = float.Parse(parts[i], CultureInfo.InvariantCulture);
         }
         Console.WriteLine("[blend] rung weights " + string.Join(", ", Array.ConvertAll(rungW, F)));
+
+        // How much of each child reaches worldFromModel. Havok blends root motion
+        // over weight * worldFromModelWeight, and the corpus only ever uses 1 or 0,
+        // so WFM=1,0 asks what a child that is in the pose and not in the motion
+        // does. Defaults to 1 everywhere, which is what the shipped files mostly say.
+        var rungM = new float[ac.m_bindings.Count];
+        for (int i = 0; i < rungM.Length; i++) rungM[i] = 1f;
+        string menv = Environment.GetEnvironmentVariable("WFM");
+        if (menv != null)
+        {
+            string[] parts = menv.Split(',');
+            for (int i = 0; i < rungM.Length && i < parts.Length; i++)
+                rungM[i] = float.Parse(parts[i], CultureInfo.InvariantCulture);
+        }
+        Console.WriteLine("[blend] worldFromModelWeights " + string.Join(", ", Array.ConvertAll(rungM, F)));
         // A clip played at p takes duration/p, so that is the rung's duration.
         for (int i = 0; i < pb.Length; i++)
         {
@@ -455,7 +470,7 @@ static class Probe
             var kid = Root(new hkbBlenderGeneratorChild());
             kid.m_generator = clip;
             kid.m_weight = rungW[i];
-            kid.m_worldFromModelWeight = 1f;
+            kid.m_worldFromModelWeight = rungM[i];
             blender.m_children.Add(kid);
             clips.Add(clip);
         }

@@ -58,3 +58,26 @@ they are overwriting and refuse to guess.
   constant. Reset the character to the origin each frame and sum the deltas in double.
 - **`activate()` clones the node tree.** Set `m_blendParameter` on the template before
   the clone is taken, or the sweep comes out flat.
+
+## What a child that is not in the motion does
+
+`WFM=` sets each child's `worldFromModelWeight`, which the corpus only ever gives
+1 or 0. With two clips of equal duration -- one travelling at 100 units a second,
+one standing still -- and the blend swept from all of the first to all of the
+second:
+
+    WEIGHTS=0,1 WFM=1,1 hkmeasure rigrf.xml 4      WEIGHTS=0,1 WFM=1,0 ...
+    0.00  100.0                                    0.00  100.0
+    0.25   75.0                                    0.25  100.0
+    0.50   50.0                                    0.50  100.0
+    0.75   25.0                                    0.75  100.0
+    1.00    0.0                                    1.00    0.0
+
+So root motion blends over `weight * worldFromModelWeight` and is renormalised
+over what is left: a child at 0 decides how the character looks and nothing about
+where it goes, and at 1.00 there is nothing in the motion blend at all and the
+answer is zero. Equal durations are deliberate -- a synchronised blend also
+interpolates duration, and equal ones take that out of the measurement.
+
+This is `HKSK.Engine.ActiveGenerators.Moving`, and it is why `HMDaedra` travels at
+half what its ladder delivers while `NetchProject` does not.
