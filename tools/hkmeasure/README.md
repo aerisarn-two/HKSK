@@ -105,3 +105,12 @@ does not carry over.
 
 So nothing has compared the engine's expression answers against Havok's. The blend
 sweep is the only mode that runs.
+
+Two things narrow the search for anyone returning to it. The inner
+per-character `generate` the blend sweep uses **skips the modifier pass**, so an
+expression compiles and never runs -- the public list overload is the only one
+that evaluates, and it is the one that throws. And `Methods` carries no
+`addCharacter` at all, only `setCharacter` and `getCharacterSetup`, so the
+character is never registered anywhere and the comment above the call names a
+method that is not on that type. Whatever the public overload dereferences, it is
+not something `Methods` offers a way to set up.
