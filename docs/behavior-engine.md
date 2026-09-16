@@ -156,6 +156,20 @@ clip.
 are optional -- seven functions (`cond`, `fabs`, `clamp`, `max`, `min`, `sind`,
 `cos`) and the usual operators. All 261 parse (`TheWholeCorpusParses`).
 
+**Measured against the runtime.** Every operator and function 6.6 compiles has
+been swept through `hkmeasure states` and compared with the engine, ten
+expressions over six values each. Two results are worth carrying:
+
+| | |
+| --- | --- |
+| `clamp(Speed, 50, 150)` | the value first, then its bounds |
+| `sind(40)` = 0.64, `cos(40)` = −0.67 | **`sind` is degrees and `cos` is radians** |
+
+The trigonometric pair disagreeing with each other is Havok's, not a mistake in
+the reading: `sind(200)` is −0.34, which is sine of 200 degrees, while `cos(120)`
+is 0.81, which is cosine of 120 radians. The engine had them that way round from
+the names, and now it is measured.
+
 Three things about it:
 
 - **`m_assignmentVariableIndex` is -1 on all 691 expressions.** The runtime
@@ -607,12 +621,10 @@ and leaves `NetchProject` at 45 of 45.
 
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
   the transition durations.
-- **The expression evaluator is measured for what 6.6 compiles, and that is not
-  all of it.** `hkmeasure states` runs now: sweeping `Speed` through
-  `sel = Speed > 100` and `iState = iState_Base + sel` gives `sel` 0 at 0, 40, 80
-  and 1 at 120, 160, 200, with `iState` following at 20 and 21 — so a comparison
-  yields 1 or 0 and is a value like any other, and the parentheses are optional.
-  The engine reproduces every one of those points
-  (`ItAgreesWithTheRuntimeOnWhatSixSixCompiles`). What is still unmeasured is
-  everything Bethesda added — `cond` above all, which 6.6 compiles to nothing —
-  and the operators and functions no shipped expression exercises here.
+- **The expression evaluator agrees with the runtime on everything 6.6 compiles.**
+  `hkmeasure states` runs now, and every operator and function has been swept
+  through it and compared: `%`, `max`, `min`, `clamp`, `fabs`, `!`, precedence,
+  `sind`, `cos` and the comparisons, ten expressions over six values each
+  (`ItGivesTheAnswersTheRuntimeGives`). What is still unmeasured is only what
+  Bethesda added on top, `cond` above all, which 6.6 compiles to nothing by
+  definition.

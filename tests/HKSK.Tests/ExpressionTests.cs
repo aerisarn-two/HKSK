@@ -93,6 +93,54 @@ public sealed class ExpressionTests
         }
     }
 
+    /// <summary>
+    /// Every operator and function 6.6 compiles, against the answers it gives.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each row is a sweep of <c>Speed</c> through 0, 40, 80, 120, 160 and 200 with
+    /// <c>tools/hkmeasure states</c>, read out of an <c>hkbEvaluateExpressionModifier</c>
+    /// the 6.6 runtime compiled and ran. The result goes into an <c>INT32</c>
+    /// variable, so these are Havok's answers already truncated, and the engine is
+    /// compared the same way.
+    /// </para>
+    /// <para>
+    /// <strong>The two trigonometric functions do not agree with each other, and
+    /// that is Havok.</strong> <c>sind(40)</c> reads 64 and <c>sind(200)</c> reads
+    /// -34, which is sine in <em>degrees</em>; <c>cos(40)</c> reads -66 and
+    /// <c>cos(120)</c> reads 81, which is cosine in <em>radians</em>. The engine
+    /// had them that way round already, and now it is measured rather than read off
+    /// the name.
+    /// </para>
+    /// <para>
+    /// <c>clamp</c> takes the value first and then its bounds; <c>!</c> is a logical
+    /// negation, 1 only where its operand is zero; and division binds tighter than
+    /// addition.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("out = Speed % 100", new[] { 0, 40, 80, 20, 60, 0 })]
+    [InlineData("out = max(Speed, 100)", new[] { 100, 100, 100, 120, 160, 200 })]
+    [InlineData("out = min(Speed, 100)", new[] { 0, 40, 80, 100, 100, 100 })]
+    [InlineData("out = clamp(Speed, 50, 150)", new[] { 50, 50, 80, 120, 150, 150 })]
+    [InlineData("out = fabs(0 - Speed)", new[] { 0, 40, 80, 120, 160, 200 })]
+    [InlineData("out = !Speed", new[] { 1, 0, 0, 0, 0, 0 })]
+    [InlineData("out = Speed / 2 + 1", new[] { 1, 21, 41, 61, 81, 101 })]
+    [InlineData("out = sind(Speed) * 100", new[] { 0, 64, 98, 86, 34, -34 })]
+    [InlineData("out = cos(Speed) * 100", new[] { 100, -66, -11, 81, -97, 48 })]
+    [InlineData("out = Speed > 100", new[] { 0, 0, 0, 1, 1, 1 })]
+    public void ItGivesTheAnswersTheRuntimeGives(string text, int[] expected)
+    {
+        Variables variables = Variables.Of(("Speed", 0f), ("out", 0f));
+        float[] speeds = [0f, 40f, 80f, 120f, 160f, 200f];
+
+        for (int i = 0; i < speeds.Length; i++)
+        {
+            variables.Set("Speed", speeds[i]);
+            Assert.Equal(expected[i], (int)Value(text, variables));
+        }
+    }
+
     /// <summary>A name the graph does not declare makes the expression unevaluable.</summary>
     [Fact]
     public void AnUndeclaredNameIsNotZero()

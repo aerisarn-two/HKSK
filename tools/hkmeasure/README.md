@@ -108,7 +108,25 @@ builds a state machine driven by an `hkbEvaluateExpressionModifier`, sweeps
            160       1       21         0  WalkState
            200       1       21         0  WalkState
 
-so a comparison yields 1 or 0 and is a value like any other. It also prints the
+so a comparison yields 1 or 0 and is a value like any other. Sweeping the rest the
+same way, over `Speed` = 0, 40, 80, 120, 160, 200 into an `INT32` variable:
+
+    Speed % 100            0   40   80   20   60    0
+    max(Speed, 100)      100  100  100  120  160  200
+    min(Speed, 100)        0   40   80  100  100  100
+    clamp(Speed, 50, 150) 50   50   80  120  150  150
+    fabs(0 - Speed)        0   40   80  120  160  200
+    !Speed                 1    0    0    0    0    0
+    Speed / 2 + 1          1   21   41   61   81  101
+    sind(Speed) * 100      0   64   98   86   34  -34
+    cos(Speed) * 100     100  -66  -11   81  -97   48
+
+`clamp` takes the value first and then its bounds, `!` is 1 only where its operand
+is zero, division binds tighter than addition -- and **`sind` is degrees while
+`cos` is radians**, which is Havok's asymmetry and not a misreading: `sind(200)`
+is sine of 200 degrees and `cos(120)` is cosine of 120 radians.
+
+It also prints the
 compiled token count and the RPN, which is how `cond` is shown to compile to
 nothing: `sel = cond((Speed < 100), 0, 1)` and `iState = iState_Base + sel`
 together compile to three tokens, and the RPN holds only `iState_Base`, `sel`,
