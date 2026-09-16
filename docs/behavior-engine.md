@@ -617,6 +617,44 @@ looking at what each branch actually sampled can, which is
 `ActiveGenerators.Settle`. Applying it takes `HMDaedra` from 0 of 77 points to 65
 and leaves `NetchProject` at 45 of 45.
 
+## 4.9 What each rule is currently worth
+
+Every rule the rebuild rests on was switched off in turn and the corpus
+re-measured, because a rule can stop earning its place when something beneath it
+is fixed -- which is exactly how `Settle` came to be deleted.
+
+| turned off | points | records | blocks whole | recovered |
+| --- | --- | --- | --- | --- |
+| nothing | 15305 | 1215 | 47 | 77 |
+| the tag below a state (§4.2) | 14010 | 1109 | 43 | 77 |
+| borrowing from a key that walks alike | 14541 | 1145 | 45 | 77 |
+| keeping a state's compasses apart | 14885 | 1171 | 43 | 77 |
+| the flat-clip route | 15061 | 1109 | 43 | 77 |
+| end-of-clip triggers | 15089 | 1183 | 47 | **76** |
+| the compass of flat clips | 15243 | 1191 | 47 | 77 |
+| the motion share | 15240 | 1202 | 47 | 77 |
+| reading a reversed clip | 15266 | 1215 | 47 | 77 |
+| a machine that chooses on `iState` | 15301 | 1215 | 47 | 77 |
+| **the path-scoped cycle guard** | **15305** | **1215** | **47** | **77** |
+
+**No rule is now wrong**: every one of them costs points when removed, or costs
+nothing. Two are worth a note.
+
+The `iState`-selected key is worth four points, which is the benthic lurker and
+nothing else. It stays because it is a declaration the graph makes rather than a
+guess, and a route the next creature may use.
+
+**The path-scoped cycle guard is worth nothing at all**, and it is kept anyway. A
+cycle guard should be scoped to the path -- one generator can be live under two
+parents, and only a path may not repeat a node -- and the visit-wide version is
+simply wrong. It happens not to bite, because the two rules it was introduced
+alongside cover for it: a ladder's motion is summed over its instances, so one
+instance or two gives the netch the same answer, and the flat route asks whether
+the travelling clips agree on a speed rather than whether there is one of them.
+Keeping a correct guard that currently changes no number is the opposite trade
+from `Settle`, which was deleted because it was both dead **and** describing a
+state Havok will not run.
+
 ## 5. Open
 
 - The engine has no clock, and **nothing implemented needs one**. Transition
