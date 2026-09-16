@@ -1,4 +1,5 @@
 using HKSK.Behavior;
+using HKX2;
 using HKSK.Cache;
 using HKSK.Model;
 using Xunit;
@@ -141,6 +142,128 @@ public sealed class ShippedShapeTests
         Assert.Equal(4, leftFalling);
 
         Assert.Equal(121, widest);
+    }
+
+    /// <summary>
+    /// A negative playback speed read as a negative contribution makes a record
+    /// fall, and only that does -- but it does not make the riekling's numbers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The riekling's eleven falling records are the file's own anomaly, and the
+    /// obvious suspect is the thing that makes it unique: its right strafe is its
+    /// left one played backwards. If a sampler took that minus sign as a negative
+    /// <em>speed</em> rather than as a reversed direction, then a heading between
+    /// forward and right would mix a positive contribution with a negative one, and
+    /// the answer would drop away as the reversed arm took more of the weight.
+    /// </para>
+    /// <para>
+    /// <strong>It does exactly that, and nothing else tried does.</strong> Blending
+    /// the arms as signed speeds instead of as travel vectors produces six falling
+    /// records where reading them correctly produces none. That is the only
+    /// mechanism found that makes a speed curve fall at all: the correct reading
+    /// cannot, because it mixes travel as a vector and takes a length at the end,
+    /// and a flipped vector is still a positive speed.
+    /// </para>
+    /// <para>
+    /// <strong>It is still not what Bethesda wrote.</strong> It holds 82 of the
+    /// 1037 points against the correct reading's 138, and the six falls are not the
+    /// eleven the file has. On the sideways record itself it is further out than
+    /// ever -- the file climbs 20.5, 23.2, 25.1, 46.9 over the first four goal
+    /// speeds while the signed blend sits at about -3. So the sign explains the
+    /// shape and not the numbers, and the block stays recorded rather than modelled.
+    /// </para>
+    /// </remarks>
+    [MastersFact]
+    public void ASignedBlendMakesTheFallAndNotTheNumbers()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        var actor = (ActorProject)cache.OpenActor("RieklingProject")!;
+        ProjectWalk walk = ProjectWalk.Of(cache.FindProjectFile("RieklingProject")!);
+        SpeedEntry entry = cache.SpeedData!.Block("RieklingProject")!.Entries.First(e => e.Records.Count > 0);
+
+        LocomotionState state = LocomotionStates.In(walk, new ProjectVariables(walk.Steps))
+            .First(st => Compass.ArmsOf(walk, st, actor).Count == 4);
+
+        var arms = Compass.ArmsOf(walk, state, actor).OrderBy(a => a.Direction).ToList();
+        List<float> sign = [.. arms.Select(a => Reversed(walk, a.Ladder) ? -1f : 1f)];
+
+        // one arm of the four, and it is the right strafe
+        Assert.Equal([1f, -1f, 1f, 1f], sign);
+        Assert.Equal("Blend_MT_Right", arms[1].Ladder.Name);
+
+        (int plain, int plainFalls) = Measure(arms, sign, entry, signed: false);
+        (int signed, int signedFalls) = Measure(arms, sign, entry, signed: true);
+
+        // reading it correctly cannot make a record fall; reading the sign as a
+        // speed makes six, and the file has eleven
+        Assert.Equal(0, plainFalls);
+        Assert.Equal(6, signedFalls);
+
+        // and it is further from the shipped numbers, not nearer
+        Assert.Equal(138, plain);
+        Assert.Equal(82, signed);
+    }
+
+    private static bool Reversed(ProjectWalk walk, SpeedLadder ladder)
+    {
+        foreach (SpeedConsumer consumer in Locomotion.ConsumersIn(walk.Steps))
+        {
+            if (consumer.Node is not hkbBlenderGenerator blend || blend.m_name != ladder.Name) continue;
+            foreach (hkbBlenderGeneratorChild? child in blend.m_children ?? [])
+                if (child?.m_generator is hkbClipGenerator clip && clip.m_playbackSpeed < 0f) return true;
+        }
+
+        return false;
+    }
+
+    private static (int Held, int Falling) Measure(
+        List<(float Direction, SpeedLadder Ladder)> arms, List<float> sign, SpeedEntry entry, bool signed)
+    {
+        int held = 0, falling = 0;
+
+        foreach (SpeedRecord record in entry.Records)
+        {
+            double previous = double.NaN;
+            bool fell = false;
+
+            foreach (SpeedPoint point in record.Points)
+            {
+                if (point.Y <= 0f) continue;
+                double y = signed
+                    ? Scalar(arms, sign, record.Direction, point.X - SpeedLadder.SamplerOffset)
+                    : SpeedSampler.Sample(arms, record.Direction, point.X - SpeedLadder.SamplerOffset);
+
+                if (Math.Abs(y - point.Y) / point.Y <= 0.02) held++;
+                if (!double.IsNaN(previous) && y < previous - 0.01 * Math.Abs(previous)) fell = true;
+                previous = y;
+            }
+
+            if (fell) falling++;
+        }
+
+        return (held, falling);
+    }
+
+    /// <summary>The arms blended as signed speeds rather than as travel vectors.</summary>
+    private static double Scalar(
+        List<(float Direction, SpeedLadder Ladder)> arms, List<float> sign, float direction, float x)
+    {
+        int upper = arms.FindIndex(a => a.Direction >= direction - 1e-4f);
+        if (upper < 0) upper = 0;
+
+        int lower = upper == 0 ? arms.Count - 1 : upper - 1;
+        float from = arms[lower].Direction, to = arms[upper].Direction;
+        if (to <= from) to += 1f;
+
+        float here = direction < from ? direction + 1f : direction;
+        float span = to - from;
+        float u = span > 0f ? (here - from) / span : 0f;
+
+        double a = arms[lower].Ladder.Evaluate(x) * sign[lower];
+        double b = arms[upper].Ladder.Evaluate(x) * sign[upper];
+
+        return a + u * (b - a);
     }
 
     private static bool Falls(SpeedRecord record)

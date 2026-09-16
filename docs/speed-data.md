@@ -1012,13 +1012,26 @@ Split its seventeen non-cardinal records by which way round they go:
 and the falls grow steadily across the bad half -- 2.7, 15.1, 68.6, 105.9, 120.3,
 132.2, 181.5 -- while the good half's worst is 20.
 
-That the broken half is the reversed half is suggestive, and it is as far as the
-evidence goes. Reading the reversed arm wrongly on purpose does not reproduce the
-shipped numbers: travel left un-negated, the speed negated, the duration taken as
-`D/ps` and so signed, and the arm zeroed outright were each measured, and none
-beats reading it correctly. Nor does the choice of compass -- 138 points for the
-bare-handed one, 99 each for the spear and the crossbow. So the riekling's 899
-missing points are recorded rather than chased. `ShippedShapeTests` keeps the
+**The sign explains the fall.** If a sampler took that minus as a negative
+*speed* rather than as a reversed direction, a heading between forward and right
+would mix a positive contribution with a negative one and the answer would drop
+away as the reversed arm took more of the weight. Blending the arms as signed
+speeds instead of as travel vectors does exactly that -- **six falling records
+where reading them correctly gives none** -- and it is the only mechanism found
+that makes a speed curve fall at all. The correct reading cannot: it mixes travel
+as a vector and takes a length at the end, and a flipped vector is still a
+positive speed.
+
+**It is still not what Bethesda wrote.** The signed blend holds 82 of the 1037
+points against the correct reading's 138, its six falls are not the file's eleven,
+and on the sideways record it is further out than ever -- the file climbs 20.5,
+23.2, 25.1, 46.9 over the first four goal speeds while the signed blend sits at
+about -3. Nor does anything else tried help: travel left un-negated, the duration
+taken as `D/ps` and so signed, the arm zeroed outright, and the other two compasses
+(99 points each for the spear and the crossbow) all score at or below 138.
+
+So the sign accounts for the shape and not the numbers, and the riekling's 899
+missing points stay recorded rather than modelled. `ShippedShapeTests` keeps the
 measurements.
 
 ### 6.2d Which input the shipped table followed
