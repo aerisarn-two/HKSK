@@ -113,16 +113,28 @@ class Behaviour:
         img, cs, byname = hkpack.load(exe)
         nodes = self._objects()
 
-        names = list(self.variables)
-        values = [struct.unpack('<i', struct.pack('<f', float(self.variables[n])))[0]
-                  for n in names]
-
-        graph = Node('hkbBehaviorGraph', 'Graph', variableMode=0)
         def bits(x):
             return struct.unpack('<i', struct.pack('<f', float(x)))[0]
 
+        # A variable's word holds a float's bits or an int outright, so the type
+        # has to match what the graph will read it as: a sync variable is a state
+        # id and reading a float's bits as one lands nowhere. Python's type says
+        # which -- bool, int, or anything else.
+        def typed(v):
+            if isinstance(v, bool):
+                return 'VARIABLE_TYPE_BOOL', int(v)
+            if isinstance(v, int):
+                return 'VARIABLE_TYPE_INT32', v
+            return 'VARIABLE_TYPE_REAL', bits(v)
+
+        names = list(self.variables)
+        kinds = [typed(self.variables[n])[0] for n in names]
+        values = [typed(self.variables[n])[1] for n in names]
+
+        graph = Node('hkbBehaviorGraph', 'Graph', variableMode=0)
+
         data = Node('hkbBehaviorGraphData',
-                    variableInfos=[{'role': {'role': 0, 'flags': 0}, 'type': 'VARIABLE_TYPE_REAL'} for _ in names],
+                    variableInfos=[{'role': {'role': 0, 'flags': 0}, 'type': k} for k in kinds],
                     wordMinVariableValues=[{'value': bits(0.0)} for _ in names],
                     wordMaxVariableValues=[{'value': bits(1.0)} for _ in names])
         initial = Node('hkbVariableValueSet',

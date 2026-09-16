@@ -128,7 +128,7 @@ generators the graph is evaluating at rest.
 | class | how it selects | source |
 | --- | --- | --- |
 | `hkbBehaviorGraph` | its `rootGenerator` | reflection |
-| `hkbStateMachine` | the state whose id is named — §4.1 | reflection + corpus |
+| `hkbStateMachine` | the state whose id is named — §4.1 | **measured** |
 | `hkbBlenderGenerator` | every child whose weight, bound or stored, is above zero | reflection |
 | `hkbPoseMatchingGenerator` | **derives from `hkbBlenderGenerator`**, so the same rule | census |
 | `hkbModifierGenerator` | passes through to its generator | reflection |
@@ -171,6 +171,24 @@ Three things about it:
 Modifiers run on the way down, before the generator they sit above, and the walk
 iterates to a fixed point because what a modifier writes decides what the machines
 below it select.
+
+**Which id is named** depends on `m_startStateMode`: the machine takes
+`m_startStateId` unless the mode is `START_STATE_MODE_SYNC`, and only then is
+`m_syncVariableIndex` consulted. That guard decides where two creatures rest --
+the riekling's combat machine is in sync mode on a variable that starts at its
+equip state, and the benthic lurker's locomotion machines are in it on `iState`,
+which is what lets their keys be read off their state ids.
+
+**Measured** (`tools/gameview/syncmodetest.py`): one machine, two states,
+`startStateId` naming the first and the sync variable naming the second.
+
+| `startStateMode` | runtime rests in |
+| --- | --- |
+| `START_STATE_MODE_DEFAULT` | state 0 — the variable ignored |
+| `START_STATE_MODE_SYNC` | state 1 — the variable wins |
+
+The variable has to be declared `VARIABLE_TYPE_INT32`, since a state id read out
+of a float's bits lands nowhere.
 
 ### 4.2 How one file serves ten creatures
 

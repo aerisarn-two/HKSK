@@ -180,6 +180,16 @@ A two-state machine whose first state plays a clip carrying one trigger at
 that event. Nothing else can move it, so state 1 means the trigger fired on its
 own. That is `ActiveGenerators.Finished` measured rather than reasoned.
 
+`syncmodetest.py` is the same pattern on the other rule a state machine rests by:
+
+    START_STATE_MODE_DEFAULT   startStateId=0, sync variable=1 -> currentStateId [0, 0, 0, 0]
+    START_STATE_MODE_SYNC      startStateId=0, sync variable=1 -> currentStateId [1, 1, 1, 1]
+
+so `m_syncVariableIndex` is consulted in that mode and nowhere else, which is
+`ActiveGenerators.StateIdOf`. **Declare the variable as an int**: `Behaviour`
+types a variable from the Python value it is given -- `bool`, `int`, anything else
+-- and a state id read out of a float's bits lands nowhere.
+
 ## Staging it again
 
 The tutorial assets live outside the Wine prefix and the staging directory is in
