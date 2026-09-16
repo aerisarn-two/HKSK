@@ -76,6 +76,57 @@ public static class Masters
 
         return types;
     }
+
+    /// <summary>
+    /// The roles each race gives a movement type -- <c>walk</c>, <c>run</c>,
+    /// <c>swim</c>, <c>fly</c>, <c>sneak</c>, <c>sprint</c> -- by the type's name.
+    /// </summary>
+    /// <remarks>
+    /// A race's base movement defaults are the only place the masters point at a
+    /// movement type, apart from the default object manager naming the player's.
+    /// </remarks>
+    public static IReadOnlyDictionary<string, IReadOnlySet<string>> RaceRoles()
+    {
+        var names = new Dictionary<Mutagen.Bethesda.Plugins.FormKey, string>();
+        var roles = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var mods = new List<ISkyrimModDisposableGetter>();
+
+        try
+        {
+            foreach (string master in Order)
+            {
+                string path = Path.Combine(DataFolder!, master);
+                if (!File.Exists(path)) continue;
+
+                var mod = SkyrimMod.CreateFromBinaryOverlay(path, SkyrimRelease.SkyrimSE);
+                mods.Add(mod);
+
+                foreach (IMovementTypeGetter movement in mod.MovementTypes)
+                    if ((movement.Name ?? movement.EditorID) is { Length: > 0 } name)
+                        names[movement.FormKey] = name;
+            }
+
+            foreach (var mod in mods)
+                foreach (IRaceGetter race in mod.Races)
+                    foreach ((string role, var link) in new (string, Mutagen.Bethesda.Plugins.IFormLinkNullableGetter<IMovementTypeGetter>)[]
+                             {
+                                 ("walk", race.BaseMovementDefaultWalk), ("run", race.BaseMovementDefaultRun),
+                                 ("swim", race.BaseMovementDefaultSwim), ("fly", race.BaseMovementDefaultFly),
+                                 ("sneak", race.BaseMovementDefaultSneak), ("sprint", race.BaseMovementDefaultSprint),
+                             })
+                    {
+                        if (link.IsNull || !names.TryGetValue(link.FormKey, out string? name)) continue;
+                        if (!roles.TryGetValue(name, out SortedSet<string>? set)) roles[name] = set = [];
+                        set.Add(role);
+                    }
+        }
+        finally
+        {
+            foreach (var mod in mods) mod.Dispose();
+        }
+
+        return roles.ToDictionary(r => r.Key, r => (IReadOnlySet<string>)r.Value, StringComparer.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

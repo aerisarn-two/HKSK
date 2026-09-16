@@ -83,6 +83,11 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     private static Inferred Infer(SkyrimCache cache, IReadOnlyDictionary<string, MovementType> movements)
+        => Infer(cache, movements, Masters.RaceRoles());
+
+    private static Inferred Infer(
+        SkyrimCache cache, IReadOnlyDictionary<string, MovementType> movements,
+        IReadOnlyDictionary<string, IReadOnlySet<string>> raceRoles)
     {
         var file = new SpeedDataFile();
         int projects = 0, blocks = 0, unbuildable = 0;
@@ -130,6 +135,12 @@ public sealed class SpeedDataRebuildTests
             {
                 string movement = constant["iState_".Length..];
                 if (!movements.TryGetValue(movement, out MovementType type)) continue;
+
+                // A movement type a race wears only to swim, fly, sprint or run was
+                // never swept: every one of the five such is without a block, and
+                // every one a race walks in has one (BlockSelectionTests).
+                if (raceRoles.TryGetValue(movement, out IReadOnlySet<string>? roles) &&
+                    !roles.Contains("walk")) continue;
 
                 // What the graph declares, first: a BSiStateTaggingGenerator tags the
                 // subtree it guards and a BSIStateManagerModifier declares a table of
@@ -770,11 +781,11 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(152, made.Count);
+        Assert.Equal(147, made.Count);
 
         Assert.Equal(84, made.Intersect(shipped).Count());   // recovered, was 51
         Assert.Equal(2, shipped.Except(made).Count());       // missed, was 35
-        Assert.Equal(68, made.Except(shipped).Count());      // invented, was 41
+        Assert.Equal(63, made.Except(shipped).Count());      // invented, was 41
         Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
     }
 

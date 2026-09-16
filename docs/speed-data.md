@@ -1209,14 +1209,16 @@ input. With three blocks and three different fractions any rule here would be
 fitted to the file, so none is in the rebuild; these are the 36 points the priest
 and the atronach miss and 36 of the slaughterfish's.
 
-Worth testing against this, not yet tested: `SamplerOffset` is 0.0404 and 1/24 is
-0.0417, and a one-step lag over a 24-step average turns a linear ladder segment
-into the same segment shifted by the sweep's step over 24 -- a per-block shift,
-constant across headings, which is what "The sampler reads the curve 0.04 early"
-under Verification found the offset to be, nine of its eleven sharp blocks between
-0.0385 and 0.0400. That section ruled out the *retained* grid, whose goal speeds are
-all multiples of 0.5; the swept step is a different quantity, and nothing here
-measures it.
+**It does not explain the sampler's 0.04.** The coincidence invites it:
+`SamplerOffset` is 0.0404 and 1/24 is 0.0417, and a lag of k sweep steps inside a
+24-step average turns a linear ladder segment into the same segment shifted by
+k x step / 24 -- a per-block shift, constant across headings, which is the shape
+"The sampler reads the curve 0.04 early" under Verification found. But the step is
+known: §9 reads it off the deer, whose bound of 833 is swept in 1,666 iterations,
+so 0.5. One step of lag predicts 0.0208 and two predict 0.0417, and the eleven
+blocks that pin an offset sharply sit between 0.031 and 0.0400, nine of them
+between 0.0385 and 0.0400 with basins too narrow to hold 0.0417. Neither count of
+steps fits, so the twenty-fourths stay a property of goal speed zero.
 
 ### 6.3 The horse: the one creature whose cache is the problem
 
@@ -1681,6 +1683,24 @@ Two hypotheses are tested and dead:
   at once — the player's bow states sweep 6.4x past a ladder topping at 155.21 while
   the giant's combat run stops at 67% of its blend. Meanwhile 30 of 35 default entries
   have ladders running past 325 and were never raised.
+
+**Which blocks exist.** A project declares `iState_<movement type>` constants for more
+types than its table has blocks, and the draugr proves the choice is not a function of
+the inputs: `DraugrProject` and `DraugrSkeletonProject` root at the same behaviour file,
+declare the same twelve constants and ship six blocks against one
+(`BlockSelectionTests`). So the rebuild writes some blocks the game did not -- 63, of
+which FirstPerson's are 18 and the two draugr projects' 17.
+
+The masters do settle part of it. A race points at movement types through its six base
+movement defaults, and where a race names a type the answer follows with no exception:
+the **26** constants a race uses as its *walk* default all have a block, and the **4** a
+race uses only to swim, sprint or run -- `BearSwimDefault`, `HorkerSwimDefault`,
+`NetchSprinting`, `SphereRanged` -- have none, nor does the dragon's `DragonFlying`
+outside that count. That reads as the sweep walking each race on the ground. The rebuild
+skips a type a race names only off the walk, which took the unshipped blocks it writes
+from 68 to 63 and cost no shipped block. The other 115 constants no race names -- the
+stances, the player's whole list, the draugr's weapons -- and 52 of them have a block
+and 63 do not, which is where the draugr lives.
 
 **`max(x)` does not bound what the game can request.** 47 of the 86 entries stop below
 their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of

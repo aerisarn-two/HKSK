@@ -275,6 +275,58 @@ public sealed class BlockSelectionTests
         Assert.Equal(predicted, observed, 3);
     }
 
+    /// <summary>
+    /// What a race does with the movement type decides it -- where a race says
+    /// anything about it at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A race points at movement types through its base movement defaults, one per
+    /// role: walk, run, swim, fly, sneak and sprint. Of the 145 constants, 30 name a
+    /// type some race uses, and those split with no exception. The 26 a race uses as
+    /// its <strong>walk</strong> default all have a block. The 4 races use only in
+    /// another role -- <c>BearSwimDefault</c> and <c>HorkerSwimDefault</c> to swim,
+    /// <c>NetchSprinting</c> to sprint, <c>SphereRanged</c> as the sphere's run --
+    /// have none.
+    /// </para>
+    /// <para>
+    /// That reads as the sweep walking each race on the ground: a type the race
+    /// only puts on in water, in the air or at a sprint was never under the sampler.
+    /// It does not reach the other 115, which no race names -- the stances, the
+    /// player's whole list, the draugr's weapons -- and among those 52 have a block
+    /// and 63 do not, so the draugr counterexample above stands.
+    /// </para>
+    /// </remarks>
+    [MastersFact]
+    public void ARaceDecidesTheMovementTypesItNames()
+    {
+        var roles = Masters.RaceRoles();
+        var tally = new Dictionary<string, (int Blocked, int Unblocked)>();
+        var offWalk = new List<string>();
+
+        foreach ((string name, ProjectWalk walk, BehaviorRoot root, SkyrimCache cache) in Load())
+        {
+            HashSet<int> keys = KeysOf(cache, name);
+
+            foreach ((string constant, int value) in StateConstants.Of(walk, root))
+            {
+                string movement = constant["iState_".Length..];
+                string kind = !roles.TryGetValue(movement, out var used) ? "unnamed"
+                    : used.Contains("walk") ? "walk" : "elsewhere";
+                if (kind == "elsewhere") offWalk.Add(movement);
+
+                var t = tally.GetValueOrDefault(kind);
+                tally[kind] = keys.Contains(value) ? (t.Blocked + 1, t.Unblocked) : (t.Blocked, t.Unblocked + 1);
+            }
+        }
+
+        Assert.Equal((26, 0), tally["walk"]);
+        Assert.Equal((0, 4), tally["elsewhere"]);
+        Assert.Equal((52, 63), tally["unnamed"]);
+
+        Assert.Equal(["BearSwimDefault", "HorkerSwimDefault", "NetchSprinting", "SphereRanged"], offWalk.Order());
+    }
+
     private static bool Same(MovementType a, MovementType b) =>
         a.ForwardWalk == b.ForwardWalk && a.ForwardRun == b.ForwardRun &&
         a.BackWalk == b.BackWalk && a.BackRun == b.BackRun &&
