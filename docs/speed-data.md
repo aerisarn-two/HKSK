@@ -974,7 +974,7 @@ the giant, which is +20 points for -24 records. Neither is in the tree. Separati
 the cases needs something not yet found, and a threshold fitted to the goal speeds
 the file happens to carry would be fitting to the file being derived.
 
-### 6.2c A reversed clip, and the riekling
+### 6.2c A reversed clip, and the riekling's own data
 
 `hkbClipGenerator.m_playbackSpeed` can be **negative**, which plays the animation
 backwards: the clip takes the same time and the root travels the other way. 31
@@ -985,21 +985,41 @@ whose right strafe is its left one reversed (`MT WalkR` plays `MT_WalkL.HKX` at
 -1). Reading the rate as authored dropped them, so `Blend_MT_Right` came out with
 no rungs at all: a quarter of the compass simply missing.
 
-Fixing it costs a block, and the block is worth losing. The riekling's two
-candidate compasses -- one for its bare hands, one for its crossbow -- carry
-identical rung weights (5, 167.42, 275.82, 413.73), so with the right strafe
-restored the pairing scores them equally and returns nothing rather than choosing.
-It had been scoring them apart only because one of the four headings was empty.
-The graph cannot break the tie either: the riekling's combat machine is in
-`START_STATE_MODE_SYNC` on a variable that starts at the equip state, so running
-it rests in `MT_Equip` and never reaches locomotion at all.
+**The riekling is still the largest block of error, and the error is in the file.**
+It holds 138 of its 1037 points, but not evenly. Its two cardinal records are
+exact -- forward and backward carry twelve points each and **every one of the 24
+holds**, reproducing the shipped numbers through the ordinary ladder. The other
+seventeen records are a different kind of data: they carry up to **121 points**
+where twelve did for forward, **eleven of them fall** somewhere instead of rising,
+and the values wander -- the sideways record reads 381.13 at a goal speed of 257
+and 312.57 at 324.5.
 
-The block it used to emit held 99 of its 1037 points. What it needs is not a key
-but a model: **its forward and backward records are already exact** -- 12 of 12
-each, reproducing the shipped numbers to five figures at every goal speed -- while
-its right reads 1 of 24 and its left 14 of 67, and the shipped lateral curve is
-not a ladder response at all. At x = 4.5 it records 20.5 where the ladder gives 3,
-and it steps rather than curves.
+A record answers "how fast when asked for x", so it cannot fall as x rises: a
+ladder clamps at its ends and interpolates between them, and both are monotone.
+Across the whole shipped file that holds for **1,616 of 1,634 records**, and
+eleven of the eighteen exceptions are this one block.
+
+**And the damage has a side.** The riekling is the only project whose locomotion
+rungs are clips played backwards, and every one of them is in `Blend_MT_Right`.
+Split its seventeen non-cardinal records by which way round they go:
+
+| | records | points | held | falling |
+| --- | --- | --- | --- | --- |
+| cardinal (0.00, 0.50), no reversed clip | 2 | 24 | **24** | 0 |
+| the half mixing `Blend_MT_Right` (0.05-0.45) | 9 | 546 | **17** | **7** |
+| the half that does not (0.55-0.90) | 7 | 467 | 97 | 4 |
+
+and the falls grow steadily across the bad half -- 2.7, 15.1, 68.6, 105.9, 120.3,
+132.2, 181.5 -- while the good half's worst is 20.
+
+That the broken half is the reversed half is suggestive, and it is as far as the
+evidence goes. Reading the reversed arm wrongly on purpose does not reproduce the
+shipped numbers: travel left un-negated, the speed negated, the duration taken as
+`D/ps` and so signed, and the arm zeroed outright were each measured, and none
+beats reading it correctly. Nor does the choice of compass -- 138 points for the
+bare-handed one, 99 each for the spear and the crossbow. So the riekling's 899
+missing points are recorded rather than chased. `ShippedShapeTests` keeps the
+measurements.
 
 ### 6.2d Which input the shipped table followed
 
