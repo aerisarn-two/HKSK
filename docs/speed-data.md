@@ -1267,10 +1267,15 @@ a pure offset with no scale component. **The sampler stored x and recorded the r
 496 of the 832 points, and fitting the offset per block rather than per point says why.
 Within a block it is a single number: sweeping it against each of a block's nineteen
 records separately gives 0.0400 for every heading of `SphereCenturion` and 0.0385 for
-every heading of `BallistaCenturion`, to within the 0.0005 the sweep resolves. Between
-blocks it is not: `VampireLord` asks for 0.0310 and fits to a median error of **0.0008%**,
-against `SphereCenturion`'s 0.0400 at 0.0037%, and errors that small leave no room for the
-gap to be the fit wandering.
+every heading of `BallistaCenturion`, to within the 0.0005 the sweep resolves.
+
+Between blocks it is not, and the **basins** are the evidence rather than the depths. Take
+the span over which a block's error stays within twice its own minimum: `SphereCenturion`
+holds 0.0385 to 0.0415 and `VampireLord` holds 0.0295 to 0.0325 -- equally tight at 0.0030
+wide, and **disjoint**, so no single offset satisfies both. The widths are what counts and
+not the error levels, which differ by an order of magnitude between the two: the vampire
+lord's worst is still better than the centurion's best, and a shallow minimum would be no
+evidence at all.
 
 **Four things it is not.** Not the **grid**: all 18,302 goal speeds in the file are exact
 multiples of 0.5, so there is no fractional step for 0.03 to hide in, and a block's records
@@ -1285,6 +1290,13 @@ fit found. But `SphereCenturion`, `BallistaCenturion` and `Spriggan` carry no
 `hkbDampingModifier` anywhere and have three different offsets between them, and the
 player's damping is a PID with integral action (`kI = 0.015`), which drives a steady-state
 error to zero rather than leaving one.
+
+**What sets it per block is not known.** Eleven blocks fit sharply enough to pin an offset
+and nine of them land between 0.0385 and 0.0400, so the variation is small; against the
+ladder's own properties the offset correlates with nothing -- first rung duration r = 0.14,
+second rung duration r = 0.23, second rung weight r = 0.10, top weight r = 0.31, duration
+ratio r = 0.04. An apparent monotone relationship with the first rung's duration on four
+hand-picked creatures does not survive the other seven.
 
 So the global 0.0404 is a compromise rather than a law, costing those blocks 0.002% to
 0.004% against their own best. It is kept because fitting one per creature would be fitting

@@ -31,12 +31,19 @@ public sealed class SamplerOffsetTests
     /// resolve.
     /// </para>
     /// <para>
-    /// <strong>Between blocks it is not.</strong> <c>VampireLord</c> asks for
-    /// 0.0310 and fits to a median error of <strong>0.0008%</strong>, against
-    /// <c>SphereCenturion</c>'s 0.0400 at 0.0037% -- errors far too small for the
-    /// difference to be the fit wandering. The blend law does not explain it: all
-    /// three are synchronised three-rung ladders whose first rung sits at 5, and the
-    /// two centurions have identical rung weights, 5, 192 and 384, yet disagree.
+    /// <strong>Between blocks it is not, and the basins prove it.</strong> Comparing
+    /// each block's error at its own best against the error elsewhere -- the span
+    /// over which it stays within twice its minimum -- <c>SphereCenturion</c> holds
+    /// 0.0385 to 0.0415 and <c>VampireLord</c> holds 0.0295 to 0.0325. Equally tight
+    /// at 0.0030 wide, and <strong>disjoint</strong>: no offset satisfies both. It
+    /// is the widths that matter and not the depths, since the two sit at very
+    /// different error levels -- the vampire lord's worst is still better than the
+    /// centurion's best -- and a shallow minimum would be no evidence at all.
+    /// </para>
+    /// <para>
+    /// The blend law does not explain it: both are synchronised three-rung ladders
+    /// whose first rung sits at 5, and the two centurions have identical rung
+    /// weights, 5, 192 and 384, yet disagree.
     /// </para>
     /// <para>
     /// So the global 0.0404 is a compromise and not a law. It is kept anyway,
@@ -58,9 +65,18 @@ public sealed class SamplerOffsetTests
         Assert.Equal(0.0385f, ballista, 4);
         Assert.Equal(0.0315f, vampire, 4);
 
-        // sharp enough that the spread is not the fit wandering
-        Assert.True(vampireError < 0.00002, $"vampire lord fitted to {vampireError:P4}");
-        Assert.True(sphereError < 0.00005, $"sphere centurion fitted to {sphereError:P4}");
+        // each block's basin: where its error stays within twice its own minimum
+        (float sphereLow, float sphereHigh) = Basin(cache, "SphereCenturion", sphereError);
+        (float vampireLow, float vampireHigh) = Basin(cache, "VampireLord", vampireError);
+
+        Assert.Equal(0.0385f, sphereLow, 4);
+        Assert.Equal(0.0415f, sphereHigh, 4);
+        Assert.Equal(0.0295f, vampireLow, 4);
+        Assert.Equal(0.0325f, vampireHigh, 4);
+
+        // equally tight, and no offset satisfies both
+        Assert.Equal(sphereHigh - sphereLow, vampireHigh - vampireLow, 4);
+        Assert.True(vampireHigh < sphereLow, "the basins overlap after all");
 
         // and every heading of a block agrees with its own block
         foreach ((string name, float expected) in new[]
@@ -129,6 +145,35 @@ public sealed class SamplerOffsetTests
             ProjectWalk walk = ProjectWalk.Of(cache.FindProjectFile(name)!);
             Assert.DoesNotContain(walk.Steps, step => step.Node is hkbDampingModifier);
         }
+    }
+
+    /// <summary>Where a block's error stays within twice its own best.</summary>
+    private static (float Low, float High) Basin(SkyrimCache cache, string project, double best)
+    {
+        var (arms, entry) = Load(cache, project);
+        float low = 1f, high = 0f;
+
+        for (int step = 0; step <= 400; step++)
+        {
+            float offset = step * 0.0005f;
+            List<double> errors = [];
+
+            foreach (SpeedRecord record in entry.Records)
+                foreach (SpeedPoint point in record.Points)
+                {
+                    if (point.Y <= 0f) continue;
+                    double y = SpeedSampler.Sample(arms, record.Direction, point.X - offset);
+                    if (y > 0) errors.Add(Math.Abs(y - point.Y) / point.Y);
+                }
+
+            errors.Sort();
+            if (errors[errors.Count / 2] > 2 * best) continue;
+
+            low = MathF.Min(low, offset);
+            high = MathF.Max(high, offset);
+        }
+
+        return (low, high);
     }
 
     private static (float Offset, double Error) Fit(SkyrimCache cache, string project)
