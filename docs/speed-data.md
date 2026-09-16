@@ -1095,11 +1095,46 @@ that. Reading `Speed` where nothing writes a sampled speed recovers both:
 atronach reads and writes it -- so where there is no sampler the search keeps to
 blends binding `blendParameter`, which is what a ladder is.
 
-**The other six do not move on a curve.** `AtronachStorm`, `Wisp` and
-`Witchlight` ship a table of flat zero; `DragonProject` ships a flat 384 and
-`IceWraith` a flat 319.67; `ChaurusFlyer` is zero at most headings and not at the
-rest. Nothing in their graphs reads a speed into a blend, which is consistent with
-a flat table -- but flat *at what* is not yet derived, and they are still missed.
+**The other six do not move on a curve.** Nothing in their graphs reads a speed
+into a blend, so the table is flat -- and flat *at what* is answered by standing
+the graph up at its root and reading what it plays:
+
+| project | shipped | rests on | built |
+| --- | --- | --- | ---: |
+| `DragonProject` | 381.18 to 384 | `CLIP_Ground_Locomotion_Forward` -> `MTForwardGround`, 384.001 u/s | **51/51** |
+| `AtronachStorm` | 0 at 38 of 38 points | four clips, none travelling | **38/38** |
+| `Wisp` | 0 at 38 of 38 points | `initialize`, 0 u/s | **38/38** |
+| `Witchlight` | 0 at 38 of 38 points | `WalkF`, 0 u/s | **38/38** |
+| `ChaurusFlyer` | 0 (largest 1.8e-20 of 46) | `RunF` at 370 u/s, **a third of the weight** | refused |
+| `IceWraith` | 230.52 to 319.67 | `Initialize`, 0 u/s | refused |
+
+Three things had to be right for those four to land, and each is a rule the file
+paid for:
+
+- **The reading has to carry the pose's root motion.** A clip's speed is read from
+  its own travel, so a clip at a third of the weight is not what the creature does.
+  The chaurus flyer rests on `RunF` at 370 u/s under two idles that do not travel,
+  and read at face value it answers 370 against a shipped table of zero. Holding
+  the reading to `Motion >= 0.999` drops it, and drops
+  `DwarvenSpiderCenturionProject` with it -- both scored **0**, 89 points between
+  them, and nothing else changed.
+- **A compass has four arms or eight.** Three clips cannot cover a heading circle.
+  The dragon's ground locomotion is three, and read as a compass it scores **3 of
+  51** where read flat it scores **51 of 51**. The players' bleedout is four and
+  wants the compass: **39 of 49** against 8 of 49 read flat.
+- **A zero curve is a curve, but only where there is no locomotion to reach.** The
+  storm atronach, wisp and witchlight own nothing that travels but staggers,
+  recoils and a power attack -- 150.21/39.00/44.50/23.49 for the atronach,
+  59.59/176.98/247.10/179.36 for the witchlight -- no two agreeing. The ice wraith
+  rests on the same kind of non-travelling clip and is not one of them: it owns
+  `RunF`, `RunB` and `RunL` at **319.667**, its shipped forward speed to the digit.
+  Three clips at one speed is a heading set, and it says the creature moves
+  whatever the graph was doing when it was asked.
+
+The ice wraith is the one left, and its own clips name the answer: a four-arm
+compass of `RunF`/`RunB`/`RunL` at 319.667 is the shape that gives 319.67 forward
+and 263.6/230.52 off-axis. Reaching it needs the graph driven out of `Initialize`,
+which standing it up at the root does not do.
 
 ### 6.2e Does the compass earn its place
 

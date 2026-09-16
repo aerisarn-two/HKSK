@@ -151,10 +151,22 @@ public sealed class SpeedDataRebuildTests
                           ?? StateAt(graph, walk, properties, actor, built, parameter, key);
                 }
 
+                // Nothing in this graph reads a speed into a blend, so the creature
+                // has no curve: whatever it plays, it plays at one speed.
+                if (built.Count == 0) arms ??= Standing(walk, properties, actor);
+
                 if (arms is null) { unbuildable++; continue; }
 
+                // A creature that cannot move by root motion has a curve, and it is
+                // zero. The grid it is written on is degenerate because the ladder
+                // gives no extent, and the shipped one spans 0 to 324.5 like 74 of
+                // the 86 blocks do -- where that extent comes from is not derived
+                // here, and the curve is zero at every x either way.
+                bool still = arms.All(a => a.Ladder.Rungs.All(r => r.Travel.Length() <= 0f));
+
                 float top = arms.Max(a => a.Ladder.Rungs.Count == 0 ? 0f : a.Ladder.Rungs[^1].Weight);
-                if (top <= 0f) { unbuildable++; continue; }
+                if (top <= 0f && !still) { unbuildable++; continue; }
+                if (arms.Any(a => a.Ladder.Rungs.Count == 0)) { unbuildable++; continue; }
 
                 var entry = new SpeedEntry { Key = (uint)key };
                 block.Entries.Add(entry);
@@ -338,8 +350,19 @@ public sealed class SpeedDataRebuildTests
             if (node.Generator is not hkbBlenderGenerator blend) continue;
             if ((blend.m_flags & 16) == 0) continue;                       // FLAG_PARAMETRIC_BLEND
 
+            // An arm's speed is read from the clip's own travel, so the compass has
+            // to be carrying all of the pose's root motion for that to be the
+            // creature's speed. The chaurus flyer's locomotion blend sits at a third
+            // of the weight under two idles that do not travel, and read at face
+            // value it answers 370 where the shipped table is zero.
+            if (node.Motion < 0.999f) continue;
+
+            // A heading compass has to cover the circle, and Bethesda's do it with
+            // four arms or eight. Three clips under a parametric blend are a
+            // fragment of something else -- the dragon's ground locomotion is one,
+            // and read as a compass it scores 3 of 51 where flat scores 51 of 51.
             IList<hkbBlenderGeneratorChild> children = blend.m_children ?? [];
-            if (children.Count < 3) continue;
+            if (children.Count < 4) continue;
 
             List<(float, SpeedLadder)> arms = [];
             bool headings = true;
@@ -403,6 +426,36 @@ public sealed class SpeedDataRebuildTests
     /// would be worse than leaving the key to the heuristic.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The curve a creature has when nothing in its graph reads a speed into a
+    /// blend, which is no curve at all: one constant, or one per heading.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Six of the eight projects with no sampler have no ladder either, and their
+    /// tables say so. `AtronachStorm`, `Wisp` and `Witchlight` ship flat zero and
+    /// their live clips travel zero. `DragonProject` ships a flat 384 and the clip
+    /// it rests in, `MTForwardGround`, travels at 384.001. `IceWraith` ships
+    /// 319.67, 263.6, 230.52 repeating around the compass, and its `RunF`, `RunB`
+    /// and `RunL` all travel at 319.667, the smaller numbers being the vector blend
+    /// between them.
+    /// </para>
+    /// <para>
+    /// So the same two readings the player's drunk and bleedout need answer these:
+    /// run the graph and take what it plays. Rooting them at the graph rather than
+    /// at a tag is the whole difference.
+    /// </para>
+    /// </remarks>
+    private static List<(float Direction, SpeedLadder Ladder)>? Standing(
+        ProjectWalk walk, Properties properties, ActorProject actor)
+    {
+        foreach (ProjectStep step in walk.Steps)
+            if (step.Node is hkbBehaviorGraph graph && graph.m_rootGenerator is { } root)
+                return Flat(walk, properties, actor, root);
+
+        return null;
+    }
+
     private static List<(float Direction, SpeedLadder Ladder)>? FlatAt(
         ProjectWalk walk, Properties properties, ActorProject actor, int key)
     {
@@ -411,6 +464,16 @@ public sealed class SpeedDataRebuildTests
             if (step.Node is not BSiStateTaggingGenerator tag) continue;
             if (tag.m_iStateToSetAs != key || tag.m_pDefaultGenerator is not { } under) continue;
 
+            if (Flat(walk, properties, actor, under) is { } found) return found;
+        }
+
+        return null;
+    }
+
+    private static List<(float Direction, SpeedLadder Ladder)>? Flat(
+        ProjectWalk walk, Properties properties, ActorProject actor, hkbGenerator under)
+    {
+        {
             Evaluation run = ActiveGenerators.Evaluate(under, walk, tables =>
             {
                 foreach (Variables variables in tables.Values)
@@ -436,7 +499,8 @@ public sealed class SpeedDataRebuildTests
 
             // A compass of flat clips, where the subtree has one: the bleedout is
             // four clips on a cyclic parametric blend and nothing else.
-            if (CompassOfClips(run, actor) is { } compass) return compass;
+            if (CompassOfClips(run, actor) is { } compass)
+ return compass;
 
             // Every travelling clip the subtree plays. They may be several -- the
             // sprint blends a right-side and a left-side variant of the same stride
@@ -451,9 +515,20 @@ public sealed class SpeedDataRebuildTests
                 if (clip.m_animationName is not { Length: > 0 } animation) continue;
                 if (clip.m_playbackSpeed <= 0f) continue;
 
+                // Same reason the compass is held to it: the speed comes from the
+                // clip's own travel, so the clip has to be carrying the pose's root
+                // motion for that to be what the creature does.
+                if (node.Motion < 0.999f) continue;
+
                 string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
                 if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion) continue;
-                if (motion.Translations.Count == 0 || motion.Translations[^1].Value.Length() <= 0f) continue;
+                // A clip that does not travel makes a curve too, and it is zero.
+                // AtronachStormProject, WispProject and WitchlightProject each ship
+                // 38 points of exact zero while their movement types declare
+                // 100/500, 100/300 and 500/500; all three rest on clips with no
+                // root motion. Asking the project instead does not separate them --
+                // all three own travelling animations they never reach from rest.
+                if (motion.Translations.Count == 0) continue;
 
                 float duration = motion.Duration / clip.m_playbackSpeed;
                 float speed = motion.Translations[^1].Value.Length() / duration;
@@ -472,10 +547,43 @@ public sealed class SpeedDataRebuildTests
                     speed, motion.Translations[^1].Value, duration, stem);
             }
 
-            if (several || only is not { } rung) continue;
+            if (several || only is not { } rung) return null;
 
-            return [(0f, new SpeedLadder([rung]) { Name = tag.m_name })];
+            // A zero curve is only the answer where the creature has no locomotion
+            // to reach. AtronachStormProject, WispProject and WitchlightProject own
+            // nothing that travels but staggers, recoils and a power attack, no two
+            // of which agree on a speed -- and each ships 38 points of exact zero
+            // against movement types declaring 100/500, 100/300 and 500/500. The ice
+            // wraith rests on the same kind of non-travelling clip and is not one of
+            // them: it owns RunF, RunB and RunL at 319.667, which is its shipped
+            // forward speed to the digit.
+            if (rung.Travel.Length() <= 0f && HeadingSet(actor) is not null) return null;
+
+            return [(0f, new SpeedLadder([rung]) { Name = under.m_name })];
         }
+    }
+
+    /// <summary>
+    /// The speed a project's own clips agree on, where three or more of them do.
+    /// </summary>
+    /// <remarks>
+    /// Three clips travelling at one speed is a heading set -- forward, back and a
+    /// side the compass mirrors -- and it says the creature moves whatever the graph
+    /// was doing when it was asked. Reaction motion never looks like this: the storm
+    /// atronach's four travelling clips are 150.21, 39.00, 44.50 and 23.49, and the
+    /// witchlight's are 59.59, 176.98, 247.10 and 179.36.
+    /// </remarks>
+    private static float? HeadingSet(ActorProject actor)
+    {
+        List<float> speeds = [];
+        foreach (AnimationSlot slot in actor.Animations)
+            if (slot.Motion is { Duration: > 0f, Translations.Count: > 0 } m &&
+                m.Translations[^1].Value.Length() > 0f)
+                speeds.Add(m.Translations[^1].Value.Length() / m.Duration);
+
+        foreach (float speed in speeds)
+            if (speeds.Count(other => MathF.Abs(other - speed) <= 0.005f * speed) >= 3)
+                return speed;
 
         return null;
     }
@@ -632,7 +740,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversSeventyNineOfTheEightySixBlocks()
+    public void TheInferenceRecoversEightyThreeOfTheEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -663,12 +771,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(144, made.Count);
+        Assert.Equal(151, made.Count);
 
-        Assert.Equal(79, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(7, shipped.Except(made).Count());       // missed, was 35
-        Assert.Equal(65, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(10, inferred.Unbuildable);              // unplaceable, was 50
+        Assert.Equal(83, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(3, shipped.Except(made).Count());       // missed, was 35
+        Assert.Equal(68, made.Except(shipped).Count());      // invented, was 41
+        Assert.Equal(3, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -762,6 +870,8 @@ public sealed class SpeedDataRebuildTests
                     arms ??= StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
                 }
 
+                if (built.Count == 0) arms ??= Standing(walk, properties, actor);
+
                 if (arms is null) continue;
 
                 bool shared = declared || flat || borrowed || paired is not null;
@@ -812,6 +922,7 @@ public sealed class SpeedDataRebuildTests
 
                         _keyPoints++;
                         if (ok) { pointsHeld++; _projectHeld++; _keyHeld++; } else recordHolds = false;
+
                     }
 
                     if (recordHolds) recordsHeld++; else blockHolds = false;
@@ -844,21 +955,21 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(79, blocks);
-        Assert.Equal(1501, records);
-        Assert.Equal(17988, points);
+        Assert.Equal(83, blocks);
+        Assert.Equal(1577, records);
+        Assert.Equal(18153, points);
 
         // 15305 against the 10145 the pairing alone reached, over 77 blocks against
         // 51. The rate reads 87% rather than 92% only because RieklingProject is in
         // the denominator with 1037 points and 138 of them right; on the other 76
         // blocks it is 13345 of 14551.
-        Assert.Equal(15628, pointsHeld);
-        Assert.Equal(1217, recordsHeld);
-        Assert.Equal(47, blocksHeld);
+        Assert.Equal(15793, pointsHeld);
+        Assert.Equal(1293, recordsHeld);
+        Assert.Equal(51, blocksHeld);
 
         Assert.Equal(25, _declared);
         Assert.Equal(66, _sharedBlocks);
-        Assert.Equal(13, _newBlocks);
+        Assert.Equal(17, _newBlocks);
         Assert.Equal(13587, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.
