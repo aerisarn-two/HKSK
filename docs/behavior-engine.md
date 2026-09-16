@@ -456,6 +456,16 @@ never reached the four-way blend its table describes. The riekling was stuck the
 same way in `MT_Equip`, which is why its two compasses could not be told apart by
 running the graph.
 
+**And a clip that is active was entered, so a trigger at its first frame has fired
+too.** The end-of-clip argument runs from the other side and reaches the same
+place. The ice wraith's `IceWraithRootBehavior` starts in `Initialize` and its only
+exit is event 32, `InitializeStop`, which the `Initialize` clip raises with
+`m_relativeToEndOfClip` **false** at `m_localTime` **0** -- so the end-of-clip rule
+alone left it in its intro forever. Raising triggers at local time 0 as well frees
+it into `CombatLocomotionBlend`, four arms of `RunF`/`RunR`/`RunB`/`RunL` recorded
+at 319.667 u/s, and its shipped table goes from unbuilt to **42 of 42** with no
+other block moving. `StartTriggerTests` holds it.
+
 Its own compass then follows: `BleedOut_Moving_Blend` is a cyclic parametric blend
 of four clips at 0.25, 0.5, 0.75 and 1 with no ladder under it, because a creature
 bleeding out has one animation per direction and no gait to choose. So the curve

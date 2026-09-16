@@ -740,7 +740,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversEightyThreeOfTheEightySixBlocks()
+    public void TheInferenceRecoversEightyFourOfTheEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -771,12 +771,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(151, made.Count);
+        Assert.Equal(152, made.Count);
 
-        Assert.Equal(83, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(3, shipped.Except(made).Count());       // missed, was 35
+        Assert.Equal(84, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(2, shipped.Except(made).Count());       // missed, was 35
         Assert.Equal(68, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(3, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -955,21 +955,21 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(83, blocks);
-        Assert.Equal(1577, records);
-        Assert.Equal(18153, points);
+        Assert.Equal(84, blocks);
+        Assert.Equal(1596, records);
+        Assert.Equal(18195, points);
 
         // 15305 against the 10145 the pairing alone reached, over 77 blocks against
         // 51. The rate reads 87% rather than 92% only because RieklingProject is in
         // the denominator with 1037 points and 138 of them right; on the other 76
         // blocks it is 13345 of 14551.
-        Assert.Equal(15793, pointsHeld);
-        Assert.Equal(1293, recordsHeld);
-        Assert.Equal(51, blocksHeld);
+        Assert.Equal(15835, pointsHeld);
+        Assert.Equal(1312, recordsHeld);
+        Assert.Equal(52, blocksHeld);
 
         Assert.Equal(25, _declared);
         Assert.Equal(66, _sharedBlocks);
-        Assert.Equal(17, _newBlocks);
+        Assert.Equal(18, _newBlocks);
         Assert.Equal(13587, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.

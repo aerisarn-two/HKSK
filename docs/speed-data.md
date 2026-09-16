@@ -1105,8 +1105,8 @@ the graph up at its root and reading what it plays:
 | `AtronachStorm` | 0 at 38 of 38 points | four clips, none travelling | **38/38** |
 | `Wisp` | 0 at 38 of 38 points | `initialize`, 0 u/s | **38/38** |
 | `Witchlight` | 0 at 38 of 38 points | `WalkF`, 0 u/s | **38/38** |
+| `IceWraith` | 230.52 to 319.67 | `CombatLocomotionBlend`, four arms at 319.667 u/s | **42/42** |
 | `ChaurusFlyer` | 0 (largest 1.8e-20 of 46) | `RunF` at 370 u/s, **a third of the weight** | refused |
-| `IceWraith` | 230.52 to 319.67 | `Initialize`, 0 u/s | refused |
 
 Three things had to be right for those four to land, and each is a rule the file
 paid for:
@@ -1131,10 +1131,21 @@ paid for:
   Three clips at one speed is a heading set, and it says the creature moves
   whatever the graph was doing when it was asked.
 
-The ice wraith is the one left, and its own clips name the answer: a four-arm
-compass of `RunF`/`RunB`/`RunL` at 319.667 is the shape that gives 319.67 forward
-and 263.6/230.52 off-axis. Reaching it needs the graph driven out of `Initialize`,
-which standing it up at the root does not do.
+The ice wraith took one more rule, and it is a rule about time rather than about
+speed. `IceWraithRootBehavior` starts in `Initialize` and its **only** exit is
+event 32, `InitializeStop` -- which the `Initialize` clip itself raises, with
+`m_relativeToEndOfClip` **false** at `m_localTime` **0**. The engine already raised
+end-of-clip triggers, on the argument that a clip which has been playing has
+reached its end; the start case is the same argument from the other side, since a
+clip that is active was entered at all. Raising both frees the graph into
+`CombatLocomotionBlend`, four arms of `RunF`/`RunR`/`RunB`/`RunL` on a cyclic
+parametric blend, every one of them recorded at 319.667 u/s -- which is 319.67
+forward and 263.6/230.52 off-axis. **42 of 42**, and no other block moved.
+`StartTriggerTests` holds it.
+
+`ChaurusFlyer` is the one left. Its shipped table is zero to float noise while its
+rest pose plays `RunF` at 370 u/s, and no reading of the graph produces zero from
+that.
 
 ### 6.2e Does the compass earn its place
 

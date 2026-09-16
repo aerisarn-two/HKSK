@@ -171,7 +171,14 @@ public static class ActiveGenerators
 
             foreach (hkbClipTrigger trigger in triggers)
             {
-                if (!trigger.m_relativeToEndOfClip) continue;
+                // A trigger placed at the clip's end has fired because the clip has
+                // been playing; one placed at its start has fired because the clip
+                // was entered at all. Both are events the rest position is already
+                // past. The ice wraith's Initialize raises InitializeStop this way
+                // -- not relative to the end, at local time 0 -- and that event is
+                // the only way out of its root machine's start state.
+                bool past = trigger.m_relativeToEndOfClip || trigger.m_localTime <= 0f;
+                if (!past) continue;
                 if (trigger.m_event?.m_id is not { } id) continue;
                 if (variables.EventNameOf(id) is { } name) raised.Raise(name);
             }
