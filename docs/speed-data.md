@@ -1272,12 +1272,24 @@ blocks it is not: `VampireLord` asks for 0.0310 and fits to a median error of **
 against `SphereCenturion`'s 0.0400 at 0.0037%, and errors that small leave no room for the
 gap to be the fit wandering.
 
-Nothing in the blend accounts for it. All of them are synchronised three-rung ladders whose
-first rung sits at 5, and the two centurions have *identical* rung weights -- 5, 192, 384 --
-and still disagree, 0.0400 against 0.0385. So the global 0.0404 is a compromise rather than
-a law, costing those blocks 0.002% to 0.004% against their own best. It is kept because
-fitting one per creature would be fitting to the answer, and it is now the only thing in
-the rebuild that is fitted at all. `SamplerOffsetTests` holds the measurement.
+**Four things it is not.** Not the **grid**: all 18,302 goal speeds in the file are exact
+multiples of 0.5, so there is no fractional step for 0.03 to hide in, and a block's records
+do not even share one grid while the offset fitted to each is the same number. Not
+**stored**: `BSSpeedSamplerModifier` carries `state`, `direction`, `goalSpeed` and
+`speedOut`, and none of them is a shift. Not the **blend law**: the two centurions are both
+synchronised three-rung ladders with the same rung weights and still disagree.
+
+And not **damping**, which was the best guess -- a speed approaching its goal at a constant
+rate is left short by a constant, which is exactly the pure offset with no scale the corpus
+fit found. But `SphereCenturion`, `BallistaCenturion` and `Spriggan` carry no
+`hkbDampingModifier` anywhere and have three different offsets between them, and the
+player's damping is a PID with integral action (`kI = 0.015`), which drives a steady-state
+error to zero rather than leaving one.
+
+So the global 0.0404 is a compromise rather than a law, costing those blocks 0.002% to
+0.004% against their own best. It is kept because fitting one per creature would be fitting
+to the answer, and it remains the only fitted number in the rebuild.
+`SamplerOffsetTests` holds the measurements.
 
 What it does to the file, over all 832 points with no selection of any kind:
 

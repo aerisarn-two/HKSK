@@ -1,4 +1,5 @@
 using HKSK.Behavior;
+using HKX2;
 using HKSK.Cache;
 using HKSK.Model;
 using Xunit;
@@ -69,6 +70,65 @@ public sealed class SamplerOffsetTests
             foreach ((float direction, float best) in PerRecord(cache, name))
                 Assert.True(MathF.Abs(best - expected) <= 0.0006f,
                     $"{name} at heading {direction:0.00} wants {best:0.0000}, not {expected:0.0000}");
+    }
+
+    /// <summary>
+    /// Four things the offset is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is not the <strong>grid</strong>. Every goal speed in the shipped file is
+    /// an exact multiple of 0.5, so there is no fractional step for an offset of
+    /// 0.03 to hide in -- and a block's records do not even share one grid, while
+    /// the offset fitted to each of them is the same number.
+    /// </para>
+    /// <para>
+    /// It is not <strong>stored</strong>. <c>BSSpeedSamplerModifier</c> carries four
+    /// members, <c>state</c>, <c>direction</c>, <c>goalSpeed</c> and
+    /// <c>speedOut</c>, and none of them is a shift.
+    /// </para>
+    /// <para>
+    /// It is not <strong>damping</strong>, which was the best guess: a speed
+    /// approaching its goal at a constant rate would be left short by a constant,
+    /// which is exactly the pure offset with no scale that the corpus fit found.
+    /// But <c>SphereCenturion</c>, <c>BallistaCenturion</c> and <c>Spriggan</c>
+    /// carry no <c>hkbDampingModifier</c> anywhere, and they have three different
+    /// offsets between them. The player's damping is a PID with integral action,
+    /// <c>kI = 0.015</c>, which drives a steady-state error to zero rather than
+    /// leaving one.
+    /// </para>
+    /// <para>
+    /// And it is not the <strong>blend law</strong>: the two centurions are both
+    /// synchronised three-rung ladders with the same rung weights, 5, 192 and 384,
+    /// and ask for 0.0400 and 0.0385.
+    /// </para>
+    /// </remarks>
+    [MastersFact]
+    public void TheOffsetIsNotTheGridNorTheSamplerNorDamping()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        // every goal speed in the file sits on a half unit
+        int points = 0;
+        foreach (string name in cache.SpeedData!.ProjectNames)
+            foreach (SpeedEntry entry in cache.SpeedData.Block(name)!.Entries)
+                foreach (SpeedRecord record in entry.Records)
+                    foreach (SpeedPoint point in record.Points)
+                    {
+                        points++;
+                        float twice = point.X * 2f;
+                        Assert.True(MathF.Abs(twice - MathF.Round(twice)) < 1e-3f,
+                            $"{name} carries a goal speed of {point.X}");
+                    }
+
+        Assert.Equal(18302, points);
+
+        // and the creatures that pin the offset most sharply damp nothing at all
+        foreach (string name in new[] { "SphereCenturion", "BallistaCenturion", "Spriggan" })
+        {
+            ProjectWalk walk = ProjectWalk.Of(cache.FindProjectFile(name)!);
+            Assert.DoesNotContain(walk.Steps, step => step.Node is hkbDampingModifier);
+        }
     }
 
     private static (float Offset, double Error) Fit(SkyrimCache cache, string project)
