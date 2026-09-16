@@ -1030,9 +1030,22 @@ about -3. Nor does anything else tried help: travel left un-negated, the duratio
 taken as `D/ps` and so signed, the arm zeroed outright, and the other two compasses
 (99 points each for the spear and the crossbow) all score at or below 138.
 
-So the sign accounts for the shape and not the numbers, and the riekling's 899
-missing points stay recorded rather than modelled. `ShippedShapeTests` keeps the
-measurements.
+**And the values are its own compass's, at the wrong headings.** Asking each
+shipped point whether *any* heading of the riekling's compass produces it, rather
+than the heading its record names, answers yes for **813 of its 1037 points**
+where the record's own heading answers for 138. A spare parameter and a 2% window
+fit a lot by chance, so the same question was asked of four other creatures'
+shipped values against the riekling's compass: 79 of 250, 70 of 192, 152 of 323
+and 28 of 141, which is 20% to 47%. The riekling's own is 78%, clear of all of
+them. A creature that turned to face its travel while the sweep ran would look
+like this.
+
+It is still not a model. No single heading works: answering every record at the
+forward arm holds 76 points and sweeping the answer heading from 0 to 0.1 peaks at
+144, against the 138 the correct reading already gives. So the sign accounts for
+the shape, the wandering heading accounts for the values, and neither is something
+to rebuild from. The riekling's 899 missing points stay recorded.
+`ShippedShapeTests` keeps the measurements.
 
 ### 6.2d Which input the shipped table followed
 

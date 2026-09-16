@@ -266,6 +266,96 @@ public sealed class ShippedShapeTests
         return a + u * (b - a);
     }
 
+    /// <summary>
+    /// The riekling's values are speeds its own compass can make, at headings that
+    /// are not the ones they are filed under.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asking each shipped point whether <em>any</em> heading of the riekling's
+    /// compass produces it, rather than the heading its record names, answers yes
+    /// for <strong>813 of its 1037 points</strong> where the record's own heading
+    /// answers yes for 138. A creature that turned to face its travel while the
+    /// sweep was running would look exactly like that.
+    /// </para>
+    /// <para>
+    /// <strong>The free heading has to be paid for, and it is.</strong> A spare
+    /// parameter and a 2% window will fit a lot by chance, so the same question is
+    /// asked of four other creatures' shipped values against the riekling's
+    /// compass: they match 79 of 250, 70 of 192, 152 of 323 and 28 of 141, which is
+    /// 20% to 47%. The riekling's own is 78%, well clear of all of them.
+    /// </para>
+    /// <para>
+    /// <strong>It is still not a model.</strong> No single heading works: answering
+    /// every record at the forward arm holds 76 points, and sweeping the answer
+    /// heading from 0 to 0.1 peaks at 144 -- against the 138 the correct reading
+    /// already gives. So the block is described and not rebuilt, and what is
+    /// recorded is that its values belong to its own compass and its headings do
+    /// not.
+    /// </para>
+    /// </remarks>
+    [MastersFact]
+    public void TheRieklingsValuesBelongToItsCompassButNotToItsHeadings()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+        var actor = (ActorProject)cache.OpenActor("RieklingProject")!;
+        ProjectWalk walk = ProjectWalk.Of(cache.FindProjectFile("RieklingProject")!);
+
+        LocomotionState state = LocomotionStates.In(walk, new ProjectVariables(walk.Steps))
+            .First(st => Compass.ArmsOf(walk, st, actor).Count == 4);
+        var arms = Compass.ArmsOf(walk, state, actor).OrderBy(a => a.Direction).ToList();
+
+        (int own, int any, int all) = Fit(cache, arms, "RieklingProject", filed: true);
+
+        Assert.Equal(1037, all);
+        Assert.Equal(138, own);
+        Assert.Equal(813, any);
+
+        // the same question of values that have nothing to do with this creature
+        foreach ((string other, int expected, int points) in new[]
+        {
+            ("BearProject", 79, 250), ("DraugrProject", 70, 192),
+            ("WolfProject", 152, 323), ("GiantProject", 28, 141),
+        })
+        {
+            (_, int matched, int n) = Fit(cache, arms, other, filed: false);
+            Assert.Equal(points, n);
+            Assert.Equal(expected, matched);
+
+            // and every one of them is far below the riekling's own 78%
+            Assert.True(matched / (double)n < 0.5, $"{other} fitted {matched} of {n}");
+        }
+    }
+
+    /// <summary>
+    /// How many of a block's points the compass makes at their own heading, and how
+    /// many it makes at any heading at all.
+    /// </summary>
+    private static (int Own, int Any, int All) Fit(
+        SkyrimCache cache, List<(float Direction, SpeedLadder Ladder)> arms, string project, bool filed)
+    {
+        SpeedEntry entry = cache.SpeedData!.Block(project)!.Entries.First(e => e.Records.Count > 0);
+        int own = 0, any = 0, all = 0;
+
+        foreach (SpeedRecord record in entry.Records)
+            foreach (SpeedPoint point in record.Points)
+            {
+                if (point.Y <= 0f) continue;
+                all++;
+
+                float x = point.X - SpeedLadder.SamplerOffset;
+                if (filed && Holds(SpeedSampler.Sample(arms, record.Direction, x), point.Y)) own++;
+
+                for (int i = 0; i <= 200; i++)
+                    if (Holds(SpeedSampler.Sample(arms, i / 200f, x), point.Y)) { any++; break; }
+            }
+
+        return (own, any, all);
+    }
+
+    private static bool Holds(double got, double want) =>
+        got > 0 && Math.Abs(got - want) / want <= 0.02;
+
     private static bool Falls(SpeedRecord record)
     {
         float worst = 0f;
