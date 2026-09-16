@@ -94,6 +94,64 @@ public sealed class SpeedRecord
     {
         for (float d = 0.0f; d < 0.95f; d += 0.05f) yield return d;
     }
+
+    /// <summary>How far a dropped point may sit from the line that replaces it.</summary>
+    public const float RetentionTolerance = 2f;
+
+    /// <summary>
+    /// The breakpoints the shipped file keeps out of a dense sweep.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A greedy pass from the first point: the line from the last kept point is
+    /// stretched one sample at a time, and when some sample it would skip lies more
+    /// than <see cref="RetentionTolerance"/> units above or below it, the sample
+    /// before is kept and becomes the new start. The last sample is always kept.
+    /// </para>
+    /// <para>
+    /// Measured, not assumed (<c>docs/speed-data.md</c> §9): run over the 225
+    /// records whose curve the rebuild reproduces to within 0.001 units it gives
+    /// every one's retained goal speeds exactly, and it falls away as the curve it
+    /// is fed does.
+    /// Douglas-Peucker and relative tolerances match none; 1.99 and 2.01 match
+    /// barely half of what 2 does.
+    /// </para>
+    /// <para>
+    /// Not reproduced: 1,162 shipped records write their last point twice. None of
+    /// the 271 whose last segment is flat does, and 1,106 of the 1,307 whose last
+    /// segment slopes do, and what decides the rest is not known.
+    /// </para>
+    /// </remarks>
+    public static List<SpeedPoint> Retain(IReadOnlyList<SpeedPoint> sweep, float tolerance = RetentionTolerance)
+    {
+        if (sweep.Count <= 2) return [.. sweep];
+
+        List<SpeedPoint> kept = [sweep[0]];
+        int anchor = 0;
+
+        for (int next = 1; next < sweep.Count; next++)
+        {
+            if (Covers(sweep, anchor, next, tolerance)) continue;
+
+            anchor = next - 1;
+            kept.Add(sweep[anchor]);
+            next--;    // stretch again from the new start
+        }
+
+        kept.Add(sweep[^1]);
+        return kept;
+    }
+
+    private static bool Covers(IReadOnlyList<SpeedPoint> sweep, int from, int to, float tolerance)
+    {
+        SpeedPoint a = sweep[from], b = sweep[to];
+        double slope = ((double)b.Y - a.Y) / ((double)b.X - a.X);
+
+        for (int k = from + 1; k < to; k++)
+            if (Math.Abs(sweep[k].Y - (a.Y + slope * (sweep[k].X - a.X))) > tolerance) return false;
+
+        return true;
+    }
 }
 
 /// <summary>

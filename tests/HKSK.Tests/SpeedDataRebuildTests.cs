@@ -187,15 +187,14 @@ public sealed class SpeedDataRebuildTests
 
                 foreach (float heading in Headings())
                 {
-                    var record = new SpeedRecord { Direction = heading };
-                    entry.Records.Add(record);
-
-                    for (int i = 0; i <= 16; i++)
-                    {
-                        float x = top * i / 16f;
-                        record.Points.Add(new SpeedPoint(
+                    // Swept on the file's own half-unit grid and thinned the way the
+                    // file was (SpeedRecord.Retain), rather than at even spacing.
+                    List<SpeedPoint> sweep = [];
+                    for (float x = 0f; x <= MathF.Max(top, 0.5f); x += 0.5f)
+                        sweep.Add(new SpeedPoint(
                             x, share * SpeedSampler.Sample(arms, heading, x - SpeedLadder.SamplerOffset)));
-                    }
+
+                    entry.Records.Add(new SpeedRecord { Direction = heading, Points = SpeedRecord.Retain(sweep) });
                 }
             }
         }

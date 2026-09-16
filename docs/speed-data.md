@@ -1719,15 +1719,60 @@ children's durations is wrong, and it is what the closed form's remaining error 
 pose side is documented; the duration side is not, and no rule has been fitted across
 entries yet.
 
-**The point-retention rule.** Needed only for a byte-identical rebuild (§8). Now a
-tractable experiment, because §6 can produce the dense curve to score candidates
-(Douglas-Peucker at a tolerance, curvature threshold, error-bounded decimation) against
-the shipped file's 1634 exact point sets.
 
 **Where the sampler's 0.04 comes from.** Measured and characterised in §6.2 — a pure
 offset in x, no scale, constant across the corpus — but not explained. It is excluded
 from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
 The tool that wrote the file is not shipped, so this may stay a measured constant.
+
+### The point-retention rule, found
+
+A record keeps about 11 of the goal speeds its sweep visits, and which ones is now
+known: **a greedy pass with a vertical tolerance of 2 units.** The line from the last
+kept point is stretched one half-unit sample at a time, and when a sample it would skip
+lies more than 2 units above or below it, the sample before is kept and becomes the new
+start; the last sample is always kept. `SpeedRecord.Retain` implements it and the
+rebuild writes its records through it.
+
+It was found by running candidates over the dense curve §6 produces and comparing the
+goal speeds kept with the shipped ones, on the seven projects whose every curve is
+rebuilt (133 records):
+
+    rule                           tolerance    x sets identical
+    Douglas-Peucker, absolute      0.05 .. 4          0
+    Douglas-Peucker, relative      0.05% .. 2%        0
+    greedy, relative               0.05% .. 2%        0
+    greedy, absolute               1, 4               0
+    greedy, absolute               1.99              58
+    greedy, absolute               2                 91
+    greedy, absolute               2.01              52
+
+A peak that sharp says the tolerance is exactly 2 and the misses are the curve, not the
+rule -- and across every record the rebuild builds, exactness follows the curve's own
+accuracy down:
+
+    worst |model - shipped|     records    x sets identical
+    < 0.001                         225    225   100%   (32 with more than two points)
+    0.001 .. 0.01                    34     30    88%
+    0.01 .. 0.05                    181    116    64%
+    0.05 .. 0.1                     107     53    50%
+    0.1 .. 0.25                     244     37    15%
+    0.25 .. 1                       481     40     8%
+    >= 1                            324      0     0%
+
+The misses near the top are one grid step at the first break, then carried: a
+deviation creeping past 2 half a unit earlier or later is exactly what a curve a few
+hundredths off does. Pinning the model to the shipped points, with the residual spread
+linearly between them, changes none of them, so the error that moves them lies between
+the kept points. `BallistaCenturion`, `SphereCenturion` and `SteamProject` keep exactly
+the rule's points on all 19 records each (`PointRetentionTests`).
+
+Two things about a record's ends are measured and not derived. Its last point is always
+the entry's largest goal speed (1,634 of 1,634), and 1,162 records write it twice: none
+of the 271 whose last segment is flat do, 1,106 of the 1,307 whose last segment slopes
+do. And the forward record starts at 0 on 80 of 86 entries while the others mostly start
+at 0.5 -- the same off-forward first sample that §6.2g finds measured in twenty-fourths,
+here apparently dropped rather than kept.
 
 ### How much of the file is actually rebuilt
 
