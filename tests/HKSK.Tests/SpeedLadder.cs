@@ -167,18 +167,26 @@ public sealed class SpeedLadder
     /// <strong>Fitted, and the only fitted number here.</strong> The admissible
     /// inputs are the behaviour graph, the movement types and the root motion, and
     /// this is none of them: it was obtained by minimising the error against the
-    /// shipped file. It earns its place differently from a per-creature threshold
-    /// read off its own answer -- it is one global constant, the same for every
-    /// creature, and it is a property of the tool Bethesda sampled with rather than
-    /// of the data being described -- but it is fitted, and a rebuild that has to
-    /// supply it is not deriving the file from its inputs alone.
+    /// shipped file. One global number is a far weaker thing to supply than a
+    /// per-creature threshold read off its own answer, but it is fitted all the
+    /// same, and a rebuild that has to supply it is not deriving the file from its
+    /// inputs alone.
     ///
     /// <see cref="Evaluate"/> is the blend law exactly, so
     /// this is the whole of the difference between the law and the shipped file:
     /// fitting <c>x' = a*x + b</c> over the corpus gives <c>a = 1.000000</c> and
-    /// <c>b = -0.040445</c>, a pure offset with no scale, constant across creatures
-    /// whose segment spans run from 30 to 3160 and whose duration ratios run from
-    /// 1.2 to 71.
+    /// <c>b = -0.040445</c>, a pure offset with no scale.
+    ///
+    /// <strong>It is not, however, one number for every creature.</strong> Fitting
+    /// it per block says the offset is constant across all nineteen headings of a
+    /// block and different between blocks: <c>SphereCenturion</c> asks for 0.0400
+    /// and <c>VampireLord</c> for 0.0310, at median errors of 0.0037% and 0.0008%,
+    /// which are far too small for the gap to be the fit wandering. Nothing in the
+    /// blend explains it -- both are synchronised three-rung ladders starting at 5,
+    /// and the two centurions have identical rung weights and still disagree, 0.0400
+    /// against 0.0385. The global value is a compromise that costs those blocks
+    /// 0.002% to 0.004%, and it is kept because fitting one per creature would be
+    /// fitting to the answer. <c>SamplerOffsetTests</c> holds the measurement.
     ///
     /// Applying it takes the median error against the shipped file from 0.0715% to
     /// 0.0021%. Where it comes from is not known: it is not in the blender, which

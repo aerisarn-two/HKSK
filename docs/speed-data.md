@@ -1260,9 +1260,24 @@ graph. Fitting the general form `x' = a·x + b` over the well-determined creatur
 
     a = 1.000000        b = -0.040445
 
-a pure offset with no scale component, constant across creatures whose segment spans run
-from 30 to 3160 and whose duration ratios run from 1.2 to 71. **The sampler stored x and
-recorded the response at `x - 0.0404`.**
+a pure offset with no scale component. **The sampler stored x and recorded the response at
+`x - 0.0404`.**
+
+**It is one number per block, not one number for the file.** The `other` column above is
+496 of the 832 points, and fitting the offset per block rather than per point says why.
+Within a block it is a single number: sweeping it against each of a block's nineteen
+records separately gives 0.0400 for every heading of `SphereCenturion` and 0.0385 for
+every heading of `BallistaCenturion`, to within the 0.0005 the sweep resolves. Between
+blocks it is not: `VampireLord` asks for 0.0310 and fits to a median error of **0.0008%**,
+against `SphereCenturion`'s 0.0400 at 0.0037%, and errors that small leave no room for the
+gap to be the fit wandering.
+
+Nothing in the blend accounts for it. All of them are synchronised three-rung ladders whose
+first rung sits at 5, and the two centurions have *identical* rung weights -- 5, 192, 384 --
+and still disagree, 0.0400 against 0.0385. So the global 0.0404 is a compromise rather than
+a law, costing those blocks 0.002% to 0.004% against their own best. It is kept because
+fitting one per creature would be fitting to the answer, and it is now the only thing in
+the rebuild that is fitted at all. `SamplerOffsetTests` holds the measurement.
 
 What it does to the file, over all 832 points with no selection of any kind:
 
