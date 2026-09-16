@@ -669,14 +669,17 @@ ones it builds -- and makes the row read true: the guard costs no point and
 refuses 107 that would all be wrong. It stays, on the same terms as any rule that
 declines to build what it cannot build right.
 
-**The path-scoped cycle guard now earns its place.** The first pass found it worth
-nothing and kept it for being correct. It is worth 45 points, 19 records and a
-whole block now, and the block is `NetchProject`, **45 of 45 with it and 0 of 45
+**The path-scoped cycle guard always earned its place; the first pass did not
+switch it off.** That pass reported it worth nothing and explained why the rules
+around it covered for it. Both were wrong. It is worth 45 points, 19 records and a
+whole block, and the block is `NetchProject`, **45 of 45 with it and 0 of 45
 without** -- the creature whose lower body is one subtree reached by two parents,
-which is what the guard was written for. What stopped covering for it since the
-first pass is not isolated: it is not the start-of-clip triggers and not the
-motion guard, each switched off together with the cycle guard and the netch still
-at 0.
+which is what the guard was written for. Checking out the first pass's own commit
+and deleting `seen.Remove(node)` gives 15,260 against its 15,305: the same 45, so
+nothing changed between the passes. The first pass had switched the guard with a
+flag that only kept blend children on the visited set, while the unconditional
+removal at the end of `Visit` still ran -- so the row measured a guard that was
+still on. This pass switches rules by editing the line that implements them.
 
 **Keeping compasses apart is worth 420 points; picking the widest of them is
 worth none.** Grouping arms by the compass that owns them is what stops the
