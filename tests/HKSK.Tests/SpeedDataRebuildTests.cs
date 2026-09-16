@@ -437,6 +437,9 @@ public sealed class SpeedDataRebuildTests
             // four clips on a cyclic parametric blend and nothing else.
             if (CompassOfClips(run, actor) is { } compass) return compass;
 
+            // Every travelling clip the subtree plays. They may be several -- the
+            // sprint blends a right-side and a left-side variant of the same stride
+            // -- and the curve is flat so long as they agree on a speed.
             SpeedRung? only = null;
             bool several = false;
 
@@ -451,15 +454,21 @@ public sealed class SpeedDataRebuildTests
                 if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion) continue;
                 if (motion.Translations.Count == 0 || motion.Translations[^1].Value.Length() <= 0f) continue;
 
-                if (only is not null) { several = true; break; }
+                float duration = motion.Duration / clip.m_playbackSpeed;
+                float speed = motion.Translations[^1].Value.Length() / duration;
 
-                    float duration = motion.Duration / clip.m_playbackSpeed;
+                if (only is { } already)
+                {
+                    // Agreeing on a speed is what makes the curve flat. Differing on
+                    // one is a ladder, and this does not model it.
+                    if (MathF.Abs(already.Delivered - speed) > 0.005f * speed) { several = true; break; }
+                    continue;
+                }
 
                 // The rung sits on the speed axis at the speed it delivers, which is
-                // the only position a single clip has.
+                // the only position a clip that is not part of a ladder has.
                 only = new SpeedRung(
-                    motion.Translations[^1].Value.Length() / duration,
-                    motion.Translations[^1].Value, duration, stem);
+                    speed, motion.Translations[^1].Value, duration, stem);
             }
 
             if (several || only is not { } rung) continue;
@@ -495,11 +504,21 @@ public sealed class SpeedDataRebuildTests
             }
         }, properties, Moving);
 
-        foreach ((hkbBlenderGenerator _, float _, float motion) in
-                 Ladders.ActiveIn(run, walk, parameter))
-            return motion;
+        // A ladder can be live under more than one parent, and its share of the
+        // movement is then what each instance carries, added up: the netch's
+        // locomotion hangs under both halves of a body blend at half the motion
+        // each, and the creature travels at the whole of its speed.
+        hkbBlenderGenerator? first = null;
+        float share = 0f;
 
-        return 1f;
+        foreach ((hkbBlenderGenerator blend, float _, float motion) in
+                 Ladders.ActiveIn(run, walk, parameter))
+        {
+            first ??= blend;
+            if (ReferenceEquals(blend, first)) share += motion;
+        }
+
+        return first is null ? 1f : share;
     }
 
     /// <summary>

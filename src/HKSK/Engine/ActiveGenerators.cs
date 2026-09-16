@@ -272,19 +272,10 @@ public static class ActiveGenerators
                 float[] shares = Shares(blend, children, variables, properties);
                 float[] moving = Moving(children, shares);
 
-                // Where each child's subtree lands in the trace, so that the ones
-                // that turn out to sample nothing can give their motion back.
-                int[] from = new int[children.Count + 1];
-
                 for (int i = 0; i < children.Count; i++)
-                {
-                    from[i] = found.Count;
                     Visit(children[i].m_generator, weight * shares[i], depth + 1, tables, trace, seen,
                         motion * moving[i]);
-                }
 
-                from[^1] = found.Count;
-                Settle(found, from, moving, motion);
                 break;
             }
 
@@ -336,69 +327,8 @@ public static class ActiveGenerators
             // hkbClipGenerator, BSSynchronizedClipGenerator, hkbReferencePoseGenerator
             // and BSOffsetAnimationGenerator are leaves: they sample, they do not select.
         }
-    }
 
-    /// <summary>
-    /// Gives a blend's motion back from the children that sample nothing.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <see cref="Moving"/> shares a blend's root motion over its children as
-    /// authored, but a child only moves the character if something under it
-    /// actually samples an animation. A branch whose state machine has no live
-    /// state produces no pose and no travel, and the runtime is left blending what
-    /// it does have -- so the share it was holding belongs to its siblings.
-    /// </para>
-    /// <para>
-    /// This is what tells the two halving creatures apart, and both are 0.5 before
-    /// it runs. The daedra's locomotion is mixed against <c>MT Idle</c>, a real
-    /// clip that stands still, and it keeps its half: the daedra travels at half
-    /// the speed its ladder delivers, which is what its shipped table records. The
-    /// netch's is mixed against a lower-body state machine that selects nothing,
-    /// so its half comes back and it travels at the ladder's full speed -- also
-    /// what its table records.
-    /// </para>
-    /// </remarks>
-    private static void Settle(List<ActiveNode> found, int[] from, float[] moving, float motion)
-    {
-        float live = 0f;
-        bool dead = false;
-
-        for (int i = 0; i < moving.Length; i++)
-        {
-            if (Samples(found, from[i], from[i + 1])) live += moving[i];
-            else if (moving[i] > 0f) dead = true;
-        }
-
-        if (!dead || live <= 0f) return;
-
-        for (int i = 0; i < moving.Length; i++)
-        {
-            if (!Samples(found, from[i], from[i + 1])) continue;
-
-            float now = motion * moving[i] / live;
-            for (int at = from[i]; at < from[i + 1]; at++)
-            {
-                ActiveNode node = found[at];
-                float within = moving[i] > 0f ? node.Motion / (motion * moving[i]) : 0f;
-                found[at] = node with { Motion = now * within };
-            }
-        }
-    }
-
-    /// <summary>Whether anything in a span of the trace samples an animation.</summary>
-    /// <remarks>
-    /// The four leaves. A generator that only selects moves nothing by itself, so
-    /// a branch made entirely of them is a branch the character does not follow.
-    /// </remarks>
-    private static bool Samples(List<ActiveNode> found, int from, int to)
-    {
-        for (int at = from; at < to; at++)
-            if (found[at].Generator is hkbClipGenerator or BSSynchronizedClipGenerator
-                or hkbReferencePoseGenerator or BSOffsetAnimationGenerator)
-                return true;
-
-        return false;
+        seen.Remove(node);
     }
 
     /// <summary>From the runtime's own <c>BlenderFlags</c>.</summary>

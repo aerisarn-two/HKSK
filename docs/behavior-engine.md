@@ -527,6 +527,43 @@ not the same case:
 | `HMDaedra` | `MT Idle`, a clip that stands still | 0.5 | halved |
 | `NetchProject` | a lower-body state machine that selects nothing | 1 | not halved |
 
+**There is no such thing as a child that samples nothing**, and the engine no
+longer pretends otherwise. A blend child whose generator is a state machine with
+no states, or with a state whose generator is null, faults the 6.6 runtime as soon
+as the child takes weight -- measured with `tools/hkmeasure`, `DEAD=`. So a rule
+about branches that generate nothing had nothing to describe.
+
+The netch looked like one. Its lower body is *the same subtree as its upper body*
+-- `MoveForwardRootBehavior`, `ForwardBlend`, `NetchRunForward` at 400 units a
+second, the same node objects reached twice -- so both halves of its body blend
+travel at 400 and nothing is halved. What made the second half look empty was the
+visit's own cycle guard, which is now scoped to the path rather than the visit,
+because that is what a cycle guard is: a node may be live under two parents, and
+only a path may not repeat one.
+
+Two things depended on the old guard and both were wrong for the same reason.
+A ladder live under two parents carries its share in each, so `Share` adds them
+up; and a subtree that plays one clip twice is still playing one clip, so the flat
+route asks whether the travelling clips **agree on a speed** rather than whether
+there is only one of them -- which is also what the sprint needs, since it blends
+a right-side and a left-side variant of the same stride.
+
+With those, the corrected traversal reproduces the previous numbers exactly:
+15,305 points, 1,215 records, 47 blocks. And the rule it replaces is then dead --
+disabling it changes nothing at all -- so it is gone, and the daedra is still
+halved for the reason it always was: `MT Idle` is a distinct clip that travels
+zero.
+
+So `ActiveNode` carries `Motion` beside `Weight`: its share of the movement,
+normalised over the children that are in the world-from-model blend. Two
+creatures in the corpus end up below 1, and both at exactly 0.5, and they are
+not the same case:
+
+| | mixed with | share | table |
+| --- | --- | --- | --- |
+| `HMDaedra` | `MT Idle`, a clip that stands still | 0.5 | halved |
+| `NetchProject` | a lower-body state machine that selects nothing | 1 | not halved |
+
 **A child that samples nothing gives its share back**, which is what the engine
 does and what separates the two creatures in practice. **The mechanism is not
 what it looks like**, and the difference is worth stating because it is the kind
