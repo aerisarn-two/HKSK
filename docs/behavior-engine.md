@@ -619,8 +619,16 @@ and leaves `NetchProject` at 45 of 45.
 
 ## 5. Open
 
-- The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
-  the transition durations.
+- The engine has no clock, and **nothing implemented needs one**. Transition
+  durations only matter while a transition is running, and the speed tables
+  describe a steady state. `hkbTimerModifier` cannot reach a selection either: not
+  one of the 65 in the corpus carries a binding, so a timer writes no variable --
+  it raises `m_alarmEvent` after `m_alarmTimeSeconds`, and between them the 65
+  raise six events, `GetUpStart` 46 times, `BowRelease` and `BowReleaseFast` six
+  each, `IdleOffsetStop` and `blockStopInstant` three each and `HeadIdle` once.
+  **None of the six is a transition event of any locomotion machine**
+  (`NoTimerReachesALocomotionMachine`). A clock would be needed to go beyond tier
+  1, not to finish it.
 - **The expression evaluator agrees with the runtime on everything 6.6 compiles.**
   `hkmeasure states` runs now, and every operator and function has been swept
   through it and compared: `%`, `max`, `min`, `clamp`, `fabs`, `!`, precedence,
