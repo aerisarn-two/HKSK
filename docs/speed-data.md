@@ -1181,6 +1181,43 @@ holds 226 of 226 points **with** its compass. So the two cases that would have t
 be told apart are told apart by nothing that has been found, and applying either
 would be reading the answer. `CompassNeededTests` keeps both measurements.
 
+### 6.2g Goal speed zero is measured in twenty-fourths
+
+Where a block carries a point at goal speed 0 on every heading -- most carry it on
+one record only -- the forward heading is exact everywhere and the others split
+cleanly by what the ladder reads.
+
+| block | ladder reads | forward at x=0 | other headings at x=0 | everything above |
+| --- | --- | ---: | ---: | ---: |
+| `Dragon_Priest` key 0 | raw `Speed` | 1 | **23/24** (18 of 18) | held |
+| `AtronachFlame` key 1 | raw `Speed` | 1 | **23/24** (18 of 18) | held |
+| `SlaughterfishProject` key 0 | raw `Speed` | 1 | **1/24** (15 of 18; the rest 1/26.20, 1/24.36, 1/24.36) | **22/24** at x=0.5 (18 of 18), held above |
+| `NetchProject` key 0 | `SpeedDamped` | 1 | 1 (13 of 13) | held |
+| `IceWraithProject`, `NPC_Sprinting_MT` | nothing (flat) | 1 | 1 | held |
+
+The ratios are shipped over built. For the priest and the atronach, built is the
+ladder's floor clamp through the compass; the slaughterfish is built flat, at the
+speed its six arms swim. The priest's walk rung delivers 80 and every sideways and backward arm at
+x=0 ships **76.667**, which is 80 x 23/24 to the digit.
+
+Fractions of 24 read as a time average in which a fixed number of steps differ
+from the steady state: the priest walks for 23 of them and stands for one, the fish
+stands for 23 and swims for one. That is a property of how the game drives an
+actor whose `Speed` is written straight from its movement, and not of the graph --
+nothing in either behaviour file names 24, and the previous step's state is not an
+input. With three blocks and three different fractions any rule here would be
+fitted to the file, so none is in the rebuild; these are the 36 points the priest
+and the atronach miss and 36 of the slaughterfish's.
+
+Worth testing against this, not yet tested: `SamplerOffset` is 0.0404 and 1/24 is
+0.0417, and a one-step lag over a 24-step average turns a linear ladder segment
+into the same segment shifted by the sweep's step over 24 -- a per-block shift,
+constant across headings, which is what "The sampler reads the curve 0.04 early"
+under Verification found the offset to be, nine of its eleven sharp blocks between
+0.0385 and 0.0400. That section ruled out the *retained* grid, whose goal speeds are
+all multiples of 0.5; the swept step is a different quantity, and nothing here
+measures it.
+
 ### 6.3 The horse: the one creature whose cache is the problem
 
 A ladder child's weight is a position on the speed axis and the clip beneath it
