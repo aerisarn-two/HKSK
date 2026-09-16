@@ -600,13 +600,16 @@ and leaves `NetchProject` at 45 of 45.
 
 ## 5. Open
 
-- `Settle` corrects the motion channel only. A branch that samples nothing takes
-  its authored share of the *pose* as well, and the runtime renormalises that the
-  same way; nothing measured so far depends on it, so it has not been changed.
 - The engine has no clock yet; tier 1 needs one only for `hkbTimerModifier` and
   the transition durations.
-- `cond()` in expressions is a Bethesda extension — 6.6's compiler emits zero
-  tokens for it — so the expression evaluator cannot be validated against the
-  oracle for the graphs that use it.
-- `hkbBehaviorReferenceGenerator` crosses files; `ProjectWalk` already resolves
-  those, but the engine needs the same resolution at run time.
+- **The expression evaluator is checked by parsing, not by evaluating.** All 261
+  distinct expressions the game ships parse (`TheWholeCorpusParses`) and the
+  evaluator is tested against hand-written cases, but nothing compares its answers
+  with Havok's. `cond()` could never be: it is a Bethesda extension and 6.6's
+  compiler emits zero tokens for it. The rest could in principle, through
+  `hkmeasure`'s `states` mode, which drives a machine from an expression and
+  sweeps a variable — but **that mode does not run**. `Methods.setCharacter`
+  throws a null reference inside the managed assembly even with the context's
+  project data and character set up, which is the same place the blend path had to
+  be worked around. So the expression semantics are the weakest-evidenced part of
+  the engine, and the gap is wider than `cond`.

@@ -92,3 +92,16 @@ prints its first row, at the parameter where the child has none, and dies.
 That is worth knowing before modelling a branch as producing nothing. It is not a
 state a shipped graph can be in, so where the engine sees one it is looking at
 something else -- for the netch, at the same subtree reached twice.
+
+## The `states` mode does not run
+
+`hkmeasure states rigrf.xml 0 200 5` builds a machine driven by an
+`hkbEvaluateExpressionModifier` and sweeps `Speed`, which would make it an oracle
+for the expression language. It gets as far as printing its header and then
+`Methods.setCharacter` throws a `NullReferenceException` inside the managed
+assembly, with the context reporting `projectData=ok characterSetup=ok`. That is
+the same call the blend path had to be worked around, and the workaround there
+does not carry over.
+
+So nothing has compared the engine's expression answers against Havok's. The blend
+sweep is the only mode that runs.
