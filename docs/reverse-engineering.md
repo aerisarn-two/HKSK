@@ -298,6 +298,14 @@ stores into the attack check that reads the moving-attack settings named the fla
   executable uses it for something else entirely: whether combat measures the attack's reach
   by the clip's root motion or by the attacker's own movement. Check a name against its
   reader, or say it is a guess.
+- **Walking up a graph as if it were a tree.** A behaviour node has several parents --
+  11.1% of them do, and 6.8% of clip generators -- so "the path from this clip to the root"
+  is a choice, not a fact. `ProjectWalk` records the first parent its walk reached, and a
+  rule tested down that one path scored 17 flagged against 42 clear; the same rule over
+  every parent scored 29 against 76, which is a different answer. Where a property is
+  claimed of a node's ancestry, say whether it holds up **some** path or **every** path, and
+  compute it as a fixpoint: monotone booleans settle through the cycles a behaviour has,
+  where a recursive descent either loops or has to cut itself off.
 - **"Only" without the other paths classified.** A behaviour is only reached from X when
   every caller and every stored pointer to the entry point has been accounted for, save-game
   and destructor paths included.
