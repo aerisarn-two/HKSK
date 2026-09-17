@@ -127,7 +127,7 @@ public static class SetDataGenerator
 
             // a clip is named once, as the race looks it up by name: two branches holding a
             // clip of the same name are one entry
-            attacks.Add(new AttackData { EventName = name, Mirrored = 0, Clips = [.. clips.Select(c => c.m_name).Distinct(StringComparer.OrdinalIgnoreCase)] });
+            attacks.Add(new AttackData { EventName = name, MovingAttack = 0, Clips = [.. clips.Select(c => c.m_name).Distinct(StringComparer.OrdinalIgnoreCase)] });
         }
 
         return attacks;

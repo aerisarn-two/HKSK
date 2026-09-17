@@ -378,7 +378,7 @@ internal sealed class SyntheticProject : IDisposable
             },
             Attacks = new ClipAttackBlock
             {
-                Attacks = [new AttackData { EventName = "attackStart", Mirrored = 0, Clips = ["RunForward"] }],
+                Attacks = [new AttackData { EventName = "attackStart", MovingAttack = 0, Clips = ["RunForward"] }],
             },
         };
 

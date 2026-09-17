@@ -91,15 +91,16 @@ public class CacheFieldTests
     }
 
     [CorpusFact]
-    public void EverySetDeclaresVersionThreeAndMirroredIsAFlag()
+    public void EverySetDeclaresVersionThreeAndTheMovingAttackFlagIsAFlag()
     {
         var sets = Sets().ToList();
 
         Assert.Equal(990, sets.Count);
         Assert.All(sets, s => Assert.Equal("V3", s.Version));
 
-        var mirrored = sets.SelectMany(s => s.Attacks.Attacks).Select(a => a.Mirrored).Distinct().Order();
-        Assert.Equal([0, 1], mirrored);
+        var moving = sets.SelectMany(s => s.Attacks.Attacks).Select(a => a.MovingAttack).ToList();
+        Assert.Equal([0, 1], moving.Distinct().Order());
+        Assert.Equal(124, moving.Count(m => m == 1));
     }
 
     /// <summary>

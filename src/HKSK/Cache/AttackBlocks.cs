@@ -62,10 +62,34 @@ public sealed class AttackData
     public string EventName { get; set; } = "";
 
     /// <summary>
-    /// Whether the attack also exists mirrored. Only 0 and 1 occur in the
-    /// shipped game, so it is a flag written as an integer.
+    /// Whether the attack is made while moving: 1 when combat measures its reach by the
+    /// attacker's own movement, 0 when by the attack animation's root motion. Only 0 and 1
+    /// occur in the shipped game; the game reads any value above 0 as set.
     /// </summary>
-    public int Mirrored { get; set; }
+    /// <remarks>
+    /// <para>
+    /// Read by the melee combat context (<c>0x1408a3d30</c>, reached from
+    /// <c>CombatBehaviorContextMelee</c>). For each attack the actor's race can make with
+    /// its hand types, it finds this entry by event name, takes the animation data of its
+    /// clips -- the translation at the end and at the <c>HitFrame</c> annotation, and the
+    /// hit frame's time -- and records a reach: <strong>-1 when this is set</strong>, the
+    /// length of the final translation when not. The attack check (<c>0x1408a2ee0</c>)
+    /// then takes a reach below zero to mean the attacker's own speed times the time to
+    /// the hit frame, and the <c>fCombatAttackMoving*</c> settings apply.
+    /// </para>
+    /// <para>
+    /// So it is set on the attacks whose travel is the character's locomotion rather than
+    /// the clip's -- the player's regular, sprint and bash attacks, the werewolf's running
+    /// ones -- and clear on lunges and power attacks, whose root motion is where the blow
+    /// lands. It was called "mirrored" until the executable was read; it has nothing to do
+    /// with mirroring. <c>docs/animation-set-data.md</c> §4.6.
+    /// </para>
+    /// </remarks>
+    public int MovingAttack { get; set; }
+
+    /// <summary>The old name for <see cref="MovingAttack"/>, which described it wrongly.</summary>
+    [Obsolete("Renamed to MovingAttack: the flag says whether combat measures the attack's reach by the attacker's movement, and has nothing to do with mirroring.")]
+    public int Mirrored { get => MovingAttack; set => MovingAttack = value; }
 
     /// <summary>
     /// The clips the attack may play, chosen between at runtime.
@@ -79,12 +103,16 @@ public sealed class AttackData
     /// </remarks>
     public List<string> Clips { get; set; } = [];
 
-    public bool IsMirrored => Mirrored > 0;
+    public bool IsMovingAttack => MovingAttack > 0;
+
+    /// <summary>The old name for <see cref="IsMovingAttack"/>.</summary>
+    [Obsolete("Renamed to IsMovingAttack.")]
+    public bool IsMirrored => IsMovingAttack;
 
     public AttackData Clone() => new()
     {
         EventName = EventName,
-        Mirrored = Mirrored,
+        MovingAttack = MovingAttack,
         Clips = [.. Clips],
     };
 }
@@ -104,7 +132,7 @@ public sealed class ClipAttackBlock
             var attack = new AttackData
             {
                 EventName = c.Line("an attack event name"),
-                Mirrored = c.Int("an attack mirrored flag"),
+                MovingAttack = c.Int("an attack moving-attack flag"),
             };
 
             int clips = c.Int("an attack clip count");
@@ -120,7 +148,7 @@ public sealed class ClipAttackBlock
         w.Counted(Attacks, static (lw, a) =>
         {
             lw.Line(a.EventName);
-            lw.Int(a.Mirrored);
+            lw.Int(a.MovingAttack);
             lw.Counted(a.Clips, static (x, clip) => x.Line(clip));
         });
 
