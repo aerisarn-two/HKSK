@@ -1784,6 +1784,16 @@ and 1.5 -- which reads as the sampler settling after each change of heading, the
 first sample §6.2g finds kept and measured in twenty-fourths on the three raw-`Speed`
 ladders. The rebuild starts heading 0 at 0 and the rest at 0.5.
 
+**So a record the rebuild writes is not the shipped record, and cannot be made to be.**
+Given each shipped record's own first and last goal speed, the rule reproduces the kept
+points of every one of the 225 records the model gets within 0.001. Given only what can
+be derived -- heading 0 from 0, the rest from 0.5 -- and the shipped entry's own upper
+bound as well, it reproduces 57 of the 259 within 0.01; with 324.5 in place of the
+entry's bound, 27; with the ladder's own top, which is what the rebuild uses, none. The
+settling that moves a record's start moves every break after it, and the bound is
+authored (above), so taking 324.5 from the file would add a second constant fitted to
+the answer for 27 records. The rebuild keeps the ladder's top.
+
 ### How much of the file is actually rebuilt
 
 **A curve fits or it does not.** Averaging the error over the points of one record
