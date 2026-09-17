@@ -188,9 +188,11 @@ public sealed class SpeedDataRebuildTests
                 foreach (float heading in Headings())
                 {
                     // Swept on the file's own half-unit grid and thinned the way the
-                    // file was (SpeedRecord.Retain), rather than at even spacing.
+                    // file was (SpeedRecord.Retain), rather than at even spacing. Only
+                    // the first heading keeps the sweep's first sample; every later one
+                    // loses at least that one to the change of heading.
                     List<SpeedPoint> sweep = [];
-                    for (float x = 0f; x <= MathF.Max(top, 0.5f); x += 0.5f)
+                    for (float x = heading == 0f ? 0f : 0.5f; x <= MathF.Max(top, 1f); x += 0.5f)
                         sweep.Add(new SpeedPoint(
                             x, share * SpeedSampler.Sample(arms, heading, x - SpeedLadder.SamplerOffset)));
 

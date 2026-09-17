@@ -1774,9 +1774,15 @@ slopes do. **The rest cannot be derived from a curve.** `SteamProject`'s 19 reco
 keep their last break at 194 and all run exactly flat to the end in the model, and 16 end
 once while 3 -- headings 0.45, 0.50 and 0.90 -- end twice. Records the curve cannot tell
 apart split both ways, so what decides it is in the game's own samples: their last digits,
-which a model reproducing the curve to 0.001 does not carry. And the forward record starts at 0 on 80 of 86 entries while the others mostly start
-at 0.5 -- the same off-forward first sample that §6.2g finds measured in twenty-fourths,
-here apparently dropped rather than kept.
+which a model reproducing the curve to 0.001 does not carry. And where a record starts is not a property of its curve either. The first record of an
+entry, heading 0, starts where the sweep does -- at 0 on 80 of 86 entries, and the other
+six are the sweeps that start at 150, 324.5 or 400 -- and every later record loses at
+least its first sample: `SteamProject`'s heading 0.25 carries exactly heading 0's curve,
+the same first value and the same second point at (63, 12.599), and starts at 0.5 where
+heading 0 starts at 0. Some lose more -- the troll's headings nearest backward start at 1
+and 1.5 -- which reads as the sampler settling after each change of heading, the same
+first sample §6.2g finds kept and measured in twenty-fourths on the three raw-`Speed`
+ladders. The rebuild starts heading 0 at 0 and the rest at 0.5.
 
 ### How much of the file is actually rebuilt
 
