@@ -50,8 +50,8 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         Assert.Equal(49, _built.Made.Projects.Count);
         Assert.Equal(_built.Shipped.Projects.Select(p => p.Name).Order(), _built.Made.Projects.Select(p => p.Name).Order());
 
-        Assert.Equal(2470, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
-        Assert.Equal(95532, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
+        Assert.Equal(1883, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
+        Assert.Equal(67034, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
         Assert.Equal(3819, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Attacks.Attacks.Count)));
     }
 
@@ -110,6 +110,66 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         // werewolf's human-side killmoves, which only the player's character file names
         Assert.Equal(66, elsewhere.Count(f => firstPerson.Contains(f.Folder)));
         Assert.Equal(5, elsewhere.Count(f => !firstPerson.Contains(f.Folder) && werewolf.Contains(f.Folder)));
+    }
+
+    // The set the lookup picks for a key, as §4.2 has it: the first whose swap events hold
+    // the key and whose hand variables admit the graph's values, taken here as no weapon.
+    private static ProjectAttackBlock? Lookup(AnimationSetDataProject project, string key) =>
+        project.Sets.Sets.FirstOrDefault(s =>
+            s.SwapEvents.Contains(key, StringComparer.OrdinalIgnoreCase) &&
+            s.HandVariables.Variables.All(v => v.Min <= 0 && 0 <= v.Max));
+
+    [MastersFact]
+    public void TheKeysOfAShippedIdleSetLoadMostOfItsFiles()
+    {
+        int wanted = 0, loaded = 0;
+
+        foreach (AnimationSetDataProject shipped in _built.Shipped.Projects)
+        {
+            AnimationSetDataProject made = _built.Made.Project(shipped.Name)!;
+            var always = made.Sets.Sets.Count == 1
+                ? Files(made.Sets.Sets[0])
+                : made.Sets.Sets.Where(s => s.SwapEvents.Count == 0).SelectMany(Files).ToHashSet();
+
+            foreach (ProjectAttackBlock set in shipped.Sets.Sets)
+            {
+                if (set.SwapEvents.Count == 0 || set.HandVariables.Variables.Count > 0) continue;
+
+                var have = new HashSet<(string, string)>(always);
+                foreach (string key in set.SwapEvents)
+                    if (Lookup(made, key) is { } chosen) have.UnionWith(Files(chosen));
+
+                var want = Files(set);
+                wanted += want.Count;
+                loaded += want.Count(have.Contains);
+            }
+        }
+
+        // what is not loaded is mostly not derivable: keys no transition takes any more
+        // (the dialogue idle_A_*Trans idles), and the first-person killmoves copied into
+        // each of the draugr's sets (§5.7)
+        Assert.Equal(2689, wanted);
+        Assert.Equal(2147, loaded);
+    }
+
+    [CorpusFact]
+    public void TheFirstPersonKillmovesMovedFromFirstPersonToTheVictim()
+    {
+        var snapshot = SplitCache.Load(Corpus.Root!);
+        var shipped = AnimationSetDataFile.Load(Path.Combine(Corpus.Root!, SkyrimCache.AnimationSetDataFileName));
+
+        HashSet<(string, string)> All(ProjectAttackListBlock sets) => [.. sets.Sets.SelectMany(Files)];
+        var before = All(snapshot.Sets.Single(p => p.Name.StartsWith("FirstPerson", StringComparison.OrdinalIgnoreCase)).Sets);
+        var after = All(shipped.Project("FirstPerson")!.Sets);
+
+        string killmoves = HavokCrc.Text("meshes\\actors\\sharedkillmoves\\1stperson\\human&bear");
+        var bear = All(shipped.Project("BearProject")!.Sets).Where(f => f.Item1 == killmoves).ToList();
+
+        // the bear's five first-person killmoves: first person's in the pre-DLC snapshot,
+        // the bear's in the shipped file, and no longer first person's
+        Assert.Equal(5, bear.Count);
+        Assert.All(bear, f => Assert.Contains(f, before));
+        Assert.All(bear, f => Assert.DoesNotContain(f, after));
     }
 
     [MastersFact]
