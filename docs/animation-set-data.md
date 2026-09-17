@@ -553,7 +553,8 @@ reader is the melee combat context:
   blow lands.
 
 So the flag says where an attack's travel comes from, and the 38 events it is set on say it
-plainly: **it marks an attack the character makes while it is still moving.**
+plainly: **it marks an attack the character makes while it is still moving.** It says so only
+where it was used, though -- 6 of the 45 projects with attacks, the rest 0 throughout (§6).
 
 - The **netch** has three and is the whole argument in one project: `attackStartLeft` and
   `attackStartRight`, the swipes it makes drifting, are set; `attackStartPowerStanding` is
@@ -832,9 +833,23 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is written as 0 throughout. What it means is read; what
-  decides it is not. Every rule tried was measured against the 124 flagged attacks in the
-  shipped file and none separates them:
+- **the moving-attack flag** (§4.6) is derived from nothing; `setgen --flags-from` copies it.
+  What it means is read, and §4.6's creatures agree with the name. What decides it is not in
+  the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
+  **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
+  storm atronach. The other 39 are 0 throughout, and they include creatures that plainly
+  attack on the move:
+
+      bear        attackStart_AttackLeft1, a bite made charging, travel 99.6   0
+      sabrecat    eight attacks, two of them lunges                            0
+      wolf        attackStart_Attack1 and the two skeever lunges               0
+      dragon      attackStartBite, blended over the flight tree                0
+      chaurus flyer, horker, troll                                             0
+
+  So no rule that matches the player can hold everywhere, because the shipped file does not:
+  any predicate strong enough to flag `attackStart` for the player flags the bear's run-bite
+  too. It was applied to six projects and to no other, which is the mark of tuning rather
+  than of a property. Every rule tried, and what it scored against the 38 flagged events:
 
   | tried | why it fails |
   | --- | --- |
@@ -844,14 +859,17 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   | the attack blended into locomotion — a state parallel to the movement machine, a partial-bone or layered generator, a bone switch | separates the werewolf's running attacks and nothing else; the player's and the floating creatures' flagged attacks are ordinary states |
   | a travelling clip in the innermost state the event reaches | 28 of 38 flagged events have one — and so do 108 of the 293 clear ones, because a lunge's single clip is exactly the case the flag is *not* for |
   | that, and more than one clip, for a state holding movement variants | worse: 15 of 38, against 27 clear. The multi-clip states it finds are the player's directional power attacks, whose several clips are weapon variants, not movement ones |
+  | the clip's own `hkbClipGenerator` flags and mode | no bit separates them: `IGNORE_MOTION` (32) appears on no attack clip at all, and `MIRROR` (4) only on 28 clear ones |
+  | a blend, bone switch or `BSCyclicBlendTransitionGenerator` between the named clip and the root — the attack mixed with what was already playing | the best of them, and still not it. It fires on 17 of the 19 flagged (project, event) pairs it reaches, but misses 17 more: the player's six sprint attacks, the hovering creatures and the werewolf's dual sprint, which move without anything being blended. And it fires on the dragon's bites and the chaurus flyer's attacks, blended over flight and clear |
+  | the variables the clip's path writes (`bAllowRotation`, `bAnimationDriven`, `IsSprinting`, `Direction`, `SampledSpeed`) | `bAllowRotation` is written by the player's flagged sprint attacks *and* by every clear power attack. Nothing else reaches both halves |
 
-  What §4.6 shows is that the flag means what its name says. What it does not give is a
-  predicate: "the character is still moving" is a fact about the situation the attack is
-  used in, and the graph states it only where an animator happened to build the movement
-  into the state. The werewolf settles it by contradicting itself -- `AttackStartDualSprinting`
-  is flagged and `AttackStartLeftSprinting` is not, with the same shape and sibling clips.
-  It was authored per attack, which is why `setgen --flags-from` copies it rather than
-  deriving it.
+  What §4.6 shows is that the flag means what its name says, wherever it was used. What no
+  rule can give is a predicate, because the flag is not a function of the assets: the same
+  bear that charges and bites carries 0, and the werewolf contradicts itself outright --
+  `AttackStartDualSprinting` is flagged and `AttackStartLeftSprinting` is not, with the same
+  shape and sibling clips. Six projects were tuned and the rest were left. `setgen
+  --flags-from` copies it rather than deriving it, and an attack outside those six gets what
+  the whole of vanilla outside those six gets, which is 0.
 
 In the executable:
 
