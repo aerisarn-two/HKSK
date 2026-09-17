@@ -311,6 +311,20 @@ blocks the game ships and 63 it does not, and read the way the game reads it hol
 the layout, the nine invariants, the closed form for the curve, how to choose `MOVT`
 for an animated creature, and the open questions with what has been ruled out.
 
+The animation set data can be generated the same way, from the behaviour graphs, the
+animation cache and the masters' idle records and races:
+
+```csharp
+AnimationSetDataFile file = SetDataGenerator.Generate(cache, events);
+file.Save("animationsetdatasinglefile.txt");
+```
+
+`tools/setgen` does it from the command line. It builds what the executable reads the
+file for rather than a copy of the shipped one: every file the shipped data lists is in a
+set, bar 71 killmoves the characters do not list, and the idle keys the game sends load
+three quarters of the files the shipped idle sets hold. **`docs/animation-set-data.md`** §5
+is the method.
+
 ## Paired animations
 
 Killmoves, mounts and executions drive **two skeletons from one file**: a skeleton

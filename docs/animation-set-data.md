@@ -4,8 +4,9 @@ What the animation set data holds, how much of it can be read back to concrete f
 and how the shipped file was put together. Every number here was measured against the
 shipped game; where a question is still open it says so, with what has been ruled out.
 
-This is an investigation in progress. §1–§4 are established; §5 lists what has not been
-looked at yet. §4 was read out of the executable; how is `docs/reverse-engineering.md`.
+This is an investigation in progress. §1–§4 are established, §5 rebuilds the file from the
+other assets, and §6 lists what has not been looked at yet. §4 was read out of the
+executable; how is `docs/reverse-engineering.md`.
 
 ## 0. What the file is for
 
@@ -274,8 +275,8 @@ consumers, in three kinds:
     7 between 0x1407c52b0 and    0x14053bee0,      sets selected by swap event and hand
       0x1407c5fb0                  0x14053bfa0       variables, turned into file requests
     0x14069a870, 0x1407c5b00     0x14053c080       a set's checksum triples (+0x30)
-    0x1403e1b20                  0x14053c0e0       the attacks (+0x70) of the set selected
-                                                     by the empty swap event
+    0x1403e1b20                  0x14053c0e0       the attacks (+0x70) of the set the hand
+                                                     types select, for a race (§4.6)
 
 **How a set is selected** (`0x14053c320`, the core of the first kind). The caller passes a
 string key and, optionally, a list of variable values. The sets of the project are tried in
@@ -464,7 +465,7 @@ When a clip that plays it activates, the clip demands the file, holds its update
 file is bound, and plays from then on; if the file has not arrived by the time the state is
 left, it never showed. That delay fits a transition or an attack that seems not to play;
 it does not by itself explain an animation that never plays however long its state lasts.
-Whether that happens in game is open (§5).
+Whether that happens in game is open (§6).
 
 **With neither the single file nor the split folder**, the loader builds the `DirList.txt`
 path, reads it into a list, and when the list is empty jumps straight to its end
@@ -474,7 +475,161 @@ project table: `0x14053cd80`'s not-found path adds nothing, the request list sta
 and `0x140bca970` returns without building a request. Nothing is loaded ahead of need; by
 §4.4 each clip's first activation still demands its file.
 
-## 5. Not yet examined
+### 4.6 Who reads the attacks
+
+`0x1403e1b20` is called from one place, a `TESRace` virtual (`0x1403de860`), and fills the
+race's `AttackAnimationArrayMap` (vftable `0x1417e7e60`, named by RTTI) for each sex's
+behaviour graph. It asks the set data once per weapon combination (loop at `0x1403e1e00`):
+right hand type 0 to 12, and for each, left hand type 0 to 12 -- except for the types a byte
+table marks as two-handed, 5, 6, 7 and 12, where the left hand is asked as the same type.
+That is 9 x 13 + 4 = 121 combinations, each stored under `right << 16 | left`.
+
+Each question goes through `0x14053c0e0`: an empty key, and the two hand types as values.
+By the selector's rules (§4.2) **a set with no hand variables never qualifies** for that
+question -- with values given, a set is taken only on hand variables it has. When nothing
+qualifies and the project has exactly one set, that set is used (`0x14053c131`). So:
+
+- a creature's single set carries its attacks, hand variables or not;
+- in a project with several sets, only sets with hand variables supply attacks, and the
+  attacks on its base set are never read.
+
+## 5. Rebuilding the file
+
+`HKSK.SetData.SetDataGenerator` writes the file from the other assets, and `tools/setgen`
+runs it with the masters. It does not try to reproduce the shipped file, which records how
+that file was edited (§3.3); it builds what the executable reads the file for (§4), and the
+shipped file is the check.
+
+### 5.1 Inputs
+
+- **The behaviour graphs and the animation cache**, from the extracted meshes.
+- **The idle events**, from the masters: every idle record's animation event. They are the
+  only keys the lookup is ever given (§4.3) -- 1,246 of them.
+- **The equip events**: the events of idle records under the idle roots named for drawing
+  and equipping (`DrawSheathRoot`, `ForceEquipRoot`, `WerewolfDrawRoot`, ...), 36 of them.
+  The equip path resolves Action Draw and Action Force Equip through that part of the tree.
+  This is the one heuristic input: the roots are picked by name.
+- **Each project's attack events**, from the attack data of the races whose behaviour graph
+  it is. 330 of the shipped file's attack events are there, 11 are not.
+
+The shipped set data is never read; `setgen` empties it before generating.
+
+### 5.2 A file is named by the character, not by the clip
+
+A clip generator stores an animation path, and it is **not** the file the clip plays. The
+engine binds a clip to the character's animation list by the clip's name, through the
+animation cache, and the file is what the character lists at that index (§4.4). The male
+and female characters share one behaviour whose clips say `Animations\male\...`;
+`defaultfemale.hkx` lists `Animations\female\...` at the same indices. Taking the stored
+path gives every female idle set files that are not hers. The stored path is used only
+for a clip the cache does not list.
+
+### 5.3 One set, or several
+
+**A project that never chooses by hand type gets one set**: its whole character list, in
+order, with its attacks. That is what the shipped file does for 40 creatures, and by §4.6 it
+is also what keeps their attacks readable. 38 of the 49 projects come out this way; 26 of
+them are identical to the shipped set, and the other twelve differ by the shipped file's
+history (§3.2). The atronach storm and the dragon priest become multi-set: their graphs
+choose by hand type, which the shipped file ignored.
+
+A project that does choose by hand type gets a base set, weapon sets, and a set per event.
+
+### 5.4 A set per event: dominance, because the graph is cyclic
+
+A behaviour is a graph, not a tree, and a cyclic one: an idle's exit returns to the
+default state, from which every other idle is entered. "The files an event leads to" has no
+answer as a walk:
+
+- a walk that **stops at keys** misses an idle's loop and exit, which hang off keys of
+  their own (`IdleChairExitStart`, `00NextClip`), so they load late, when asked for;
+- a walk that **follows keys** goes round the cycles into most of the behaviour. On the
+  player the transitions on no key at all reach 32 clips, so even "stop where the graph is
+  at home" bounds nothing: `moveStart` reached 659 clips.
+
+The rule that holds is **dominance** over a graph of states (`HKSK.SetData.StateGraph`). A
+node is a state of a machine; a state's own clips are those below its generator down to the
+machines nested there; edges are a nested machine's start state, a state's own transitions,
+a machine's wildcards from every state, and the nested state a transition names. An event's
+**region** is the states reachable from the states it enters that the root cannot reach
+when those states are blocked -- the states only that event leads to. The set is the region's
+files, less what the root reaches through transitions on no key.
+
+A transition that names a nested state is known by that nested state alone. The container
+above it is entered by every event naming one of its states, and blocking the container
+gives each of them all of the others.
+
+### 5.5 Weapons
+
+The graph is built for each of the 121 combinations the race asks about, and choices bound
+to a hand type are resolved against it (a selector's index, a machine's start state, a
+condition that reads only hand types). Graphs that come out the same are built once: the
+player has 105 distinct ones.
+
+- **A weapon set** holds what a combination reaches that not every weapon a character can
+  hold reaches: its reach less `common`, the reach every holdable combination shares. The
+  "holdable" matters. The game also asks about
+  a two-handed weapon in the left hand alone, `(1, 12)`, which nobody can equip, and the
+  player's behaviour sends those nowhere: taken over all 121, `common` shrank to almost
+  nothing and every weapon set held about 1,100 files. The equip events' regions and the
+  combination's attacks go on the same set, and its keys are the equip events.
+- **An event whose region depends on the weapon** gets a set per group of combinations.
+- **Groups are covered by ranges**: a set states one inclusive range per variable, so a
+  group is written as rectangles of (right, left), one set each. A combination nobody is
+  asked about may fall inside a rectangle.
+- **Groups are merged within a slack**: cells whose union stays within 1.5 times the
+  largest become one set (`--slack`). Without it the player's `moveStart` alone was 60 sets
+  of 150 files each; its union is 247. Attacks are never merged across cells that differ,
+  because the race reads them per combination.
+
+**The base set** holds every file the character lists that no other set holds. It is what
+an actor's graph loads when it is built (§4.3).
+
+### 5.6 Attacks
+
+An attack's clips follow the transition the event takes from each state (a state's own
+before the machine's wildcards), into the state it enters, narrowed by the nested state the
+transition names, or by the event's own transitions in the machine below, or else its start
+state. The nested state is what matters: the chaurus's eleven attacks all enter
+`AttackState`, and each transition names the state inside it. Against the shipped attacks,
+over the 121 combinations the race asks about, 21,797 of 27,039 (80.6%) event-to-clips
+entries are identical.
+
+### 5.7 What comes out
+
+    projects 49     sets 2,470     animations listed 95,532     attacks 3,819     3.6 MB
+
+(shipped: 990 sets, 20,807 animations, 737 attacks, 0.8 MB)
+
+    every file the shipped data lists, in some set of the project      6,758 of 6,829
+      not: first-person killmove counterparts appended later (§3.3)       66
+      not: the werewolf's human-side killmoves, which its character
+           file does not list                                              5
+    files of a shipped idle set that its own keys load                 2,020 of 2,689 (75.1%)
+
+The idle sets' shortfall has two causes, and neither is a walk error:
+
+- **files shared between entries.** A chair's exits are reachable from every chair
+  entry, so no one entry dominates them; they go in the set of the exit's own key, or of
+  the keys they are shared by. The game loads them when the exit is asked for.
+- **keys the graph has no transition on.** `IdleNeutralLeft`, `idle_A_sigh_var1Trans` and
+  others are keys of shipped sets that no transition in the player's behaviour takes. Nothing
+  in the graph says what they load.
+
+`SetDataRebuildTests` holds these numbers.
+
+### 5.8 Traps
+
+- **Comparing Havok objects by value.** HKX2's objects compare and hash by value, and a
+  state machine's value is most of the behaviour below it -- through cycles. A set of
+  (machine, state) keyed that way made a single event's walk take eight seconds. Every set
+  and dictionary over graph nodes has to compare by reference.
+- **A wildcard is offered once per state.** Collecting an event's transitions state by
+  state gives a wildcard once for every state it leaves; walking each one repeats the same
+  walk that many times.
+- **Counting the weapons the game asks about as weapons someone holds** (§5.5).
+
+## 6. Not yet examined
 
 The nine multi-set projects — the player (374 sets each for `DefaultMale` and
 `DefaultFemale`), first person (109), the draugr and skeleton (25 each), the falmer (15),
@@ -482,15 +637,13 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 
 - **where set names come from.** Some occur as strings in the player's behaviours
   (`1HMDual`, `BedRollFront`, `ActivateDoor`, `CartTravelDriver`); others occur nowhere in
-  the extracted files (`ChairEatSoup`, `_MTSolo`). So they are not simply node names.
-- **which animations belong to each set,** and whether that follows from the subtree the
-  swap events enter.
-- **how swap events, hand variables and attacks map to the graphs** — which transition
-  each swap event fires, which selector each hand variable range picks, and which state an
-  attack event reaches.
-
-The player's furniture and idle sets are the natural place to start: each has one or two
-swap events and a handful of animations.
+  the extracted files (`ChairEatSoup`, `_MTSolo`). The engine never reads them (§4.2), so
+  the rebuild names its own (§5).
+- **how the shipped file grouped keys into sets.** The rebuild groups by what a key loads
+  (§5.4); the shipped groups put an entry and its exit together, which dominance cannot,
+  because the exit is shared.
+- **the attacks that differ** (§5.6): 19.4% of the event-to-clips entries. The mirrored flag
+  is written as 0 throughout; what it means to the race was not read.
 
 In the executable:
 
@@ -503,4 +656,6 @@ In the executable:
   the idle manager; that the field is the idle's event is likely, not shown.
 
 In game, the test that decides §4.5: remove one travelling clip's checksum from a creature's
-set, and see whether that clip plays late, plays after the first time, or never plays.
+set, and see whether that clip plays late, plays after the first time, or never plays. The
+same test is the one for the rebuilt file: it is complete by §4.4's reading and untested in
+play.
