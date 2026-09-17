@@ -157,7 +157,9 @@ adding none:
 - Where the counterparts are right, their **order** is not the creature's own: the bear's
   run 1HM A, 2HM B, 1HM B, 2HM A, 2HW A. That order has not been matched.
 
-§3.3 is why no rule over the final assets settles this.
+§3.3 is why no rule over the final assets settles this: the counterparts were **moved** into
+these creatures' sets from first person's, and the creatures they were not moved for are
+the ones that still have them in first person's.
 
 Three things remain beside the first-person question:
 
@@ -172,7 +174,7 @@ Three things remain beside the first-person question:
   idles.
 - **The frostbite spider lists its four first-person killmoves twice.**
 
-### 3.3 The shipped file is a generated base plus later bulk appends
+### 3.3 The shipped file is a generated base plus later bulk edits
 
 The split form under `animationsetdata/` is a **pre-DLC snapshot**: 39 projects, no
 Dawnguard or Dragonborn creature. Its set files are exact counterparts of blocks in the
@@ -182,36 +184,51 @@ single file, which makes the snapshot a record of what changed between the two.
     identical                                609
     different                                204
 
-The differences are not scattered edits. **Within a creature, the same block of
-animations was appended to every one of its sets:**
+Decoding what changed, file by file, shows edits of three kinds rather than scattered ones.
 
-    creature                    sets changed   added to each
-    DraugrProject                 23 of 25          6
-    DraugrSkeletonProject         23 of 25          6
-    FalmerProject                 12 of 15       6 (9 on h2hmagic)
-    SteamProject                   7 of 7           4
-    BearProject                       1             5    its first-person killmoves
-    WolfProject                       1             6
-    TrollProject                      1             5
-    SabreCatProject                   1             5
-    HagravenProject                   1             4
-    SprigganData                      1             4
-    FrostbiteSpiderProject            1             8
-    DragonProject                     1            13
-    WerewolfBeastProject              1            11
-    DefaultMale, DefaultFemale       49 each      mixed, some shrink
-    FirstPerson                      32           mixed
+**First-person killmoves moved from first person to the victim.** 53 first-person killmove
+files are in first person's sets in the snapshot, in the creature's in the shipped file,
+and no longer first person's:
 
-That is the edit `HKSK.Model.ActorProject.AddAnimation` makes — register an animation with
-every set that covers the project — done in bulk by a later update. So the first-person
-question in §3.2 is a question of **authoring history**: which creatures that update
-touched. The final assets cannot answer it, but the snapshot, which ships, records the
-state before it.
+    creature                    moved   sets they are in
+    DraugrProject                 6     23 of 25 -- copied into every set
+    DraugrSkeletonProject         6     23 of 25 -- the same six
+    FalmerProject                 6     12 of 15
+    BearProject                   5     its one set
+    WolfProject                   5
+    DragonProject                 5
+    SabreCatProject               5
+    TrollProject                  5
+    SteamProject                  4     7 of 7
+    FrostbiteSpiderProject        4     listed twice
+    HagravenProject               4
+    SprigganData                  4
 
-The player's sets did not only grow. 17 of `DefaultMale`'s have fewer animations in the
-single file than in the snapshot — `bow.txt` 123 to 118, the H2H, staff and torch
-combinations by four or five each, and `_MTSolo.txt` from 149 to 106 — and first person's
-seven weapon sets lost 13 to 16 each. The player's history is more than appends.
+The wolf's `Paired_ExtractWerewolfSpirit` and the werewolf's own were copied rather than
+moved: first person still lists them.
+(`TheFirstPersonKillmovesMovedFromFirstPersonToTheVictim` holds the bear's.) The creatures
+added by Dawnguard and Dragonborn -- boar, riekling, scrib, lurker, chaurus flyer,
+gargoyle, ballista -- keep theirs in first person's sets: 33 first-person killmove files
+are still first person's in the shipped file, against 60 in the snapshot. Two conventions
+coexist, and which one a creature has is when it was made, not anything in its assets.
+
+The copy into every set is the edit `HKSK.Model.ActorProject.AddAnimation` makes --
+register an animation with every set of the project -- which is why the draugr carries the
+same six killmoves in its taunt and furniture sets.
+
+**The player gained the DLC killmoves and lost the werewolf pairs.** The same bulk edit on
+the third-person player: the boar, riekling, scrib and lurker killmoves and
+`Paired_DLC02RipHeartOut` added to 8 sets (28 for the heart), and the four
+`human&werewolf` feeding and mauling pairs removed from 17 -- `bow.txt` 123 to 118 is those
+four and one dragon pair. `_MTSolo.txt` 149 to 106 is a different edit: 38 horse-riding
+animations and 7 others left the base set, with 2 Dragonborn animations added. First person's seven weapon sets lost the
+moved killmoves, 13 to 16 each.
+
+**The dragon gained its Dawnguard animations** -- the summon and water-dive specials and the
+mount and dismount pairs, 8 files beside its five moved killmoves -- and the falmer two
+staff animations.
+
+None of this is in the behaviour graphs, which is why a rebuild cannot reproduce it.
 
 ## 4. The engine side
 
@@ -535,36 +552,77 @@ choose by hand type, which the shipped file ignored.
 
 A project that does choose by hand type gets a base set, weapon sets, and a set per event.
 
-### 5.4 A set per event: dominance, because the graph is cyclic
+### 5.4 A set per event: until the graph is home again
 
 A behaviour is a graph, not a tree, and a cyclic one: an idle's exit returns to the
-default state, from which every other idle is entered. "The files an event leads to" has no
-answer as a walk:
+default state, from which every other idle is entered. So the question "which files does
+an event lead to" needs a boundary, and four were measured (the idle-key column is the
+measure in §5.7: files of a shipped idle set that its own keys load):
 
-- a walk that **stops at keys** misses an idle's loop and exit, which hang off keys of
-  their own (`IdleChairExitStart`, `00NextClip`), so they load late, when asked for;
-- a walk that **follows keys** goes round the cycles into most of the behaviour. On the
-  player the transitions on no key at all reach 32 clips, so even "stop where the graph is
-  at home" bounds nothing: `moveStart` reached 659 clips.
+    rule                                                    idle keys   listed    size
+    trigger    -- states reached from the event's targets
+                  through transitions on no key                58.5%     31,723    1.6 MB
+    dominance  -- states only reachable through the
+                  event's targets                              72.7%     85,041    3.3 MB
+    follow     -- trigger, plus what the key transitions
+                  leaving those states trigger                 73.6%     51,773    2.2 MB
+    until home -- every transition, until a state the graph
+                  reaches with no key                          79.8%     67,034    2.7 MB
 
-The rule that holds is **dominance** over a graph of states (`HKSK.SetData.StateGraph`). A
-node is a state of a machine; a state's own clips are those below its generator down to the
-machines nested there; edges are a nested machine's start state, a state's own transitions,
-a machine's wildcards from every state, and the nested state a transition names. An event's
-**region** is the states reachable from the states it enters that the root cannot reach
-when those states are blocked -- the states only that event leads to. The set is the region's
-files, less what the root reaches through transitions on no key.
+The generator uses **until home**. The graph (`HKSK.SetData.StateGraph`) has a node per
+state of a machine; a state's own clips are those below its generator down to the machines
+nested there; edges are a nested machine's entry, a state's own transitions, a machine's
+wildcards and its random-transition event from every state, and the nested state a
+transition names. **Home** is what the root reaches through nesting and transitions on no
+key. An event's set is every state reachable from the states it enters without passing
+through home, less home's files.
 
-A transition that names a nested state is known by that nested state alone. The container
-above it is entered by every event naming one of its states, and blocking the container
-gives each of them all of the others.
+Why the others fall short:
+
+- **trigger** stops at every key, and an idle's exit, its next clip and its variants hang
+  off keys (`IdleChairExitStart`, `00NextClip`). Shipped idle sets hold them with the entry.
+- **dominance** gives an event what no other event reaches. A chair's exit is reachable from
+  all four chair entries, so no entry gets it; and everything below a state is dominated by
+  it, so the eight keys that enter the default state (`IdleStop`, `Ragdoll`,
+  `bleedOutStop`, ...) each got all of locomotion, 1,300 files.
+- **follow** by key was worse still: following `00NextClip` or `IdleChairExitStart` as a key
+  takes every exit that key has, anywhere -- measured on the player, following
+  `00NextClip` recovered 166 shipped files at the cost of 21,963 the shipped sets do not
+  hold. Following the *transitions* that leave the event's own states fixes that, and
+  still stops one step short of a loop's third variant.
+
+**Home only bounds anything once random starts are edges.** The player has 105 machines
+that start in a random state and 71 that start from a sync variable, and 4 with a
+random-transition event. Taken as starting in their `m_startStateId`, the root reached 32
+clips with no key, and every "until home" walk ran into most of the behaviour; taken as
+entering any state, home is 222 states on the player and the rule holds.
+
+A transition that names a nested state enters that nested state, not its container: the
+container is entered by every event naming one of its states.
+
+**The inverse question** -- start from each animation and ask which events trigger it --
+is the same graph read backwards, and it is how the rule was chosen. On the player, with a
+one-handed weapon out, the files by how many keys trigger them directly:
+
+    keys   where the shipped file lists them
+    1      idle 580   weapon 159   base 11
+    2      idle 119   weapon 76    base 2
+    3-4    idle 61    weapon 36    base 4
+    5-8    weapon 19  idle 14      base 4
+    9-16   idle 22    base 16      weapon 11
+    home   weapon 73  idle 31      base 2  (and base with weapon sets)
+
+The shipped idle sets are files one to four keys trigger; home files are the base's and the
+weapons'. And of the 1,139 files of the player's shipped idle sets: 670 are triggered by one
+of the set's keys, 256 by a key transition leaving the states those trigger, 129 belong to
+keys no transition takes, 74 are only triggered by unrelated keys, and 10 are not played by
+the graph at all.
 
 ### 5.5 Weapons
 
 The graph is built for each of the 121 combinations the race asks about, and choices bound
 to a hand type are resolved against it (a selector's index, a machine's start state, a
-condition that reads only hand types). Graphs that come out the same are built once: the
-player has 105 distinct ones.
+condition that reads only hand types). Graphs that come out the same are built once.
 
 - **A weapon set** holds what a combination reaches that not every weapon a character can
   hold reaches: its reach less `common`, the reach every holdable combination shares. The
@@ -592,29 +650,35 @@ before the machine's wildcards), into the state it enters, narrowed by the neste
 transition names, or by the event's own transitions in the machine below, or else its start
 state. The nested state is what matters: the chaurus's eleven attacks all enter
 `AttackState`, and each transition names the state inside it. Against the shipped attacks,
-over the 121 combinations the race asks about, 21,797 of 27,039 (80.6%) event-to-clips
+over the 121 combinations the race asks about, 21,791 of 27,039 (80.6%) event-to-clips
 entries are identical.
 
 ### 5.7 What comes out
 
-    projects 49     sets 2,470     animations listed 95,532     attacks 3,819     3.6 MB
+    projects 49     sets 1,883     animations listed 67,034     attacks 3,819     2.7 MB
 
 (shipped: 990 sets, 20,807 animations, 737 attacks, 0.8 MB)
 
     every file the shipped data lists, in some set of the project      6,758 of 6,829
-      not: first-person killmove counterparts appended later (§3.3)       66
+      not: first-person killmoves moved or copied to the victim (§3.3)    66
       not: the werewolf's human-side killmoves, which its character
            file does not list                                              5
-    files of a shipped idle set that its own keys load                 2,020 of 2,689 (75.1%)
+    files of a shipped idle set that its own keys load                 2,147 of 2,689 (79.8%)
 
-The idle sets' shortfall has two causes, and neither is a walk error:
+Of the 542 not loaded, most are not derivable from the graphs:
 
-- **files shared between entries.** A chair's exits are reachable from every chair
-  entry, so no one entry dominates them; they go in the set of the exit's own key, or of
-  the keys they are shared by. The game loads them when the exit is asked for.
-- **keys the graph has no transition on.** `IdleNeutralLeft`, `idle_A_sigh_var1Trans` and
-  others are keys of shipped sets that no transition in the player's behaviour takes. Nothing
-  in the graph says what they load.
+- **296 belong to keys no transition takes.** The dialogue idles `idle_A_left_longTrans`,
+  `idle_A_sigh_var1Trans` and the others name their animation (`MT_idle_A_left_long`), but
+  no event of that name exists anywhere in the player's behaviour -- not in a transition, not
+  in any other field. The behaviour now plays those clips from a random dialogue pool on
+  `MotionDrivenDialogueNextClip`. `IdleDrunk` and `IdleNeutralLeft` are the same.
+- **192 are in no set**: the draugr's, skeleton's, falmer's and steam centurion's moved
+  first-person killmoves, copied into every set (§3.3).
+- **54 are in another key's set.** The shipped file lists them with this one: the carry
+  offsets with the stone and wood pick-ups, each horn blow's animation in the other's set,
+  dialogue expressions shared by several dialogue idles.
+
+That puts the derivable part at 2,147 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
@@ -628,6 +692,12 @@ The idle sets' shortfall has two causes, and neither is a walk error:
   state gives a wildcard once for every state it leaves; walking each one repeats the same
   walk that many times.
 - **Counting the weapons the game asks about as weapons someone holds** (§5.5).
+- **Reading only a machine's `m_startStateId`.** Random and sync starts enter every state,
+  and a random-transition event connects every state to every other; without them the
+  graph's home is a handful of states and every bounded walk is unbounded (§5.4).
+- **Following a key instead of a transition.** A generic key -- `00NextClip`,
+  `IdleChairExitStart` -- leaves hundreds of states; what belongs with an idle is the
+  transition that leaves *its* states.
 
 ## 6. Not yet examined
 
@@ -639,9 +709,9 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   (`1HMDual`, `BedRollFront`, `ActivateDoor`, `CartTravelDriver`); others occur nowhere in
   the extracted files (`ChairEatSoup`, `_MTSolo`). The engine never reads them (§4.2), so
   the rebuild names its own (§5).
-- **how the shipped file grouped keys into sets.** The rebuild groups by what a key loads
-  (§5.4); the shipped groups put an entry and its exit together, which dominance cannot,
-  because the exit is shared.
+- **how the shipped file grouped keys into sets.** The rebuild merges keys that load the
+  same files; the shipped groups follow the idle tree's authoring, an entry's variants
+  together.
 - **the attacks that differ** (§5.6): 19.4% of the event-to-clips entries. The mirrored flag
   is written as 0 throughout; what it means to the race was not read.
 

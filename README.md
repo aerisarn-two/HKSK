@@ -322,7 +322,8 @@ file.Save("animationsetdatasinglefile.txt");
 `tools/setgen` does it from the command line. It builds what the executable reads the
 file for rather than a copy of the shipped one: every file the shipped data lists is in a
 set, bar 71 killmoves the characters do not list, and the idle keys the game sends load
-three quarters of the files the shipped idle sets hold. **`docs/animation-set-data.md`** §5
+80% of the files the shipped idle sets hold -- most of the rest belong to keys no
+transition in the behaviour takes any more. **`docs/animation-set-data.md`** §5
 is the method.
 
 ## Paired animations
