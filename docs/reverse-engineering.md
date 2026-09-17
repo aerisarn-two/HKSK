@@ -174,6 +174,35 @@ The animation set consumers that call the file manager's two request entries are
 except for one extra stack argument, which is what said the second entry is a variant of
 the first and not its inverse.
 
+### 3.7 From a virtual call to the classes behind it
+
+A call through `this+0x38` to slot 6 names no function. `vtables.py` dumps every RTTI
+virtual table once, with each table's subobject offset — the locator's +4, which says which
+base the table belongs to — so the question becomes a search: the tables whose offset is
+0x38, and their seventh slot.
+
+    python3 vtables.py SkyrimSE.exe.unpacked.exe > vtables.tsv     # 8,558 tables
+
+That is how the choice between loading an object's clips up front and not was found to be
+a constant of the class: `IAnimationGraphManagerHolder` slot 6 is `mov $1,%al; ret` for
+`TESObjectREFR` and every projectile and explosion, and `xor %al,%al; ret` for `Actor`,
+`Character` and `PlayerCharacter`. The same file names a function stored in a table but
+never called directly — `callers` reports it as "stored at", and the table's row says whose
+slot it is (`QueuedActor` slot 25, for one of the checksum readers).
+
+### 3.8 From an index to a game object
+
+Code that takes a small integer and indexes a manager is usually reaching a table the data
+also names. Actions are default objects: the manager at `0x1420f5600` keeps objects from
++0x20 and a loaded flag per index from +0xb90, and the names — `Action Draw`, `Action Force
+Equip` — are 24-byte records at `0x141fd8f50`, found by searching for a pointer to one name
+and checking that its neighbours at a fixed stride are names too:
+
+    p.cstr(p.qword(0x141fd8f50 + index * 0x18))
+
+The last named index is 0x16d. For a constant past it (0x16e), say that it is past the
+table rather than guess what it resolves to.
+
 ## 4. Worked examples
 
 **The speed table** (`docs/speed-data.md` §4). Strings named `bUseSpeedSampler`, the
@@ -191,11 +220,22 @@ functions split into life cycle and ten consumers. Reading the smallest consumer
 it returns early without `AnimationFileManagerSingleton`, and otherwise turns a set data
 lookup into a load request. `bInitiallyLoadAllClips`, found through its setting record,
 decides whether that file manager exists at all. The file manager's two request entries
-have no callers besides the set data consumers and a save-game restore, which makes the set
-data **necessary under the default settings**. Reading the per-set parser in file order
+have no callers besides the set data consumers and a save-game restore. That was first
+written up as the set data being **necessary** — and it was wrong, because the behaviour
+runtime reaches the same file manager through a copy of its pointer (§5): the clip
+generators demand their own files when they activate. The set data decides what is loaded
+ahead of need. Reading the per-set parser in file order
 gave the set object's layout, and reading the set selector against that layout showed the
 lookup is keyed on the swap event, with hand variables checked as ranges against the
 graph's live variables.
+
+**Who sends the key** (`docs/animation-set-data.md` §4.3). Every set-selecting consumer was
+followed one level up. Two took an actor and a small integer rather than a string; the
+integer indexed the default object table (§3.8) — `Action Draw`, `Action Force Equip` — and
+the key came from a helper that fills a `TESActionData` (named by its vftable's RTTI) and
+asks the idle manager which idle the action would pick. The string that helper returns was
+matched to the idle record's `ENAM` offset from the record loader's switch over subrecord
+types.
 
 ## 5. Traps
 
@@ -219,6 +259,14 @@ graph's live variables.
 - **Counting consumers from a range of addresses.** Functions near each other are not one
   kind: one of the "eight consumers in the cluster" read checksums through a different
   method. Classify each function by what it calls, not by where it sits.
+- **A singleton read through a copy.** Searching for a singleton's address finds the code
+  that reads that global, not the code that reads the same pointer from somewhere else.
+  Start-up copied `AnimationFileManagerSingleton` into a second global that the whole
+  behaviour runtime uses, and a necessity claim was written without it. After finding where
+  a singleton is written, search for every other place the written register goes.
+- **Assuming a family of functions shares a signature.** Seven consumers "took the key as
+  the first argument" until two of them turned out to take an actor and an action. Read the
+  argument setup at each call site before generalising.
 - **"Only" without the other paths classified.** A behaviour is only reached from X when
   every caller and every stored pointer to the entry point has been accounted for, save-game
   and destructor paths included.

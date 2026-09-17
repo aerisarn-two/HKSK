@@ -21,7 +21,9 @@ each one, what brings it in and what it covers:
 
 When a set's files are not there, its animations do not play even though the behaviour
 reaches the right state — the failure mode modders know as "the hash is not in the right
-set".
+set". The executable does not account for that symptom as directly as it sounds: a clip
+whose file no set brought in asks for the file itself when it activates, and waits for it
+(§4.4). What the set data buys is the file being there before the clip needs it.
 
 The file covers the same 49 projects as the animation cache and no others: a project has
 set data if and only if it has a clip cache. Creatures carry one set each; the player
@@ -293,8 +295,8 @@ one the empty key finds.
 
 **How a request is built** (`0x1407c5660`, read whole; the other six share its shape):
 
-1. it obtains an object from the animation graph through a virtual call, and gives up if
-   there is none;
+1. it asks the reference for its animation graph manager — slot 2 of the
+   `IAnimationGraphManagerHolder` vftable at `this+0x38` — and gives up if there is none;
 2. **it returns without doing anything if either singleton is missing** — the set data at
    `0x143138d58`, or `AnimationFileManagerSingleton` at `0x143138e90`;
 3. it calls `0x14053bfa0`, which takes a lock and walks an array on that object
@@ -302,6 +304,9 @@ one the empty key finds.
    +0x1f0, looks it up in the manager's per-project table, selects a set as above, and adds
    what it finds to a list;
 4. it hands the list to the file manager and returns the result.
+
+Two of the seven, `0x1407c52b0` and `0x1407c5480`, take the actor and an action instead of a
+key, and work the key out first (§4.3).
 
 The file manager's three entry points, as far as they were read:
 
@@ -316,46 +321,158 @@ The file manager's three entry points, as far as they were read:
   an object it was passed** — the shape of the `IAnimationSetCallbackFunctor` interface the
   executable names, a check-then-notify.
 
-### 4.3 Is it necessary
+### 4.3 What sends a key to the lookup
 
-**With default settings, yes: it is what decides which animation files get loaded.**
+No caller passes a literal. **Every non-empty key traced is the animation event of an idle
+record** — the `ENAM` string `TESIdleForm` keeps at +0x50 — reached in one of two ways (for
+idle selection and the movement controller, that the record is an idle is read from the
+offsets and the idle manager's involvement, not from a type check):
+
+- **directly**: code that has already chosen an idle passes that idle's event;
+- **by resolving an action without performing it.** `0x1407c66b0` fills a
+  `TESActionData` (vftable `0x14178c478`) with the actor and an action, and hands it to
+  `0x14065cd10`. If the action data carries no event yet, that asks the idle manager
+  (`0x1403b1f80`, on the global at `0x1420f8980`) which idle the action would pick for
+  this actor now; the idle's event is copied into the action data at +0x28 and returned
+  as the key. Nothing is sent to the graph. A null action falls back to default object
+  0x40, `Action Idle`.
+
+Actions are default objects, addressed by index: the manager at `0x1420f5600` holds the
+objects from +0x20 and a loaded flag per index from +0xb90, and their names are a table of
+24-byte records at `0x141fd8f50`, name pointer first. The indices below are read from that
+table.
+
+    who                                        key                                    through
+    equipping: 0x14070c9c0, 0x14070cbe0,       Action Draw (0x43) or, with the          0x1407c52b0, 0x1407c5480
+      from 0x1406e97b0 and 0x1406e0070           weapon out, Action Force Equip (0x51)    → 0x140bca970, 0x140bcab30
+    the same equip path, 0x1406e97b0           empty                                    0x1407c59f0 → 0x140bcab30
+    action handling: 0x1406f0790 (from         the event already resolved into the      0x1407c5660 → 0x140bca970
+      0x1406ddc50, 0x1406dde70), 0x1406dfbc0     action data, +0x28
+      (from 0x140666230)
+    idle selection: 0x1407128c0, nine callers  the chosen idle's event, +0x50           0x1407c57a0 → 0x140bcab30
+    MovementControllerNPC (vftable             +0x58 of each 0x68-byte record in a      0x1407c5660 → 0x140bca970
+      0x1418b14b0, slot 1: 0x140782510)          list built from the idles resolved for
+                                                 Action Path Start (0x53), Path End
+                                                 (0x54), Large Movement Delta (0x55)
+                                                 and Move Stop (0x62)
+    Actor's graph holder, slot 3: 0x1406a3520  empty, then Action Draw                  0x1407c5fb0, 0x1407c5ea0
+      (vftable 0x14189e1e8, subobject +0x38)                                              → 0x140bcad40
+
+**The equip path selects on the hands being equipped.** `0x14070c9c0` builds the variable
+list from its own arguments: the value for `iLeftHandType` and the value for
+`iRightHandType` (the interned names at +0x388 and +0x390 of the struct `0x14014ef60`
+returns). `0x1406e97b0` reads the two values from +0x304 and +0x306 of an object it holds,
+and picks Force Equip over Draw when the actor's weapon-state field (+0xcc, bits 5–7) is 3
+or more. Because the caller supplies both values, the selector does not consult the graph's
+own hand variables (§4.2, rule 3).
+
+**The checksum readers key the same way.** `0x1407c5b00` is called from slot 25 of
+`QueuedActor`, `QueuedCharacter` and `QueuedPlayer` (`0x140193280`) — the background
+load of an actor's 3D — once with Action Draw and once with index 0x16e, one past the last
+default object. What that index resolves to was not settled: the flag it reads lies past
+the table, and the null-action fallback applies only if that byte is zero.
+
+Two consumers, `0x1407c58f0` and the wrapper `0x1407c5e00`, have no direct callers in the
+disassembly. Tail jumps and tables of function pointers were not searched for them.
+
+### 4.4 How an animation file gets loaded
+
+There are three ways, and the set data drives one of them.
+
+**Ahead of need, from the set data** — §4.2 and §4.3: a set is selected, and its checksums
+become a request to `AnimationFileManagerSingleton`.
+
+**When a clip activates.** The executable names the interface the file manager implements:
+`IAnimationClipLoaderSingleton` (vftable `0x141989cd8`, all slots pure), implemented by
+`AnimationFileManagerSingleton` (`0x141989d10`). Start-up copies the file manager pointer
+to a second global, **`0x1431b2820`**, which the behaviour runtime reads — this is how the
+clip generators reach it without naming it. `hkbClipGenerator::activate` (`0x140acd750`,
+named by its profiling string), when the clip's `userData` (+0x30) is 0, calls slot 1
+(`0x140bcbb90`), which:
+
+1. maps the clip's `animationBindingIndex` (+0x70) to a file ID through the character's
+   per-animation table (`0x140bb3c20`: 32-byte entries, the 12-byte ID first);
+2. if the file is already loaded, or the entry holds no ID, binds what there is and sets
+   `userData` to 0xc;
+3. if the resource lookup `0x140d08da0` fails, sets it to 4 and stops;
+4. otherwise demands the file — one at a time directly (`0x140bcc950` → `0x140ba8800`),
+   the rest into a queue ordered by how many clips are waiting for each (`0x140bcc490`, a
+   heap of 16-byte {count, ID} entries) — and sets `userData` to 8.
+
+`update` (`0x140acde40`) calls slot 2 while `userData` is 8 and skips its own update until
+the file is bound; `0x140ace1e0`, two slots further in the same vftable, calls slot 3.
+`BSSynchronizedClipGenerator` (`0x140b93ef0`, `0x140b94170`, `0x140b94260`) and
+`BSOffsetAnimationGenerator` (`0x140b97e80`, `0x140b97f20`, `0x140b98150`) make the same
+calls.
+
+The per-animation table is built when an actor's graph is constructed (`0x140bc26d0`).
+For each entry of the character file's animation list — `hkbCharacterStringData`, names
+at +0x30 with the count at +0x38, file names at +0x40 with the count at +0x48 — the path
+is resolved under the character's folder and turned into a resource ID (`0x140d0f4c0`),
+the same folder, file and extension parts the set data's checksums hold (§2). **The file a
+clip demands is named by the character file, not by the set data.**
+
+**Up front, when the graph is built.** Graph construction (`0x140bb0800`, from
+`0x14054ba10` and `0x14054c4d0`) asks the reference, through slot 6 of its
+`IAnimationGraphManagerHolder` vftable, whether to load clips now, and passes the answer to
+`0x140bc21e0`, which picks the Havok asset loader: `BSResourceAssetLoader` (vftable
+`0x1419892a8`) for yes, `NullAssetLoader` (`0x1419892d8`, whose load slot returns null) for
+no. Linking then calls the loader's slot 3 for every entry of the character's animation list
+(`0x140bc8a50`), and again from the pass over the graph's `hkbClipGenerator`s
+(`0x140bc9310`) for clips that need it; with the real loader that loads each file there and
+then. The answer is a constant of the class:
+
+    slot 6        returns   classes
+    0x1402f3d80   1         TESObjectREFR, Projectile and its kinds, Explosion,
+                            ChainExplosion, Hazard
+    0x14069d7a0   0         Actor, Character, PlayerCharacter
+
+So **an animated object loads every clip up front, always; an actor never does**, and gets
+all of its files through the file manager — the set data's requests ahead of need, and each
+clip's own demand as it activates. Neither choice reads any setting.
+
+### 4.5 Is it necessary
+
+**Not strictly, under the default settings: it decides what is loaded ahead of need, and a
+clip it misses loads when it first plays, late.**
 
 A second setting, **`bInitiallyLoadAllClips:Animation`** (record `0x142015620`, compiled
 default **0**), is read in one place, `0x1407c50d0`, which caches its negation at
 `0x1431a939c`. Start-up (`0x1407c4d80`) creates `AnimationFileManagerSingleton` only when
-that cached flag is set — only when clips are *not* all loaded up front — and shutdown
-(`0x1407c4f90`) mirrors it. So:
+that cached flag is set, and shutdown (`0x1407c4f90`) mirrors it. `0x1407c50d0` has no other
+callers, so the setting's whole effect is whether the file manager exists.
 
-- **`bInitiallyLoadAllClips = 0`, the default.** The file manager exists, and loading is
-  on demand. Its request entry `0x140bca970` has four callers: three set data consumers,
-  and a wrapper `0x140bcb710` whose only caller, `0x1407c6170`, feeds it an
-  `AnimationStreamLoadGame` — a reader over the save game, every one of whose virtuals
-  calls the same stream read. The second request entry `0x140bcab30` is the same: three
-  consumers, and a wrapper `0x140bcb820` whose only caller, `0x1407c6290`, builds the same
-  save-game reader. So in play, the files the manager is asked for are the ones the set data
-  selects, and the only other source is a save game restoring what was loaded when it was
-  written.
-- **`bInitiallyLoadAllClips = 1`.** The file manager is never created, every
-  request-building consumer returns at step 2, and the set data's file lists are never
-  consulted. The setting is read nowhere else — `0x1407c50d0` has two callers, start-up and
-  shutdown — so its whole effect is whether the file manager exists. The about forty other
-  places that test for the file manager only skip optional work when it is absent (an
-  update call, extra registrations, a per-actor list). **The code that loads every clip up
-  front in that mode was not located**. Two consumers, `0x14069a870` (checksums) and
-  `0x1403e1b20` (attacks), do not test for the file manager, so the set data is still read
-  in that mode — for its attacks and checksums, not to request files.
+- **`bInitiallyLoadAllClips = 0`, the default.** The file manager exists. Its request
+  entry `0x140bca970` has four callers: three set data consumers, and a wrapper `0x140bcb710`
+  whose only caller, `0x1407c6170`, feeds it an `AnimationStreamLoadGame` — a reader over
+  the save game, every one of whose virtuals calls the same stream read. The second request
+  entry `0x140bcab30` is the same: three consumers, and a wrapper `0x140bcb820` whose only
+  caller, `0x1407c6290`, builds the same save-game reader. Beside those requests, every clip
+  that activates without its file demands it (§4.4).
+- **`bInitiallyLoadAllClips = 1`.** The file manager is never created. The set data
+  consumers return before selecting anything, and the clip generators skip their demand —
+  both reach the file manager, and both test for it. Graph construction still gives actors
+  the null loader (§4.4). No other code that loads an actor's clips was found, so read
+  literally the setting leaves actors without animations and changes nothing for animated
+  objects. That is a reading of the code, not a test. Two consumers, `0x14069a870`
+  (checksums) and `0x1403e1b20` (attacks), do not test for the file manager, so the set
+  data is still read in that mode for its attacks and checksums.
 
-That is the mechanism behind the modding symptom in §0: an animation whose checksum is
-missing from the set the game looks up is never requested, so it is never loaded, and a
-state that reaches its clip plays nothing.
+**What that means for the modding symptom in §0.** Under the default settings, an animation
+whose checksum is missing from the set the game looks up is not requested ahead of need.
+When a clip that plays it activates, the clip demands the file, holds its update until the
+file is bound, and plays from then on; if the file has not arrived by the time the state is
+left, it never showed. That delay fits a transition or an attack that seems not to play;
+it does not by itself explain an animation that never plays however long its state lasts.
+Whether that happens in game is open (§5).
 
-**With neither the single file nor the split folder, nothing is loaded on demand.** The
-loader builds the `DirList.txt` path, reads it into a list, and when the list is empty jumps
-straight to its end (`0x14053bd86`) — no message, no error path; the function references no
-string at all. The manager is still created (§4.1) and holds no projects. Every lookup then
-fails at the project table: `0x14053cd80`'s not-found path adds nothing, the request list
-stays empty, and `0x140bca970` returns without building a request. Under the default
-settings every creature is left without its animation files.
+**With neither the single file nor the split folder**, the loader builds the `DirList.txt`
+path, reads it into a list, and when the list is empty jumps straight to its end
+(`0x14053bd86`) — no message, no error path; the function references no string at all. The
+manager is still created (§4.1) and holds no projects. Every lookup then fails at the
+project table: `0x14053cd80`'s not-found path adds nothing, the request list stays empty,
+and `0x140bca970` returns without building a request. Nothing is loaded ahead of need; by
+§4.4 each clip's first activation still demands its file.
 
 ## 5. Not yet examined
 
@@ -368,13 +485,22 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   the extracted files (`ChairEatSoup`, `_MTSolo`). So they are not simply node names.
 - **which animations belong to each set,** and whether that follows from the subtree the
   swap events enter.
-- **what sends a swap event to the lookup**, now that the key is known to be one (§4.2):
-  which game code passes which event string, and when.
-- **the up-front loading path** under `bInitiallyLoadAllClips = 1` (§4.3), and what
-  `0x140bcab30`'s extra argument carries.
 - **how swap events, hand variables and attacks map to the graphs** — which transition
   each swap event fires, which selector each hand variable range picks, and which state an
   attack event reaches.
 
 The player's furniture and idle sets are the natural place to start: each has one or two
 swap events and a handful of animations.
+
+In the executable:
+
+- **what `0x140bcab30`'s extra argument carries.** Its callers are one of the two equip
+  entries, the equip path's empty-key request, idle selection and one save-game restore;
+  the other equip entry, action handling and movement call `0x140bca970`.
+- **what index 0x16e resolves to** in the queued 3D load (§4.3), and who reaches
+  `0x1407c58f0` and `0x1407c5e00`.
+- **which field the movement controller's records hold at +0x58.** The records come from
+  the idle manager; that the field is the idle's event is likely, not shown.
+
+In game, the test that decides §4.5: remove one travelling clip's checksum from a creature's
+set, and see whether that clip plays late, plays after the first time, or never plays.
