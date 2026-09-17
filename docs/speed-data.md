@@ -1769,8 +1769,12 @@ the rule's points on all 19 records each (`PointRetentionTests`).
 
 Two things about a record's ends are measured and not derived. Its last point is always
 the entry's largest goal speed (1,634 of 1,634), and 1,162 records write it twice: none
-of the 271 whose last segment is flat do, 1,106 of the 1,307 whose last segment slopes
-do. And the forward record starts at 0 on 80 of 86 entries while the others mostly start
+of the 271 whose last segment is exactly flat do, 1,106 of the 1,307 whose last segment
+slopes do. **The rest cannot be derived from a curve.** `SteamProject`'s 19 records all
+keep their last break at 194 and all run exactly flat to the end in the model, and 16 end
+once while 3 -- headings 0.45, 0.50 and 0.90 -- end twice. Records the curve cannot tell
+apart split both ways, so what decides it is in the game's own samples: their last digits,
+which a model reproducing the curve to 0.001 does not carry. And the forward record starts at 0 on 80 of 86 entries while the others mostly start
 at 0.5 -- the same off-forward first sample that §6.2g finds measured in twenty-fourths,
 here apparently dropped rather than kept.
 

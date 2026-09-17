@@ -118,8 +118,9 @@ public sealed class SpeedRecord
     /// </para>
     /// <para>
     /// Not reproduced: 1,162 shipped records write their last point twice. None of
-    /// the 271 whose last segment is flat does, and 1,106 of the 1,307 whose last
-    /// segment slopes do, and what decides the rest is not known.
+    /// the 271 whose last segment is exactly flat does and 1,106 of the 1,307 whose
+    /// last segment slopes do, and the rest is not a property of the curve --
+    /// <c>SteamProject</c>'s 19 records are identical at the end and split 16 to 3.
     /// </para>
     /// </remarks>
     public static List<SpeedPoint> Retain(IReadOnlyList<SpeedPoint> sweep, float tolerance = RetentionTolerance)
