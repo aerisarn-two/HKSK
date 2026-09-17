@@ -1106,18 +1106,20 @@ the graph up at its root and reading what it plays:
 | `Wisp` | 0 at 38 of 38 points | `initialize`, 0 u/s | **38/38** |
 | `Witchlight` | 0 at 38 of 38 points | `WalkF`, 0 u/s | **38/38** |
 | `IceWraith` | 230.52 to 319.67 | `CombatLocomotionBlend`, four arms at 319.667 u/s | **42/42** |
-| `ChaurusFlyer` | 0 (largest 1.8e-20 of 46) | `RunF` at 370 u/s, **a third of the weight** | refused |
+| `ChaurusFlyer` | 0 (largest 1.8e-20 of 46) | `RunF` at 370 u/s, **a third of the weight** | built at 123.3, **0/28** |
 
 Three things had to be right for those four to land, and each is a rule the file
 paid for:
 
-- **The reading has to carry the pose's root motion.** A clip's speed is read from
-  its own travel, so a clip at a third of the weight is not what the creature does.
-  The chaurus flyer rests on `RunF` at 370 u/s under two idles that do not travel,
-  and read at face value it answers 370 against a shipped table of zero. Holding
-  the reading to `Motion >= 0.999` drops it, and drops
-  `DwarvenSpiderCenturionProject` with it -- both scored **0**, 89 points between
-  them, and nothing else changed.
+- **A reading delivers its share of the pose's root motion.** A clip's speed is read
+  from its own travel, so a clip at a third of the weight is not what the creature
+  does at face value. This was first a refusal -- a reading had to carry
+  `Motion >= 0.999` -- which dropped the chaurus flyer and
+  `DwarvenSpiderCenturionProject`, both scoring 0. It is now a scale, because Havok
+  has measured what such a reading delivers: root motion mixes over weight times
+  `worldFromModelWeight` and renormalises (`tools/hkmeasure`, `WFM=`), and per-bone
+  weights -- all three of the flyer's layered children carry them -- do not enter it
+  at all (`BONES=`). Scaled, both blocks are built and no other block moves.
 - **A compass has four arms or eight.** Three clips cannot cover a heading circle.
   The dragon's ground locomotion is three, and read as a compass it scores **3 of
   51** where read flat it scores **51 of 51**. The players' bleedout is four and
@@ -1143,9 +1145,38 @@ parametric blend, every one of them recorded at 319.667 u/s -- which is 319.67
 forward and 263.6/230.52 off-axis. **42 of 42**, and no other block moved.
 `StartTriggerTests` holds it.
 
-`ChaurusFlyer` is the one left. Its shipped table is zero to float noise while its
-rest pose plays `RunF` at 370 u/s, and no reading of the graph produces zero from
-that.
+**The spider centurion's arms play at a rate the graph computes.** Its compass is
+four clips, and each binds `playbackSpeed` to a variable an expression writes:
+
+    speedMultForward  = (max(5, SpeedSampled)) / speedForward
+    speedMultBackward = (max(5, SpeedSampled)) / speedBackward    (and Left, Right)
+
+so an arm is not a fixed speed but a ladder in the goal speed, delivering its clip's
+own speed scaled by the multiplier -- the shipped forward record reads 2.5 at 0, 12.5
+at 25 and 162.6 at 324.5, that times the half share its layering leaves it. Reading
+each arm as that ladder -- `SpeedSampled` set to each half-unit goal speed, the
+expression evaluated by the engine's own expression language, the clip played at the
+result -- builds the block at **61 of 61**, and no other block moves. That takes the
+rebuild to **all 86 shipped blocks**.
+
+**`ChaurusFlyer` has a block and its values are not the shipped ones.** It ships
+zero to float noise at every heading. Its graph cannot say zero: everything that
+moves it passes through one `CombatLocomotionBlend` of four clips recorded at 370,
+non-combat locomotion included, and Havok moves that pose at a third of it -- 123.3,
+which is what the block now holds. Everything that might separate it from the ice
+wraith, whose graph it was copied from and which ships a table that moves, was
+measured and does not:
+
+    the race                 DLC1ChaurusHunterRace has the ground chaurus's flags,
+                             walks in ChaFlyerDefault, and Flies is not set
+    the cache                RunF/RunR/RunB/RunL map to the right slots, 370 of travel
+    the axes                 the character's up and forward are every creature's
+    the layering             Blend00's bone weights do not reach root motion (Havok)
+    bAnimationDriven         0 in every project that ships speeds as well
+    playback bindings        none on the flyer's clips; no sampler; no speed expression
+
+What the table records is a creature that did not move while it was sampled, and
+none of the three inputs says why.
 
 ### 6.2e Does the compass earn its place
 

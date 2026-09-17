@@ -354,20 +354,67 @@ public sealed class SpeedDataRebuildTests
     /// units per second and a heading is a fraction of a turn.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// A clip whose playback speed an expression computes from the sampled speed,
+    /// as a ladder over the goal speed.
+    /// </summary>
+    private static SpeedLadder? RateLadder(
+        Evaluation run, hkbClipGenerator clip, Vector3 travel, float duration, string stem, string? name)
+    {
+        if (run.Walk?.StepOf(clip) is not { } step) return null;
+        if (!run.Variables.TryGetValue(step.File, out Variables? table)) return null;
+
+        var binding = clip.m_variableBindingSet?.m_bindings?
+            .FirstOrDefault(b => b.m_memberPath == "playbackSpeed" && b.m_bindingType == 0);
+        if (binding is null || binding.m_variableIndex < 0 || binding.m_variableIndex >= table.Count) return null;
+        string variable = table.NameOf(binding.m_variableIndex);
+
+        Expression? writer = null;
+        foreach (ProjectStep other in run.Walk.Steps)
+        {
+            if (other.File != step.File || other.Node is not hkbEvaluateExpressionModifier modifier) continue;
+            foreach (var data in modifier.m_expressions?.m_expressionsData ?? [])
+                if (Expression.Parse(data.m_expression) is { } parsed &&
+                    string.Equals(parsed.Effect.Target, variable, StringComparison.OrdinalIgnoreCase))
+                    writer = parsed;
+        }
+        if (writer is null || table.IndexOf("SpeedSampled") < 0) return null;
+
+        float held = table.AsReal(table.IndexOf("SpeedSampled"));
+        List<SpeedRung> rungs = [];
+        for (float x = 0f; x <= 1000f; x += 0.5f)
+        {
+            table.Set("SpeedSampled", x);
+            if (!writer.TryEvaluate(table, out float rate) || rate <= 0f) { rungs.Clear(); break; }
+            rungs.Add(new SpeedRung(x, travel, duration / rate, stem));
+        }
+        table.Set("SpeedSampled", held);
+
+        return rungs.Count == 0 ? null : new SpeedLadder(rungs) { Name = name };
+    }
+
     private static List<(float Direction, SpeedLadder Ladder)>? CompassOfClips(
         Evaluation run, ActorProject actor)
     {
+        // A node reached by two routes appears once per route, and only the routes
+        // that carry motion say anything about it.
+        var share = new Dictionary<hkbGenerator, float>(ReferenceEqualityComparer.Instance);
+        foreach (ActiveNode node in run.Active)
+            share[node.Generator] = MathF.Max(share.GetValueOrDefault(node.Generator), node.Motion);
+
         foreach (ActiveNode node in run.Active)
         {
             if (node.Generator is not hkbBlenderGenerator blend) continue;
             if ((blend.m_flags & 16) == 0) continue;                       // FLAG_PARAMETRIC_BLEND
 
-            // An arm's speed is read from the clip's own travel, so the compass has
-            // to be carrying all of the pose's root motion for that to be the
-            // creature's speed. The chaurus flyer's locomotion blend sits at a third
-            // of the weight under two idles that do not travel, and read at face
-            // value it answers 370 where the shipped table is zero.
-            if (node.Motion < 0.999f) continue;
+            // An arm's speed is read from the clip's own travel, and a compass that
+            // is only part of the pose delivers only its share of the root motion:
+            // Havok mixes root motion over weight times worldFromModelWeight and
+            // renormalises (tools/hkmeasure, WFM=), and per-bone weights do not
+            // enter it (BONES=). The chaurus flyer's locomotion sits at a third,
+            // beside two partial-body idles that do not travel.
+            float carried = share[blend];
+            if (carried <= 0.001f || node.Motion < carried) continue;
 
             // A heading compass has to cover the circle, and Bethesda's do it with
             // four arms or eight. Three clips under a parametric blend are a
@@ -392,8 +439,19 @@ public sealed class SpeedDataRebuildTests
                 { headings = false; break; }
 
                 float rate = MathF.Abs(clip.m_playbackSpeed);
-                Vector3 travel = motion.Translations[^1].Value;
+                Vector3 travel = motion.Translations[^1].Value * carried;
                 float duration = motion.Duration / rate;
+
+                // A clip whose playback speed is bound plays at whatever the graph
+                // computes, and where an expression computes it from the sampled
+                // speed the arm is a ladder in the goal speed: the spider
+                // centurion's four arms each play at max(5, SpeedSampled) over a
+                // declared speed of their own.
+                if (RateLadder(run, clip, travel, motion.Duration, stem, blend.m_name) is { } bound)
+                {
+                    arms.Add((child.m_weight, bound));
+                    continue;
+                }
 
                 var rung = new SpeedRung(
                     travel.Length() / duration,
@@ -519,6 +577,10 @@ public sealed class SpeedDataRebuildTests
             SpeedRung? only = null;
             bool several = false;
 
+            var carries = new Dictionary<hkbGenerator, float>(ReferenceEqualityComparer.Instance);
+            foreach (ActiveNode node in run.Active)
+                carries[node.Generator] = MathF.Max(carries.GetValueOrDefault(node.Generator), node.Motion);
+
             foreach (ActiveNode node in run.Active)
             {
                 if (ladders.Contains(node.Generator)) { several = true; break; }
@@ -526,10 +588,11 @@ public sealed class SpeedDataRebuildTests
                 if (clip.m_animationName is not { Length: > 0 } animation) continue;
                 if (clip.m_playbackSpeed <= 0f) continue;
 
-                // Same reason the compass is held to it: the speed comes from the
-                // clip's own travel, so the clip has to be carrying the pose's root
-                // motion for that to be what the creature does.
-                if (node.Motion < 0.999f) continue;
+                // Same as the compass: the speed comes from the clip's own travel,
+                // and a clip that is part of the pose delivers its share of it. The
+                // routes that reach it carrying nothing say nothing about it.
+                float carried = carries[clip];
+                if (carried <= 0.001f || node.Motion < carried) continue;
 
                 string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
                 if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion) continue;
@@ -542,7 +605,7 @@ public sealed class SpeedDataRebuildTests
                 if (motion.Translations.Count == 0) continue;
 
                 float duration = motion.Duration / clip.m_playbackSpeed;
-                float speed = motion.Translations[^1].Value.Length() / duration;
+                float speed = carried * motion.Translations[^1].Value.Length() / duration;
 
                 if (only is { } already)
                 {
@@ -555,7 +618,7 @@ public sealed class SpeedDataRebuildTests
                 // The rung sits on the speed axis at the speed it delivers, which is
                 // the only position a clip that is not part of a ladder has.
                 only = new SpeedRung(
-                    speed, motion.Translations[^1].Value, duration, stem);
+                    speed, carried * motion.Translations[^1].Value, duration, stem);
             }
 
             if (several || only is not { } rung) return null;
@@ -751,7 +814,7 @@ public sealed class SpeedDataRebuildTests
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversEightyFourOfTheEightySixBlocks()
+    public void TheInferenceRecoversAllEightySixBlocks()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
@@ -782,12 +845,12 @@ public sealed class SpeedDataRebuildTests
             "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(147, made.Count);
+        Assert.Equal(149, made.Count);
 
-        Assert.Equal(84, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(2, shipped.Except(made).Count());       // missed, was 35
+        Assert.Equal(86, made.Intersect(shipped).Count());   // recovered, was 51
+        Assert.Equal(0, shipped.Except(made).Count());       // missed, was 35
         Assert.Equal(63, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(2, inferred.Unbuildable);               // unplaceable, was 50
+        Assert.Equal(0, inferred.Unbuildable);               // unplaceable, was 50
     }
 
     /// <summary>
@@ -978,21 +1041,25 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(84, blocks);
-        Assert.Equal(1596, records);
-        Assert.Equal(18195, points);
+        Assert.Equal(86, blocks);
+        Assert.Equal(1634, records);
+        Assert.Equal(18302, points);
 
         // 15305 against the 10145 the pairing alone reached, over 77 blocks against
         // 51. The rate reads 87% rather than 92% only because RieklingProject is in
         // the denominator with 1037 points and 138 of them right; on the other 76
         // blocks it is 13345 of 14551.
-        Assert.Equal(15835, pointsHeld);
-        Assert.Equal(1312, recordsHeld);
-        Assert.Equal(52, blocksHeld);
+        Assert.Equal(15896, pointsHeld);
+        Assert.Equal(1331, recordsHeld);
+        Assert.Equal(53, blocksHeld);
+
+        // The spider centurion's arms play at a rate an expression computes from the
+        // sampled speed, and the whole block follows from evaluating it.
+        Assert.Contains(_perKey, line => line.StartsWith("DwarvenSpiderCenturionProject ") && line.Contains(" 61/61 "));
 
         Assert.Equal(25, _declared);
         Assert.Equal(66, _sharedBlocks);
-        Assert.Equal(18, _newBlocks);
+        Assert.Equal(20, _newBlocks);
         Assert.Equal(13587, _sharedHeld);
 
         // On the 25 the graph declares, running it lands in the right state 6 times.

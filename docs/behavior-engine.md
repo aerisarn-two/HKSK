@@ -652,7 +652,7 @@ pass; the first was taken at 15,305 points and 77 blocks, before the flyers
 | reading a reversed clip | 15796 | 18195 | 1312 | 52 | 84 |
 | the zero curve | 15797 | 18157 | 1293 | 51 | 83 |
 | a machine that chooses on `iState` | 15831 | 18195 | 1312 | 52 | 84 |
-| **holding a reading to the pose's motion** | **15835** | **18302** | **1312** | **52** | **86** |
+| holding a reading to the pose's motion *(since replaced by scaling)* | 15835 | 18302 | 1312 | 52 | 86 |
 
 **No rule is now wrong**, and every one of them but the last costs points when
 removed. Four things are worth a note.
@@ -666,8 +666,16 @@ counting every shipped zero as held without asking what was built there, and the
 chaurus has 18 exact zeros. Judging a zero by building zero there, within one
 unit, changes the baseline by nothing -- all 114 shipped zeros in the rebuild are
 ones it builds -- and makes the row read true: the guard costs no point and
-refuses 107 that would all be wrong. It stays, on the same terms as any rule that
-declines to build what it cannot build right.
+refuses 107 that would all be wrong. It stayed then, on the same terms as any rule
+that declines to build what it cannot build right.
+
+It has since been replaced rather than kept. Havok measures what a reading carrying
+part of the pose's motion delivers -- its share, by weight times
+`worldFromModelWeight`, with bone weights playing no part -- so the rebuild scales by
+the share instead of refusing. That builds both blocks. The spider centurion's is
+then exact once its arms are read as the rate ladders an expression makes them
+(`docs/speed-data.md` §6.2f), 61 of 61; the chaurus flyer's is built and, like the
+guard found, wrong against a shipped table of zero.
 
 **The path-scoped cycle guard always earned its place; the first pass did not
 switch it off.** That pass reported it worth nothing and explained why the rules

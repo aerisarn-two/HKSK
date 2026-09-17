@@ -587,6 +587,23 @@ static class Probe
             clips.Add(clip);
         }
 
+        // BONES=<w0>,<w1>,... gives each child a bone weight array with that weight on
+        // bone 0, the root. A partial-body layer -- the chaurus flyer's antennae and
+        // wings over its locomotion -- is a child whose array leaves the root out, and
+        // what that does to root motion is the question. "-" leaves a child without one.
+        string benv = Environment.GetEnvironmentVariable("BONES");
+        if (benv != null)
+        {
+            string[] parts = benv.Split(',');
+            for (int i = 0; i < blender.m_children.Count && i < parts.Length; i++)
+            {
+                if (parts[i] == "-") continue;
+                float w = float.Parse(parts[i], CultureInfo.InvariantCulture);
+                Methods.setBoneWeight(blender, i, 0, w);
+            }
+            Console.WriteLine("[blend] root bone weights " + benv);
+        }
+
         var graph = Root(Methods.createBehavior());
         int soloClip = Environment.GetEnvironmentVariable("SOLO") == null
                      ? -1 : int.Parse(Environment.GetEnvironmentVariable("SOLO"));

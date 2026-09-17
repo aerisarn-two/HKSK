@@ -82,6 +82,22 @@ interpolates duration, and equal ones take that out of the measurement.
 This is `HKSK.Engine.ActiveGenerators.Moving`, and it is why `HMDaedra` travels at
 half what its ladder delivers while `NetchProject` does not.
 
+## Bone weights do not reach root motion
+
+`BONES=` gives each child a bone weight array with the given weight on the root
+bone (`Methods.setBoneWeight`), or none with `-`. The chaurus flyer layers its
+locomotion under partial-body idles this way, and the question was whether a child
+that leaves the root out also leaves the motion. With a non-parametric blend of two
+equal-weight children, one travelling at 370 and one standing:
+
+    BONES=-,-    185.0        BONES=1,0    185.0        BONES=0,0    185.0
+    BONES=1,1    185.0        BONES=0,1    185.0
+
+The same in every case: root motion is weight times `worldFromModelWeight`,
+renormalised, and the bone weights shape the pose alone. The tool does not show
+independently that the array took effect on the pose; it shows that motion did not
+move.
+
 ## What Havok does with a child that generates nothing
 
 `DEAD=<index>` gives that child a state machine instead of its clip -- one with no
