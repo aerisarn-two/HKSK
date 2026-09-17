@@ -11,3 +11,4 @@ TestResults/
 
 # Working notes, not part of the project.
 CLAUDE.md
+__pycache__/

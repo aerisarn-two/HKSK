@@ -4,8 +4,8 @@ What the animation set data holds, how much of it can be read back to concrete f
 and how the shipped file was put together. Every number here was measured against the
 shipped game; where a question is still open it says so, with what has been ruled out.
 
-This is an investigation in progress. §1–§3 are established; §4 lists what has not been
-looked at yet.
+This is an investigation in progress. §1–§4 are established; §5 lists what has not been
+looked at yet. §4 was read out of the executable; how is `docs/reverse-engineering.md`.
 
 ## 0. What the file is for
 
@@ -210,7 +210,99 @@ single file than in the snapshot — `bow.txt` 123 to 118, the H2H, staff and to
 combinations by four or five each, and `_MTSolo.txt` from 149 to 106 — and first person's
 seven weapon sets lost 13 to 16 each. The player's history is more than appends.
 
-## 4. Not yet examined
+## 4. The engine side
+
+Addresses are virtual addresses in the retail `SkyrimSE.exe` (image base `0x140000000`),
+read from a copy unwrapped for reading. `tools/exe-re` reproduces every one.
+
+### 4.1 Where the file is read
+
+The six path strings the animation text data uses are built into global `BSFixedString`s
+by static initialisers (`0x14008fff0`–`0x1400900e0`) and released at exit
+(`0x141718bb0`–`0x141718c00`):
+
+    global        string
+    0x14315c900   Meshes/AnimationData/
+    0x14315c910   BoundAnims/
+    0x14315c918   Meshes/AnimationDataSingleFile.txt
+    0x14315c920   Meshes/AnimationSetData/
+    0x14315c928   DirList.txt
+    0x14315c930   Meshes/AnimationSetDataSingleFile.txt
+
+The set data's globals are used by one function, the loader at **`0x14053b000`**:
+
+- it publishes the manager as a singleton at **`0x143138d58`**;
+- it asks a gate, **`bLoadCollatedAnimTextData:Animation`** (setting record `0x1420107d8`,
+  read by `0x140541fa0`, compiled default **1**). "Collated" is the single file;
+- with the gate on it opens `Meshes/AnimationSetDataSingleFile.txt`, reads a line of at
+  most 260 characters, converts it to the project count and loops over the projects;
+- with the gate off, **or when the single file does not open**, it goes to `0x14053b69b`
+  and reads the split form instead: `Meshes/AnimationSetData/` and its `DirList.txt`
+  (`0x14053b6f6`, `0x14053b776`).
+
+No shipped INI names the setting, so the single file is what the game reads. The split
+form is a fallback, which is also why a snapshot of it could ship out of date unnoticed
+(§3.3).
+
+The manager is created unconditionally at start-up, in `0x140541b80`, directly after the
+animation data manager (`0x140536ec0`, singleton `0x143138d50`) and in the same routine
+that creates the speed database (`docs/speed-data.md` §4). `0x140541e80` destroys it.
+
+### 4.2 What reads it
+
+The singleton is referenced by 15 functions. Five are its own life cycle — the loader,
+the destructor path, creation and destruction at start-up and shutdown. The other ten
+are consumers: `0x1403e1b20`, `0x14069a870`, and eight between `0x1407c52b0` and
+`0x1407c5fb0`.
+
+The smallest, `0x1407c5660`, was read whole, and the others share its shape:
+
+1. it obtains a handle from an animation graph through a virtual call, and gives up if
+   there is none;
+2. **it returns without doing anything if either singleton is missing** — the set data
+   at `0x143138d58`, or `AnimationFileManagerSingleton` at `0x143138e90`;
+3. it calls a set data lookup, `0x14053bfa0`, which takes the project's lock and walks its
+   sets (`0x14053c530`), running `0x14053cd80` on each — a hash lookup on a string key —
+   and collects what matches into a list;
+4. it hands that list to the file manager, `0x140bca970`, and returns the result.
+
+The eight consumers in the cluster pair the two set data lookups (`0x14053bee0`,
+`0x14053bfa0`) with three file manager entry points: `0x140bca970` from three of them,
+`0x140bcab30` from three, `0x140bcad40` from one. **Which string the per-set lookup is
+keyed on** — a swap event, a set name, a clip — and what the second and third entry
+points do has not been established.
+
+### 4.3 Is it necessary
+
+**With default settings, yes: it is what decides which animation files get loaded.**
+
+A second setting, **`bInitiallyLoadAllClips:Animation`** (record `0x142015620`, compiled
+default **0**), is read in one place, `0x1407c50d0`, which caches its negation at
+`0x1431a939c`. Start-up (`0x1407c4d80`) creates `AnimationFileManagerSingleton` only when
+that cached flag is set — only when clips are *not* all loaded up front — and shutdown
+(`0x1407c4f90`) mirrors it. So:
+
+- **`bInitiallyLoadAllClips = 0`, the default.** The file manager exists, and loading is
+  on demand. Its load entry `0x140bca970` has four callers: the three set data consumers,
+  and a wrapper `0x140bcb710` whose only caller, `0x1407c6170`, feeds it an
+  `AnimationStreamLoadGame` — a reader over the save game, every one of whose virtuals
+  calls the same stream read. The counterpart `0x140bcab30` is the same: three consumers
+  and a wrapper reached the same way. So in play, the files the manager is asked for are
+  the ones the set data lists, and the only other source is a save game restoring what
+  was loaded when it was written.
+- **`bInitiallyLoadAllClips = 1`.** The file manager is never created, every consumer
+  returns at step 2, and the set data is never consulted. What loads the clips in that
+  mode was not traced; the setting's name says it.
+
+That is the mechanism behind the modding symptom in §0: an animation whose checksum is
+missing from the set the game looks up is never requested, so it is never loaded, and a
+state that reaches its clip plays nothing.
+
+What happens when neither the single file nor the split folder is present was not
+traced. The manager is still created (§4.1); by the above, a project it holds no sets for
+yields nothing to load.
+
+## 5. Not yet examined
 
 The nine multi-set projects — the player (374 sets each for `DefaultMale` and
 `DefaultFemale`), first person (109), the draugr and skeleton (25 each), the falmer (15),
@@ -221,6 +313,8 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   the extracted files (`ChairEatSoup`, `_MTSolo`). So they are not simply node names.
 - **which animations belong to each set,** and whether that follows from the subtree the
   swap events enter.
+- **which key the engine looks sets up by** (§4.2), which would say what a swap event does
+  at run time.
 - **how swap events, hand variables and attacks map to the graphs** — which transition
   each swap event fires, which selector each hand variable range picks, and which state an
   attack event reaches.

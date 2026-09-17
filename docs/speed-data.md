@@ -2238,7 +2238,9 @@ verified by `.text` entropy falling from 8.000 to 6.354 bits/byte and by referen
 the setting object appearing (6, against 0 while packed).
 
 The unwrapped binary is not redistributable and is not in this repository. Every address
-quoted is an RVA, re-derivable from a local copy.
+quoted is an RVA, re-derivable from a local copy. The method, including the Wine
+workaround Steamless needs, is `docs/reverse-engineering.md`, and `tools/exe-re` holds the
+helpers.
 
 ## 12. Consequences for tooling
 
