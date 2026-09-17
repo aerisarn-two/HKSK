@@ -837,8 +837,13 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
   **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
-  storm atronach. The other 39 are 0 throughout, and they include creatures that plainly
-  attack on the move:
+  storm atronach. Four of those six are single-set creatures, whose one set holds every
+  attack they own and no hand variables, so the race reaches them only through the
+  single-set fallback (§4.6): the werewolf flags 10 of its 15, the storm atronach 3 of 3,
+  the netch 2 of 3, the witchlight its only one. Of the nine multi-set projects only the
+  player's two use it -- the draugr and the skeleton carry 56 attacks each across 25 sets
+  and flag none. The other 39 projects are 0 throughout, and they include creatures that
+  plainly attack on the move:
 
       bear        attackStart_AttackLeft1, a bite made charging, travel 99.6   0
       sabrecat    eight attacks, two of them lunges                            0
