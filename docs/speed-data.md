@@ -1176,6 +1176,21 @@ at a goal speed of 324.5 each does, to four decimals:
 non-travelling idle layered beside the locomotion, and the turning clips could not
 supply any of it: `TurnLeft` rotates 89 degrees and translates nothing.
 
+Nothing else in the behaviour reaches either stage, checked node by node along the path
+from the root to the four clips. `SpeedSampled` has one writer, the sampler; `speedMult*`
+have one, `SpeedMult_EEM`, which sits on the `Locomotion_MG` wrapping the compass and so
+runs exactly when the compass does; the four `speed*` divisors are written by nothing and
+keep their initial values. The clips have no crop, no enforced duration, no start offset,
+no flags and no triggers, loop, and the cache's copies agree (playback 1, crop 0). Neither
+blend binds anything but the compass parameter, and no child weight or
+`worldFromModelWeight` is bound. The one bound member on the path, the idle's bone weights
+on the character property `HeadPartsBlend`, shapes the pose and not the motion. The
+cyclic transition can be frozen or cross-blended by `CyclicFreeze` and `CyclicCrossBlend`,
+which nothing in the graph raises -- the engine's own events, and the off-axis headings
+reproducing show the blend followed `Direction` while the table was taken. The only oddity
+is an initial value: `speedMultBackward` starts at 0 where its siblings start at 1, which
+matters for no longer than it takes the expression to run once.
+
 The spider is the only creature built this way, and that was checked rather than
 assumed (`BoundRateTests`). Three expressions in the game make a clip's playback
 follow a speed: the spider's four, the twelve quadrupeds' backward walk at
