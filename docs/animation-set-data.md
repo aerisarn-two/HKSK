@@ -854,7 +854,25 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   So no rule that matches the player can hold everywhere, because the shipped file does not:
   any predicate strong enough to flag `attackStart` for the player flags the bear's run-bite
   too. It was applied to six projects and to no other, which is the mark of tuning rather
-  than of a property. Every rule tried, and what it scored against the 38 flagged events:
+  than of a property.
+
+  What those six are was looked for and not found. They are not the DLC projects -- four of
+  them are in the pre-DLC snapshot under `animationsetdata/`, and nine creatures that came
+  with a DLC flag nothing. They are not a later edit: **no flag differs between the split
+  pre-DLC files and the merged one**, the only attack entries added since being the player's
+  two mounted-combat attacks, both 0. They are not the creatures that float, nor the ones
+  whose attacks have no root motion to measure -- 164 of the 289 clear attack events name
+  clips that travel nothing at all, the same as 19 of the 34 flagged ones. Two pairs put it
+  past argument:
+
+      flame atronach      4 attacks, named clips travel 0      all clear
+      frost atronach      6 attacks, named clips travel 0      all clear
+      storm atronach      3 attacks, named clips travel 0      all flagged
+
+      wisp                4 attacks, floats, travel 0          all clear
+      witchlight          1 attack,  floats, travel 0          flagged
+
+  Every rule tried, and what it scored against the 38 flagged events:
 
   | tried | why it fails |
   | --- | --- |
