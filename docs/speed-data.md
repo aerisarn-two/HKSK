@@ -479,10 +479,26 @@ Havok modifier here has. Its `Update` (§4.2) reads. The strings agree: every on
 the sampler or the table is on the reading side, the two load paths and the INI gate,
 with no format string or command beside them.
 
-What this does not exclude is a non-virtual function that writes a `.SPD`: that would
-show as a second code reference to the path globals beside the gated loader (§4.3), and
-finding code references needs `.text` unwrapped. That step was not repeated for this
-section.
+A non-virtual writer is excluded too, by every code reference in an unwrapped `.text`
+(Steamless, as §11; 7,232,505 instructions, grepped for RIP-relative targets):
+
+    target                                   references
+    "MESHES/SPEEDDATA/", ".SPD",              3 static initialisers pairing each literal with
+    "Meshes/SpeedDataSingleFile.txt"            its BSFixedString global, and 3 exit destructors
+    the three globals                        0x140bc0c83, 0x140bc0ca5  the gated .SPD loader
+                                             0x140bc08af               the merged-file loader,
+                                                                       inside the constructor
+    the manager's storage 0x14315c9d0        4 engine startup and shutdown, 5 its own
+                                             constructor and destructors, and 0x140bb0e2b,
+                                             the one caller of the gated loader
+    the query's singleton 0x1431bd160        written at startup and shutdown, read once:
+                                             BSSpeedSamplerModifier::Update
+    both vftables                            constructor, destructor, deleting destructors
+
+Every path to the table's file names and every path to the database is construction,
+destruction, loading or the query. **The game reads this table and has no code that
+writes one**: the sampler that recorded it was a tool, and it is not in the executable,
+so neither the chaurus flyer's zero nor the 0.0404 can be read out of it.
 
 ## 5. The graph side
 
