@@ -2,7 +2,7 @@ using HKSK.Behavior;
 using HKSK.Model;
 using HKX2;
 
-namespace HKSK.Tests;
+namespace HKSK.Speed;
 
 /// <summary>
 /// The arms a locomotion state blends between.

@@ -4,7 +4,7 @@ using HKSK.Model;
 using HKX2;
 using System.Numerics;
 
-namespace HKSK.Tests;
+namespace HKSK.Speed;
 
 /// <summary>
 /// One locomotion state a speed table can be sampled for: its key, and the
@@ -34,6 +34,7 @@ public readonly record struct SpeedState(int Key, IReadOnlyList<string> Movement
 /// one and which is a variant.
 /// </param>
 /// <param name="Arms">The ladders, by the heading each answers.</param>
+/// <param name="Node">The blend the compass was read from.</param>
 public readonly record struct SpeedCompass(
     string Name, string? File, IReadOnlyList<(float Direction, SpeedLadder Ladder)> Arms, hkbBlenderGenerator Node)
 {

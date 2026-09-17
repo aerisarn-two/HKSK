@@ -1,4 +1,4 @@
-namespace HKSK.Tests;
+namespace HKSK.Speed;
 
 /// <summary>
 /// A movement type's speeds, as the rebuild needs them.

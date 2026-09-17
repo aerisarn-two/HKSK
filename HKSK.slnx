@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="src/HKSK/HKSK.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/speedgen/speedgen.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/HKSK.Tests/HKSK.Tests.csproj" />
   </Folder>

@@ -3,7 +3,7 @@ using HKSK.Model;
 using HKX2;
 using System.Numerics;
 
-namespace HKSK.Tests;
+namespace HKSK.Speed;
 
 /// <summary>
 /// One step of a locomotion blend: where it sits, and what it delivers.

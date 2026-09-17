@@ -296,10 +296,20 @@ ladder.Rungs[1].Delivered;      // what that rung delivers, against its own weig
 A rung's `Weight` is what the movement type claims and `Delivered` is what the clip
 does. Equal means correctly authored; the gap between them is what the table records.
 
-Generating one from scratch is not implemented: the sweep bound is still an
-authored input. **`docs/speed-data.md`** is the specification — the layout, the
-nine invariants, the closed form for the curve, how to choose `MOVT` for an
-animated creature, and the open questions with what has been ruled out.
+A whole table can be generated from the game's other assets — the behaviour graphs,
+the animation cache and the masters' movement types — without reading a shipped one:
+
+```csharp
+SpeedDataFile file = SpeedDataGenerator.Generate(cache, movementTypes, raceRoles);
+file.Save("speeddatasinglefile.txt");
+```
+
+`tools/speedgen` does it from the command line, reading the masters with Mutagen,
+since this library does not open plugins. Against the shipped file it writes all 86
+blocks the game ships and 63 it does not, and read the way the game reads it holds
+82% of the shipped points within 2%. **`docs/speed-data.md`** is the specification —
+the layout, the nine invariants, the closed form for the curve, how to choose `MOVT`
+for an animated creature, and the open questions with what has been ruled out.
 
 ## Paired animations
 

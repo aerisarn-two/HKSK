@@ -2,7 +2,7 @@ using HKSK.Behavior;
 using HKX2;
 using HKSK.Model;
 
-namespace HKSK.Tests;
+namespace HKSK.Speed;
 
 /// <summary>
 /// Which locomotion state serves a speed-table key.
