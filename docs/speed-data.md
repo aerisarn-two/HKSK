@@ -1159,6 +1159,23 @@ expression evaluated by the engine's own expression language, the clip played at
 result -- builds the block at **61 of 61**, and no other block moves. That takes the
 rebuild to **all 86 shipped blocks**.
 
+The data carries a fingerprint of the rule, which rules out reading the block any
+other way -- off the turning clips' root motion, say, or the walk clips at their own
+speed. The declared speeds do not match the clips they divide: `speedForward` is 99.8
+where `Forward_Walk` travels 100.037 u/s, `speedRight` 100.16 where `Right` travels
+99.801. So each cardinal heading should carry its own clip-over-declared ratio, and
+at a goal speed of 324.5 each does, to four decimals:
+
+    heading   clip             clip u/s   declared   predicted   shipped
+    0         Forward_Walk      100.037      99.80     1.00237   1.00231
+    0.25      Right              99.801     100.16     0.99642   0.99635
+    0.5       Backward_Walk     100.037     100.04     0.99997   0.99990
+    0.75      Left               99.801      99.44     1.00363   1.00356
+
+(shipped over half of `max(5, x - 0.0404)`). The half is `Idle_HeadParts`, a
+non-travelling idle layered beside the locomotion, and the turning clips could not
+supply any of it: `TurnLeft` rotates 89 degrees and translates nothing.
+
 The spider is the only creature built this way, and that was checked rather than
 assumed (`BoundRateTests`). Three expressions in the game make a clip's playback
 follow a speed: the spider's four, the twelve quadrupeds' backward walk at
