@@ -568,14 +568,22 @@ measure in §5.7: files of a shipped idle set that its own keys load):
                   leaving those states trigger                 73.6%     51,773    2.2 MB
     until home -- every transition, until a state the graph
                   reaches with no key                          79.8%     67,034    2.7 MB
+    until home or another idle's door                          79.8%     57,495    2.4 MB
 
-The generator uses **until home**. The graph (`HKSK.SetData.StateGraph`) has a node per
+The generator uses **until home, or another idle's door**. The graph (`HKSK.SetData.StateGraph`) has a node per
 state of a machine; a state's own clips are those below its generator down to the machines
 nested there; edges are a nested machine's entry, a state's own transitions, a machine's
 wildcards and its random-transition event from every state, and the nested state a
 transition names. **Home** is what the root reaches through nesting and transitions on no
 key. An event's set is every state reachable from the states it enters without passing
-through home, less home's files.
+through home, less home's files -- and without entering another idle's **door**, a state a
+key enters straight from a home state. A chair's entry is a door, entered from standing; its
+exit and its next clip, entered from inside the chair, are not. Without doors the walk from
+a standing drink went on into every piece of furniture a drink can be carried to: 40 of the
+player's idle sets held over 100 files, `idleDrinkingStandingStart` 414 of them. With doors
+the idle measure loses 2 files of 2,147 and the file 9,500 animations; the sets still over 100
+files are hubs by nature -- `moveStart` and `moveStop`, sneaking, sprinting, and
+`00NextClip`, the key that advances every idle loop.
 
 Why the others fall short:
 
@@ -651,7 +659,7 @@ Sets with attacks come first.
 
 **Grouping, not coverage, is where weapons differ from the shipped file.** Replaying the
 equip lookup -- an equip key with a shipped weapon set's hand types -- the chosen set and the
-base load 71.8% of that shipped set's files. But 98.0% of them are in *some* set that applies
+base load 68.3% of that shipped set's files. But 98.1% of them are in *some* set that applies
 under that weapon's hand types: the shipped file loads a weapon's sneak, sprint and shout
 variants on equip, and the rebuild loads them on `SneakStart`, `sprintStart` and
 `shoutStart` for that weapon. What is in no applicable set is the moved first-person
@@ -685,7 +693,7 @@ are left open: the draugr's `bashStart` lists every weapon's bash.
 
 ### 5.7 What comes out
 
-    projects 49     sets 1,883     animations listed 67,034     attacks 3,819     2.7 MB
+    projects 49     sets 2,241     animations listed 57,495     attacks 3,819     2.4 MB
 
 (shipped: 990 sets, 20,807 animations, 737 attacks, 0.8 MB)
 
@@ -693,8 +701,8 @@ are left open: the draugr's `bashStart` lists every weapon's bash.
       not: first-person killmoves moved or copied to the victim (§3.3)    66
       not: the werewolf's human-side killmoves, which its character
            file does not list                                              5
-    files of a shipped idle set that its own keys load                 2,147 of 2,689 (79.8%)
-    files of a shipped weapon set in some set applicable to the weapon 15,231 of 15,538 (98.0%)
+    files of a shipped idle set that its own keys load                 2,145 of 2,689 (79.8%)
+    files of a shipped weapon set in some set applicable to the weapon 15,248 of 15,538 (98.1%)
     attack entries identical over the 121 combinations                 22,949 of 27,039 (84.9%)
 
 Of the 542 not loaded, most are not derivable from the graphs:
@@ -710,7 +718,7 @@ Of the 542 not loaded, most are not derivable from the graphs:
   offsets with the stone and wood pick-ups, each horn blow's animation in the other's set,
   dialogue expressions shared by several dialogue idles.
 
-That puts the derivable part at 2,147 of about 2,200.
+That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
