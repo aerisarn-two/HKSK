@@ -152,6 +152,28 @@ it. When every path to a behaviour has been classified — construction, destruc
 loading, the query, a save-game restore — the claim "only X does Y" is proven rather than
 suspected. When one path has not, the document says so.
 
+### 3.5 From a parser to a structure's layout
+
+A consumer shows which offset it reads, not what lives there. The loader shows both: it
+reads the file in order and writes each part somewhere. Read the parser alongside the
+file format — each `readline` followed by `atoi` is a count, each `readline` followed by a
+string-handle constructor is a name, each array reservation names the container the next
+lines go into — and the offsets fall out in file order. Only then read the consumers
+against the layout. Doing it the other way round had the animation set's attacks and
+checksums swapped until the parser was checked.
+
+### 3.6 Two callers that differ in one place
+
+When two functions call the same helpers and look alike, `diff` their disassembly with
+addresses masked out:
+
+    diff <(objdump ... --start-address=A --stop-address=B | sed 's/0x[0-9a-f]\{6,\}/ADDR/g') \
+         <(objdump ... --start-address=C --stop-address=D | sed 's/0x[0-9a-f]\{6,\}/ADDR/g')
+
+The animation set consumers that call the file manager's two request entries are identical
+except for one extra stack argument, which is what said the second entry is a variant of
+the first and not its inverse.
+
 ## 4. Worked examples
 
 **The speed table** (`docs/speed-data.md` §4). Strings named `bUseSpeedSampler`, the
@@ -168,9 +190,12 @@ singleton and consults `bLoadCollatedAnimTextData`. The singleton's 15 referenci
 functions split into life cycle and ten consumers. Reading the smallest consumer showed
 it returns early without `AnimationFileManagerSingleton`, and otherwise turns a set data
 lookup into a load request. `bInitiallyLoadAllClips`, found through its setting record,
-decides whether that file manager exists at all. The file manager's load and release
-entries have no callers besides the set data consumers and a save-game restore, which
-makes the set data **necessary under the default settings**.
+decides whether that file manager exists at all. The file manager's two request entries
+have no callers besides the set data consumers and a save-game restore, which makes the set
+data **necessary under the default settings**. Reading the per-set parser in file order
+gave the set object's layout, and reading the set selector against that layout showed the
+lookup is keyed on the swap event, with hand variables checked as ranges against the
+graph's live variables.
 
 ## 5. Traps
 
@@ -188,6 +213,12 @@ makes the set data **necessary under the default settings**.
 - **Naming a function from what it seems to do.** Without symbols, a name is a guess. The
   documents describe what a function touches and calls, and leave its name out unless RTTI
   or a string supplies one.
+- **Taking a look-alike for an inverse.** Two entry points that share most of their callees
+  were first written up as "load" and "release". Sharing callees says they are related, not
+  that one undoes the other; the one-argument diff (§3.6) is what settled it.
+- **Counting consumers from a range of addresses.** Functions near each other are not one
+  kind: one of the "eight consumers in the cluster" read checksums through a different
+  method. Classify each function by what it calls, not by where it sits.
 - **"Only" without the other paths classified.** A behaviour is only reached from X when
   every caller and every stored pointer to the entry point has been accounted for, save-game
   and destructor paths included.

@@ -248,29 +248,73 @@ The manager is created unconditionally at start-up, in `0x140541b80`, directly a
 animation data manager (`0x140536ec0`, singleton `0x143138d50`) and in the same routine
 that creates the speed database (`docs/speed-data.md` §4). `0x140541e80` destroys it.
 
-### 4.2 What reads it
+### 4.2 What the loader builds, and what reads it
+
+**Each set becomes a 0x88-byte object**, filled by the per-set parser `0x14053d700` in
+file order:
+
+    offset   field                     from the file
+    +0x00    swap events               an array of string handles, count at +0x10
+    +0x18    hand variables            16-byte entries: name, min, max; count at +0x28
+    +0x70    attacks                   event name, clips, and the mirrored flag as a byte
+    +0x30    checksum triples          written last, when the set is finished
+
+Two details of the parse are not visible in the file's own description. The version line
+is optional: a first line starting with `V` is taken as the version, and anything else is
+read straight away as the swap event count. And **a set with no swap events is given one**
+— the empty string, from `0x14053d650` — so that it can still be selected.
 
 The singleton is referenced by 15 functions. Five are its own life cycle — the loader,
-the destructor path, creation and destruction at start-up and shutdown. The other ten
-are consumers: `0x1403e1b20`, `0x14069a870`, and eight between `0x1407c52b0` and
-`0x1407c5fb0`.
+the destructor path, creation and destruction at start-up and shutdown. The other ten are
+consumers, in three kinds:
 
-The smallest, `0x1407c5660`, was read whole, and the others share its shape:
+    consumer                     reads through     reads
+    7 between 0x1407c52b0 and    0x14053bee0,      sets selected by swap event and hand
+      0x1407c5fb0                  0x14053bfa0       variables, turned into file requests
+    0x14069a870, 0x1407c5b00     0x14053c080       a set's checksum triples (+0x30)
+    0x1403e1b20                  0x14053c0e0       the attacks (+0x70) of the set selected
+                                                     by the empty swap event
 
-1. it obtains a handle from an animation graph through a virtual call, and gives up if
+**How a set is selected** (`0x14053c320`, the core of the first kind). The caller passes a
+string key and, optionally, a list of variable values. The sets of the project are tried in
+order, and the first that passes is taken:
+
+1. if the key is not empty, the set qualifies only if one of its swap events **is** that
+   string — handles are compared, which for interned strings is equality;
+2. if the key is empty and the caller passed variable values, the swap events are not
+   consulted and the set is selected on its hand variables alone;
+3. every hand variable the set has must be in range — `min <= value <= max` — with the
+   value taken from the caller's list, or failing that read from the behaviour graph by
+   name (`0x140bb6aa0`, a hash lookup in the graph's variable table).
+
+So **the lookup key is the swap event**, and the hand variables are ranges checked against
+the graph's live variables. A creature's single set, whose swap events are empty, is the
+one the empty key finds.
+
+**How a request is built** (`0x1407c5660`, read whole; the other six share its shape):
+
+1. it obtains an object from the animation graph through a virtual call, and gives up if
    there is none;
-2. **it returns without doing anything if either singleton is missing** — the set data
-   at `0x143138d58`, or `AnimationFileManagerSingleton` at `0x143138e90`;
-3. it calls a set data lookup, `0x14053bfa0`, which takes the project's lock and walks its
-   sets (`0x14053c530`), running `0x14053cd80` on each — a hash lookup on a string key —
-   and collects what matches into a list;
-4. it hands that list to the file manager, `0x140bca970`, and returns the result.
+2. **it returns without doing anything if either singleton is missing** — the set data at
+   `0x143138d58`, or `AnimationFileManagerSingleton` at `0x143138e90`;
+3. it calls `0x14053bfa0`, which takes a lock and walks an array on that object
+   (`0x14053c530`). For each element, `0x14053cd80` reads the string the element carries at
+   +0x1f0, looks it up in the manager's per-project table, selects a set as above, and adds
+   what it finds to a list;
+4. it hands the list to the file manager and returns the result.
 
-The eight consumers in the cluster pair the two set data lookups (`0x14053bee0`,
-`0x14053bfa0`) with three file manager entry points: `0x140bca970` from three of them,
-`0x140bcab30` from three, `0x140bcad40` from one. **Which string the per-set lookup is
-keyed on** — a swap event, a set name, a clip — and what the second and third entry
-points do has not been established.
+The file manager's three entry points, as far as they were read:
+
+- `0x140bca970` **builds a request** — it allocates a 0x68-byte request object — and
+  **does nothing when the list is empty**: it checks the list's count first and returns
+  without allocating.
+- `0x140bcab30` builds the same request through the same helpers, taking **one more
+  pointer argument**. The consumers that call it are byte for byte the ones that call
+  `0x140bca970`, except for passing that argument. It is not a release; what the extra
+  argument carries was not established.
+- `0x140bcad40` resolves the list, tests it (`0x140bcd5b0`), and then **calls a virtual on
+  an object it was passed** — the shape of the `IAnimationSetCallbackFunctor` interface the
+  executable names, a check-then-notify.
 
 ### 4.3 Is it necessary
 
@@ -283,24 +327,35 @@ that cached flag is set — only when clips are *not* all loaded up front — an
 (`0x1407c4f90`) mirrors it. So:
 
 - **`bInitiallyLoadAllClips = 0`, the default.** The file manager exists, and loading is
-  on demand. Its load entry `0x140bca970` has four callers: the three set data consumers,
+  on demand. Its request entry `0x140bca970` has four callers: three set data consumers,
   and a wrapper `0x140bcb710` whose only caller, `0x1407c6170`, feeds it an
   `AnimationStreamLoadGame` — a reader over the save game, every one of whose virtuals
-  calls the same stream read. The counterpart `0x140bcab30` is the same: three consumers
-  and a wrapper reached the same way. So in play, the files the manager is asked for are
-  the ones the set data lists, and the only other source is a save game restoring what
-  was loaded when it was written.
-- **`bInitiallyLoadAllClips = 1`.** The file manager is never created, every consumer
-  returns at step 2, and the set data is never consulted. What loads the clips in that
-  mode was not traced; the setting's name says it.
+  calls the same stream read. The second request entry `0x140bcab30` is the same: three
+  consumers, and a wrapper `0x140bcb820` whose only caller, `0x1407c6290`, builds the same
+  save-game reader. So in play, the files the manager is asked for are the ones the set data
+  selects, and the only other source is a save game restoring what was loaded when it was
+  written.
+- **`bInitiallyLoadAllClips = 1`.** The file manager is never created, every
+  request-building consumer returns at step 2, and the set data's file lists are never
+  consulted. The setting is read nowhere else — `0x1407c50d0` has two callers, start-up and
+  shutdown — so its whole effect is whether the file manager exists. The about forty other
+  places that test for the file manager only skip optional work when it is absent (an
+  update call, extra registrations, a per-actor list). **The code that loads every clip up
+  front in that mode was not located**. Two consumers, `0x14069a870` (checksums) and
+  `0x1403e1b20` (attacks), do not test for the file manager, so the set data is still read
+  in that mode — for its attacks and checksums, not to request files.
 
 That is the mechanism behind the modding symptom in §0: an animation whose checksum is
 missing from the set the game looks up is never requested, so it is never loaded, and a
 state that reaches its clip plays nothing.
 
-What happens when neither the single file nor the split folder is present was not
-traced. The manager is still created (§4.1); by the above, a project it holds no sets for
-yields nothing to load.
+**With neither the single file nor the split folder, nothing is loaded on demand.** The
+loader builds the `DirList.txt` path, reads it into a list, and when the list is empty jumps
+straight to its end (`0x14053bd86`) — no message, no error path; the function references no
+string at all. The manager is still created (§4.1) and holds no projects. Every lookup then
+fails at the project table: `0x14053cd80`'s not-found path adds nothing, the request list
+stays empty, and `0x140bca970` returns without building a request. Under the default
+settings every creature is left without its animation files.
 
 ## 5. Not yet examined
 
@@ -313,8 +368,10 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   the extracted files (`ChairEatSoup`, `_MTSolo`). So they are not simply node names.
 - **which animations belong to each set,** and whether that follows from the subtree the
   swap events enter.
-- **which key the engine looks sets up by** (§4.2), which would say what a swap event does
-  at run time.
+- **what sends a swap event to the lookup**, now that the key is known to be one (§4.2):
+  which game code passes which event string, and when.
+- **the up-front loading path** under `bInitiallyLoadAllClips = 1` (§4.3), and what
+  `0x140bcab30`'s extra argument carries.
 - **how swap events, hand variables and attacks map to the graphs** — which transition
   each swap event fires, which selector each hand variable range picks, and which state an
   attack event reaches.
