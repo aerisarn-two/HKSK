@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/HKSK/HKSK.csproj" />
     <!-- The masters are read the way the generator reads them. -->
     <ProjectReference Include="../../tools/speedgen/speedgen.csproj" />
+    <ProjectReference Include="../../tools/setgen/setgen.csproj" />
   </ItemGroup>
 
   <!--
