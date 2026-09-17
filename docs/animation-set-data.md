@@ -643,6 +643,27 @@ condition that reads only hand types). Graphs that come out the same are built o
 **The base set** holds every file the character lists that no other set holds. It is what
 an actor's graph loads when it is built (§4.3).
 
+**Order matters for attacks.** The race takes the first set whose hand ranges hold, and a
+set split by weapon for an idle event holds no attacks. Sorted by name, `IdleStop_R0-4_L0-11`
+came before `Weapon_R0-0_L0-0` and answered the empty hands with nothing: the player, the
+draugr, the falmer, the riekling and the sphere centurion lost their hand-to-hand attacks.
+Sets with attacks come first.
+
+**Grouping, not coverage, is where weapons differ from the shipped file.** Replaying the
+equip lookup -- an equip key with a shipped weapon set's hand types -- the chosen set and the
+base load 71.8% of that shipped set's files. But 98.0% of them are in *some* set that applies
+under that weapon's hand types: the shipped file loads a weapon's sneak, sprint and shout
+variants on equip, and the rebuild loads them on `SneakStart`, `sprintStart` and
+`shoutStart` for that weapon. What is in no applicable set is the moved first-person
+killmoves (§3.3) and the bulk edit's own oddities: `2HW_AttackForwardSprint` is listed under
+bows, crossbows and every magic combination, `MLh_Unequip` under staves.
+
+Sync start states were tried as "where the variable's writers are" rather than "any state",
+to stop a greatsword reaching the one-handed first-person idles. It changed nothing that
+matters: the sync variables on the player (`iSyncIdleState`, `iSyncSprintState`,
+`iIsInSneak`) mirror a mode, not a weapon, and the greatsword's readied state genuinely sits
+inside the one-handed behaviour file.
+
 ### 5.6 Attacks
 
 An attack's clips follow the transition the event takes from each state (a state's own
@@ -650,8 +671,17 @@ before the machine's wildcards), into the state it enters, narrowed by the neste
 transition names, or by the event's own transitions in the machine below, or else its start
 state. The nested state is what matters: the chaurus's eleven attacks all enter
 `AttackState`, and each transition names the state inside it. Against the shipped attacks,
-over the 121 combinations the race asks about, 21,791 of 27,039 (80.6%) event-to-clips
-entries are identical.
+over the 121 combinations the race asks about, 22,949 of 27,039 (84.9%) event-to-clips
+entries are identical, and every one of the 4,538 combinations the shipped file gives a race
+attacks for gets attacks. Clip names are listed once each: two branches can hold a clip of the
+same name.
+
+Of the entries that differ, 855 are events the races do not list (the dog's and mammoth's
+`attackStart_ForwardPowerShort`, the goat's `attackStart_Attack2`) or that no transition
+takes (the werewolf's `AttackStartHowlExplode`) -- nothing asks for them. The rest are
+follow-on clips the shipped file lists with the attack (the lurker's and giant's `x2`, the
+spider centurion's head layer) and choices made by variables other than hand types, which
+are left open: the draugr's `bashStart` lists every weapon's bash.
 
 ### 5.7 What comes out
 
@@ -664,6 +694,8 @@ entries are identical.
       not: the werewolf's human-side killmoves, which its character
            file does not list                                              5
     files of a shipped idle set that its own keys load                 2,147 of 2,689 (79.8%)
+    files of a shipped weapon set in some set applicable to the weapon 15,231 of 15,538 (98.0%)
+    attack entries identical over the 121 combinations                 22,949 of 27,039 (84.9%)
 
 Of the 542 not loaded, most are not derivable from the graphs:
 
@@ -695,6 +727,7 @@ That puts the derivable part at 2,147 of about 2,200.
 - **Reading only a machine's `m_startStateId`.** Random and sync starts enter every state,
   and a random-transition event connects every state to every other; without them the
   graph's home is a handful of states and every bounded walk is unbounded (§5.4).
+- **Sorting sets by name.** The race takes the first set whose hand ranges hold (§5.5).
 - **Following a key instead of a transition.** A generic key -- `00NextClip`,
   `IdleChairExitStart` -- leaves hundreds of states; what belongs with an idle is the
   transition that leaves *its* states.

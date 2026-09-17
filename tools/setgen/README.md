@@ -42,7 +42,8 @@ Against the shipped file (`SetDataRebuildTests`):
 | files the shipped data lists that are in some set of the project | 6,758 of 6,829 |
 | of the rest: first-person killmoves moved to the victim's sets, and the werewolf's human-side killmoves | 66 + 5 |
 | files of a shipped idle set that its own keys load | 2,147 of 2,689 (79.8%) |
-| attack entries identical, over the 121 weapon combinations a race asks about | 21,791 of 27,039 (80.6%) |
+| attack entries identical, over the 121 weapon combinations a race asks about | 22,949 of 27,039 (84.9%) |
+| files of a shipped weapon set in some set that applies under that weapon | 15,231 of 15,538 (98.0%) |
 | one-set creatures identical to the shipped set | 26 of 38 |
 | size | 2.7 MB (shipped 0.8 MB) |
 
