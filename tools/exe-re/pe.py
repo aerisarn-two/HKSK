@@ -77,6 +77,37 @@ class PE:
             i += 1
         return out
 
+    def all_vftables(self, max_slots=64):
+        """Every RTTI virtual table: (vftable VA, subobject offset, decorated class name, slots).
+
+        Scans for CompleteObjectLocators -- signature 1 and their own RVA at +20 -- rather
+        than starting from a name, so it also finds classes nobody thought to look for.
+        The subobject offset (+4) says which base a secondary vftable belongs to: a slot
+        called through `this+0x38` is a slot of the vftable whose offset is 0x38. A table
+        ends at the first qword that is not a code address.
+        """
+        text = next(s for s in self.sections if s[0] == '.text')
+        lo, hi = self.image_base + text[1], self.image_base + text[1] + text[2]
+        i, d = 0, self.d
+        while (i := d.find(b'\x01\0\0\0', i)) >= 0:
+            off, i = i, i + 1
+            if off % 4 or off + 24 > len(d):
+                continue
+            _, suboff, _, td, _, self_rva = struct.unpack_from('<IIIIII', d, off)
+            try:
+                if self_rva != self.off2va(off) - self.image_base:
+                    continue
+                name = self.cstr(self.image_base + td + 16)
+            except Exception:
+                continue
+            if not name.startswith('.?A'):
+                continue
+            for holder in self.pointers_to(self.off2va(off)):
+                vt, slots = holder + 8, []
+                while len(slots) < max_slots and lo <= (q := self.qword(vt + 8 * len(slots))) < hi:
+                    slots.append(q)
+                yield vt, suboff, name, slots
+
     def setting(self, name_with_section):
         """A Bethesda INI setting record: +0 vtable, +8 value, +16 name pointer."""
         out = []
