@@ -37,9 +37,9 @@ The **cache side** is generated, and is what the game actually reads:
 | File | Holds |
 | --- | --- |
 | `animationdatasinglefile.txt` | every project's clips, and its root motion |
-| `animationsetdatasinglefile.txt` | each creature's attack and idle sets |
-| `speeddatasinglefile.txt` | what speed each actor really moves at, per state |
-| `animationdata/`, `animationsetdata/` | the same content, split per project |
+| `animationsetdatasinglefile.txt` | each creature's attack and idle sets — **`docs/animation-set-data.md`** |
+| `speeddatasinglefile.txt` | what speed each actor really moves at, per state — **`docs/speed-data.md`** |
+| `animationdata/`, `animationsetdata/` | a pre-DLC snapshot of the same, split per project: 39 projects, and 204 of its 813 sets differ from the single file |
 
 The cache exists so the game can answer "how far does this animation travel?"
 and "what events does this clip fire?" without loading the animation. That
