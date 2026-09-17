@@ -462,6 +462,28 @@ three path fragments are interned as globals:
 for. A tool adding one creature can write a single `.SPD` rather than rewriting the
 merged file.
 
+### 4.4 Nothing in the executable records a table
+
+The tool that wrote the shipped file is not in `SkyrimSE.exe`, as far as the parts of the
+binary that the SteamStub wrapper leaves readable can say. RTTI and virtual tables live
+in `.rdata`, which is not encrypted, so the class layout reads from the retail file:
+
+    BSSpeedSamplerDBManager   vftable 0x141988548   2 slots   [0] 0x140bc1420  [1] Query 0x140bc0e30
+    BSISpeedSamplerDB         vftable 0x141988530   2 slots   [0] 0x140bc13f0  [1] pure
+    BSSpeedSamplerModifier    vftable 0x141985188  25 slots   the same count as
+                              BSIsActiveModifier and BSModifyOnceModifier
+
+The database has a destructor and the query and nothing else -- no method that adds a
+sample, flushes or saves -- and the modifier adds no virtual of its own to the 25 every
+Havok modifier here has. Its `Update` (§4.2) reads. The strings agree: every one naming
+the sampler or the table is on the reading side, the two load paths and the INI gate,
+with no format string or command beside them.
+
+What this does not exclude is a non-virtual function that writes a `.SPD`: that would
+show as a second code reference to the path globals beside the gated loader (§4.3), and
+finding code references needs `.text` unwrapped. That step was not repeated for this
+section.
+
 ## 5. The graph side
 
 ### 5.1 Where the answer goes
