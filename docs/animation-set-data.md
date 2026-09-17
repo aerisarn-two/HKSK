@@ -552,12 +552,26 @@ reader is the melee combat context:
   reach, and the translation at the hit frame, rotated into the actor's frame, is where the
   blow lands.
 
-So the flag says where an attack's travel comes from. It is set on the player's regular,
-sprint, bash and hand-to-hand attacks, the werewolf's running and side attacks, and the
-floating creatures' -- attacks the character makes on the move -- and clear on lunges and
-power attacks, whose root motion carries the strike. An attack written without it is judged
-by its clip's own travel; for an in-place swing made while running, that is a reach of zero
-where the game expects the run's.
+So the flag says where an attack's travel comes from, and the 38 events it is set on say it
+plainly: **it marks an attack the character makes while it is still moving.**
+
+- The **netch** has three and is the whole argument in one project: `attackStartLeft` and
+  `attackStartRight`, the swipes it makes drifting, are set; `attackStartPowerStanding` is
+  the one it stops for, and is clear.
+- The **witchlight** has one attack and it is set; the **storm atronach** has three and all
+  three are. Neither ever stands still -- a hovering creature is moving whatever it plays.
+- The **werewolf** sets it on its plain left and right attacks, whose states hold
+  `LeftAttackRunningDirectionalBlend` and its eight directional running-attack clips; on the
+  dual and backhand attacks, whose states blend `LocomotionCombatBlend` and the locomotion
+  `DirectionBlend` under the attack; and on the run-power and side attacks. It is clear on
+  the two power combos and the howl, whose states hold their own clips and nothing else.
+- The **player** sets it on the plain `attackStart` of every weapon type, the sprint
+  attacks, both hand-to-hand hooks and the shield bash of the hand-to-hand sets. It is clear
+  on every directional and standing power attack, every other bash, the dual-wield specials
+  and the mounted attacks -- the ones that plant the character and carry it by root motion.
+
+An attack written without it is judged by its clip's own travel; for an in-place swing made
+while running, that is a reach of zero where the game expects the run's.
 
 `animationdatasinglefile.txt` is therefore read by combat through the set data: the `HitFrame`
 annotation and the root motion of the clips an attack lists are what the AI measures
@@ -776,6 +790,16 @@ That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
+The moving-attack flag is not derived at all (§6). `setgen --flags-from <shipped file>` takes
+it, and nothing else, from a shipped file:
+
+    attacks flagged as moving              1,180 of 3,819
+    attacks the shipped file answered      3,305; the other 514 nobody shipped
+    flagged events reproduced              38 of 38, and no event flagged that vanilla does not
+
+The 38 become 1,180 entries because a rebuilt project states an attack once per set that can
+make it, where the shipped file states the same 38 across its own 124.
+
 ### 5.8 Traps
 
 - **Comparing Havok objects by value.** HKX2's objects compare and hash by value, and a
@@ -818,11 +842,16 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   | the race's `ATKD` flags on the matching attack | flagged and clear attacks share every combination of them |
   | `bAnimationDriven` around the attack's states | set and clear on both sides |
   | the attack blended into locomotion — a state parallel to the movement machine, a partial-bone or layered generator, a bone switch | separates the werewolf's running attacks and nothing else; the player's and the floating creatures' flagged attacks are ordinary states |
-  | travelling variants inside the state, or the clips' own root motion | the flagged set includes attacks whose clips travel and attacks whose clips do not |
+  | a travelling clip in the innermost state the event reaches | 28 of 38 flagged events have one — and so do 108 of the 293 clear ones, because a lunge's single clip is exactly the case the flag is *not* for |
+  | that, and more than one clip, for a state holding movement variants | worse: 15 of 38, against 27 clear. The multi-clip states it finds are the player's directional power attacks, whose several clips are weapon variants, not movement ones |
 
-  What is left is that it was authored per attack, which is what the exe's use of it
-  suggests: it is the animator saying "this one's reach is the actor's speed, not the
-  clip's".
+  What §4.6 shows is that the flag means what its name says. What it does not give is a
+  predicate: "the character is still moving" is a fact about the situation the attack is
+  used in, and the graph states it only where an animator happened to build the movement
+  into the state. The werewolf settles it by contradicting itself -- `AttackStartDualSprinting`
+  is flagged and `AttackStartLeftSprinting` is not, with the same shape and sibling clips.
+  It was authored per attack, which is why `setgen --flags-from` copies it rather than
+  deriving it.
 
 In the executable:
 

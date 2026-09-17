@@ -2,7 +2,7 @@
 
 Writes `animationsetdatasinglefile.txt` from the game's other assets:
 
-    setgen <meshes> <data> [-o <output>] [--slack <factor>] [--force]
+    setgen <meshes> <data> [-o <output>] [--slack <factor>] [--flags-from <file>] [--force]
 
 - `<meshes>` — the extracted `meshes` folder: `animationdatasinglefile.txt` and the
   actors' behaviour and character files.
@@ -12,11 +12,15 @@ Writes `animationsetdatasinglefile.txt` from the game's other assets:
 - `--slack` — how much larger than one weapon's files a set may grow to cover several.
   The default, 1.5, keeps the player's sets to a few thousand; 1 splits a set wherever two
   weapons load different files.
+- `--flags-from` — a shipped `animationsetdatasinglefile.txt` to take the moving-attack
+  flag from. It is the one value in the file nothing derives (`docs/animation-set-data.md`
+  §4.6, §6); without this the flag is written as 0 everywhere, which tells the combat AI to
+  measure every attack by its animation's own travel.
 - `--force` — allow writing over the shipped file inside `<meshes>`, which is otherwise
   refused.
 
-A shipped `animationsetdatasinglefile.txt` in `<meshes>` is never read: the cache drops it
-before anything is generated. The algorithm is `HKSK.SetData.SetDataGenerator`; this tool
+Apart from `--flags-from`, a shipped `animationsetdatasinglefile.txt` is never read: the
+cache drops the one in `<meshes>` before anything is generated. The algorithm is `HKSK.SetData.SetDataGenerator`; this tool
 only opens the masters, which the library deliberately does not.
 
 ## What it builds
