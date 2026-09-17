@@ -223,6 +223,28 @@ A related search found where a clip generator's mirror bit is read: `hkbClipGene
 flags byte is at +0x73, so `testb $0x4,0x73(%r` finds the two graph visitors that collect
 clips for the animation data manager.
 
+### 3.10 From an animation variable's name to the code that uses it
+
+A graph variable's name is not a literal with a global of its own. The engine keeps one
+lazily-built table of 189 `BSFixedString`s -- bone names, event names and variable names
+together -- and reaches each by a fixed offset into it:
+
+1. find the name's bytes in the file and turn the offset into an address (`pe.off2va`);
+2. the address has **no data pointers**: it is loaded with `lea`, once, by the function
+   that fills the table (`0x14021f300`). Grepping `text.asm` for the address gives that one
+   site, and the neighbouring stores give the whole table in order -- each entry is
+   `lea 0x<slot>(%rbx),%rcx; lea <string>(%rip),%rdx; call <BSFixedString assign>`;
+3. the slot is the name's identity from then on. `bAnimationDriven` is `+0x568`,
+   `bAllowRotation` `+0x570`, `Direction` `+0x518`, `IsSprinting` `+0x350`;
+4. the table is a thread-safe static: 28 accessors each guard it (`_Init_thread_header` at
+   `0x14153b45c`) and return the base, `0x1420f6370`. So a user of one name looks like
+   `call <accessor>` followed within a few instructions by `lea 0x<slot>(%rax),%rdx`;
+5. grep for exactly that pairing. Searching the slot's absolute address finds nothing, and
+   searching `0x568(%r` alone finds 74 unrelated structure fields.
+
+Whether a hit reads or writes the variable is settled by the argument, not the vtable slot:
+a getter is handed a **pointer to a local** that the caller reads afterwards.
+
 ## 4. Worked examples
 
 **The speed table** (`docs/speed-data.md` §4). Strings named `bUseSpeedSampler`, the
@@ -256,6 +278,26 @@ the key came from a helper that fills a `TESActionData` (named by its vftable's 
 asks the idle manager which idle the action would pick. The string that helper returns was
 matched to the idle record's `ENAM` offset from the record loader's switch over subrecord
 types.
+
+**Who sets `bAnimationDriven`** (§3.10). Nothing in the executable does. The name resolves
+to slot `+0x568` of the string table, and exactly one call site takes it: `0x140669760`,
+which asks the actor's `IAnimationGraphManagerHolder` (at `this+0x38`, vtable slot `+0x90`)
+for `bAnimationDriven` and then for `bAllowRotation`, both into locals it reads afterwards --
+a getter, twice. It compares the pair with the previous frame's and, only on a change, sends
+one of three events through `0x14069f450`:
+
+    bAnimationDriven   bAllowRotation    event
+    0                  0                 StartMotionDriven       0x1405418e0
+    1                  -                 StartAnimationDriven    0x1405419c0
+    0                  1                 StartAllowRotation      0x140541aa0
+
+So the direction is the opposite of the obvious one. The **graph** decides whether it is
+animation-driven -- an animator ticks a `BSIsActiveModifier` whose `bIsActive0` is bound to
+the variable on the branch that should carry its own root motion, and the variable is 0 in
+every project until something raises it -- and the **engine polls it** and moves the actor's
+motion mode to match. It is a report from the animation to the game, not a command from the
+game to the animation, which is why it explains nothing about values the game stores beside
+a clip (`docs/animation-set-data.md` §6).
 
 **The attack flag** (`docs/animation-set-data.md` §4.6). The parser gave the entry layout
 and that the flag is stored as `atoi > 0`. The obvious leads -- the race's map, the combat
