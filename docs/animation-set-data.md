@@ -46,7 +46,7 @@ is self-delimiting through its counts, and the file is read until it runs out.
         V3                                            every one of the 990 sets
         <swap event count>, then the events
         <hand variable count>, then name, min, max per variable
-        <attack count>, then per attack: event, mirrored flag, clip count, clips
+        <attack count>, then per attack: event, moving-attack flag, clip count, clips
         <animation count>, then three lines per animation: folder CRC, name CRC, 7891816
 
 What the parts hold, as the shipped data has them (measured when the reader was written,
@@ -65,7 +65,8 @@ and recorded beside it):
   hand variables, and 68 have hand variables and no attacks.
 - **Attacks**: 737 in the file. The event is a behaviour event (735 of 737 declared);
   the clips are clip generator names (776 of the 793 named are clips the project caches).
-  685 attacks name one clip, 50 several, 2 none. The mirrored flag is only ever 0 or 1.
+  685 attacks name one clip, 50 several, 2 none. The flag after the event is only ever 0 or
+  1, set on 124: it marks a moving attack (§4.6), and was long misnamed "mirrored".
 - **Checksums**: 77 of the 990 sets name no animations at all, which is normal.
 
 ## 2. The checksums decode completely
@@ -276,7 +277,8 @@ file order:
     offset   field                     from the file
     +0x00    swap events               an array of string handles, count at +0x10
     +0x18    hand variables            16-byte entries: name, min, max; count at +0x28
-    +0x70    attacks                   event name, clips, and the mirrored flag as a byte
+    +0x70    attacks                   0x18-byte entries: event name, clip list, and the
+                                       moving-attack flag as a byte at +0x10 (`atoi > 0`)
     +0x30    checksum triples          written last, when the set is finished
 
 Two details of the parse are not visible in the file's own description. The version line
@@ -509,6 +511,41 @@ qualifies and the project has exactly one set, that set is used (`0x14053c131`).
 - a creature's single set carries its attacks, hand variables or not;
 - in a project with several sets, only sets with hand variables supply attacks, and the
   attacks on its base set are never read.
+
+**The flag after an attack's event is "moving attack", not "mirrored".** It was named
+mirrored in HKSK's first reader and never checked, and it follows no clip's mirror bit: 122
+shipped attacks set it with no mirrored clip, 19 clear it with every clip mirrored. Its
+reader is the melee combat context:
+
+- `0x1406b7810` builds the actor's key, `right << 16 | left` from its equipped items, and
+  `0x1406b7870` takes the race's attack array for it.
+- `0x1408a3d30` (reached from `CombatBehaviorTreeCreateContextNode2<CombatBehaviorContextMelee>`)
+  walks the combat attacks the actor can make, finds each one's set data entry by event name,
+  and hands its clip names to `0x140442a80`. That asks the animation data manager
+  (`0x143138d50`, the `animationdatasinglefile.txt` side) for the clips' movement and the
+  time of their `HitFrame` annotation, and returns the time, the translation at the end of
+  the clip and the translation at the hit frame.
+- It then stores a reach: **-1 when the flag is set**, the length of the final translation,
+  scaled by the actor, when not.
+- The attack check (`0x1408a2ee0`, from `CombatBehaviorAttack` and `CombatBehaviorBash`)
+  reads a reach below zero as "the attacker's own speed times the time to the hit frame" --
+  the speed from the actor's process, `+0xf8 -> +0x8 -> +0x2a8` -- and it is the only reader
+  of `fCombatAttackMovingAttackDistance`, `fCombatAttackMovingAttackReachMult` and
+  `fCombatAttackMovingStrikeAngleMult`. With the flag clear, the clip's root motion is the
+  reach, and the translation at the hit frame, rotated into the actor's frame, is where the
+  blow lands.
+
+So the flag says where an attack's travel comes from. It is set on the player's regular,
+sprint, bash and hand-to-hand attacks, the werewolf's running and side attacks, and the
+floating creatures' -- attacks the character makes on the move -- and clear on lunges and
+power attacks, whose root motion carries the strike. An attack written without it is judged
+by its clip's own travel; for an in-place swing made while running, that is a reach of zero
+where the game expects the run's.
+
+`animationdatasinglefile.txt` is therefore read by combat through the set data: the `HitFrame`
+annotation and the root motion of the clips an attack lists are what the AI measures
+attacks with. The lookup's result is not checked: a clip the cache has no movement or
+`HitFrame` for leaves the time at zero and the translations at their defaults.
 
 ## 5. Rebuilding the file
 
@@ -753,8 +790,11 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 - **how the shipped file grouped keys into sets.** The rebuild merges keys that load the
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
-- **the attacks that differ** (§5.6): 19.4% of the event-to-clips entries. The mirrored flag
-  is written as 0 throughout; what it means to the race was not read.
+- **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
+- **the moving-attack flag** (§4.6) is written as 0 throughout. What it means is read; what
+  decides it is not in the behaviour graphs as a rule: a bone switch separates the
+  werewolf's running attacks, and the player's and the floating creatures' flagged attacks
+  have nothing in common a graph walk finds.
 
 In the executable:
 

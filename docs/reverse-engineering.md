@@ -203,6 +203,26 @@ and checking that its neighbours at a fixed stride are names too:
 The last named index is 0x16d. For a constant past it (0x16e), say that it is past the
 table rather than guess what it resolves to.
 
+### 3.9 From a structure's shape to its reader
+
+When a field's reader cannot be reached from a name -- the attack flag's container was filed
+in a map and the map's readers were inlined -- search for the *shape* of the access. The
+parser gave the layout: entries of 0x18 bytes in an array, a clip list at +0x08 whose
+header's sign bit marks inline storage, the flag as a byte at +0x10. A reader has to index
+by three (`lea (%rX,%rY,2)`), test a byte at +0x10, and test a header's sign
+(`cmpl $0x0,(%rX)`). Split `text.asm` into functions and keep the ones with all three:
+
+    triple = lea +\(%r\w+,%r\w+,2\),%r\w+
+    flag   = cmpb +\$0x0,0x10\(%r\w+\)  |  movzbl +0x10\(%r\w+\),
+    inline = cmpl +\$0x0,\(%r\w+\)
+
+Of every function in the executable, one matched, and it was the reader. Each condition
+alone matches thousands.
+
+A related search found where a clip generator's mirror bit is read: `hkbClipGenerator`'s
+flags byte is at +0x73, so `testb $0x4,0x73(%r` finds the two graph visitors that collect
+clips for the animation data manager.
+
 ## 4. Worked examples
 
 **The speed table** (`docs/speed-data.md` §4). Strings named `bUseSpeedSampler`, the
@@ -237,6 +257,12 @@ asks the idle manager which idle the action would pick. The string that helper r
 matched to the idle record's `ENAM` offset from the record loader's switch over subrecord
 types.
 
+**The attack flag** (`docs/animation-set-data.md` §4.6). The parser gave the entry layout
+and that the flag is stored as `atoi > 0`. The obvious leads -- the race's map, the combat
+settings for moving attacks -- led to combat code that never read the byte. The shape search
+(§3.9) found the reader, `CombatBehaviorContextMelee`'s attack update; following the value it
+stores into the attack check that reads the moving-attack settings named the flag.
+
 ## 5. Traps
 
 - **Reading `.text` from the wrapped binary.** It does not fail; it disassembles to
@@ -267,6 +293,11 @@ types.
 - **Assuming a family of functions shares a signature.** Seven consumers "took the key as
   the first argument" until two of them turned out to take an actor and an action. Read the
   argument setup at each call site before generalising.
+- **A field named before it was read.** HKSK called the attack flag "mirrored" from its first
+  reader. The data never agreed -- 122 flagged attacks have no mirrored clip -- and the
+  executable uses it for something else entirely: whether combat measures the attack's reach
+  by the clip's root motion or by the attacker's own movement. Check a name against its
+  reader, or say it is a guess.
 - **"Only" without the other paths classified.** A behaviour is only reached from X when
   every caller and every stored pointer to the entry point has been accounted for, save-game
   and destructor paths included.
