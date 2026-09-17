@@ -1159,6 +1159,17 @@ expression evaluated by the engine's own expression language, the clip played at
 result -- builds the block at **61 of 61**, and no other block moves. That takes the
 rebuild to **all 86 shipped blocks**.
 
+The spider is the only creature built this way, and that was checked rather than
+assumed (`BoundRateTests`). Three expressions in the game make a clip's playback
+follow a speed: the spider's four, the twelve quadrupeds' backward walk at
+`clamp(Speed/walkBackRate, 0.01, Speed)` -- a state none of their tables is sampled in,
+all twelve already rebuilt whole or within a point -- and the witchlight's `WalkF` at
+`Speed/runRate`, whose clips travel nothing, so its zero table stays zero at any rate.
+No blend reads a speed through an expression at all: the six whose parameter an
+expression computes from something named for speed are the frost atronach's turns,
+damped at a rate called `SpeedAcc`, and the vampire lord's bat sprint, gated on
+`Speed > 5`.
+
 **`ChaurusFlyer` has a block and its values are not the shipped ones.** It ships
 zero to float noise at every heading. Its graph cannot say zero: everything that
 moves it passes through one `CombatLocomotionBlend` of four clips recorded at 370,
