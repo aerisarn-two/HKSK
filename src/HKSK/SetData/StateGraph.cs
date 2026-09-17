@@ -11,53 +11,75 @@ namespace HKSK.SetData;
 /// <remarks>
 /// <para>
 /// A behaviour is a graph, not a tree, and a cyclic one: an idle's exit leads back to the
-/// default state, from which every other idle is entered. So "what an event leads to" has
-/// no answer as a walk -- a walk that follows transitions reaches the whole behaviour, and
-/// one that stops at the transitions the game keys on stops before the exit. The answer is
-/// <em>dominance</em>. An event's region is the states that cannot be reached from the root
-/// without going through the states the event enters: an idle's loop and exit are there,
-/// and locomotion, reachable by more than one key, is not.
+/// default state, from which every other idle is entered. What an event leads to is
+/// therefore bounded by <em>home</em> -- the states the graph reaches with no key at all.
+/// From the states an event enters, every transition is followed, on a key or not, until
+/// the graph is home again (<see cref="UntilHome"/>). That brings in an idle's loop, the
+/// variants its next-clip key picks between, and its exit, and stops before the default
+/// state every exit returns to. <c>docs/animation-set-data.md</c> §5.4 compares it with
+/// the rules that were measured and dropped.
 /// </para>
 /// <para>
 /// A node is a state of a machine. A state's own clips are the clips below its generator
-/// down to, not into, the machines nested there; each nested machine is an edge to its
-/// start state. Transitions are edges -- a state's own, and a machine's wildcards from every
-/// state -- and a transition naming a nested state is an edge to that state as well.
-/// Weapon choices are resolved against the hand types, as <see cref="GraphReach"/> does.
+/// down to, not into, the machines nested there. Edges are a nested machine's entry --
+/// its start state, or every state when it starts at random or from a sync variable --
+/// a state's own transitions, a machine's wildcards and its random-transition event from
+/// every state, and the nested state a transition names. Weapon choices are resolved
+/// against the hand types, as <see cref="GraphReach"/> does.
 /// </para>
 /// </remarks>
 internal sealed class StateGraph
 {
     private const int FlagDisabled = 0x20, FlagToNestedStateIdIsValid = 0x2000;
 
-    private readonly List<HashSet<hkbClipGenerator>> _clips = [];
-    private readonly List<List<int>> _next = [];
-    private readonly Dictionary<string, List<int>> _entered = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<int> _unkeyed = [];
+    /// <summary><c>hkbStateMachine::StartStateMode</c>: from a sync variable, or at random.</summary>
+    private const sbyte StartSync = 1, StartRandom = 2;
 
     /// <summary>The node every walk starts from: the root generator, above its first machine.</summary>
     private const int Root = 0;
 
+    private readonly List<HashSet<hkbClipGenerator>> _clips = [];
+    private readonly List<List<int>> _next = [];
+    private readonly Dictionary<string, List<int>> _entered = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<int> _home = [];
+
     private StateGraph() { }
 
-    /// <summary>The states that can only be reached through the states an event enters.</summary>
-    public HashSet<int> Region(string eventName)
+    /// <summary>
+    /// Everything an event can lead to before the graph is home again: every transition,
+    /// on a key or not, followed from the states it enters, stopping at home states.
+    /// </summary>
+    public HashSet<int> UntilHome(string eventName)
     {
-        if (!_entered.TryGetValue(eventName, out List<int>? targets)) return [];
+        var reached = new HashSet<int>();
+        if (!_entered.TryGetValue(eventName, out List<int>? targets)) return reached;
 
-        HashSet<int> blocked = [.. targets];
-        HashSet<int> elsewhere = Reach(Root, blocked);
-        HashSet<int> region = [];
-
+        var queue = new Queue<int>();
         foreach (int target in targets)
-            foreach (int state in Reach(target, elsewhere))
-                region.Add(state);
+            if (!_home.Contains(target) && reached.Add(target)) queue.Enqueue(target);
 
-        return region;
+        while (queue.Count > 0)
+            foreach (int next in _next[queue.Dequeue()])
+                if (!_home.Contains(next) && reached.Add(next)) queue.Enqueue(next);
+
+        return reached;
     }
 
     /// <summary>Every state the root can reach.</summary>
-    public HashSet<int> Everything() => Reach(Root, new HashSet<int>());
+    public HashSet<int> Everything()
+    {
+        var reached = new HashSet<int> { Root };
+        var queue = new Queue<int>([Root]);
+
+        while (queue.Count > 0)
+            foreach (int next in _next[queue.Dequeue()])
+                if (reached.Add(next)) queue.Enqueue(next);
+
+        return reached;
+    }
+
+    /// <summary>The states reached from the root through nesting and transitions on no key.</summary>
+    public IReadOnlySet<int> Home => _home;
 
     /// <summary>Whether any reachable machine has a transition on an event.</summary>
     public bool Handles(string eventName) => _entered.ContainsKey(eventName);
@@ -65,27 +87,8 @@ internal sealed class StateGraph
     /// <summary>The clips a set of states play themselves.</summary>
     public IEnumerable<hkbClipGenerator> ClipsOf(IEnumerable<int> states) => states.SelectMany(s => _clips[s]);
 
-    /// <summary>The states reached from the root through transitions on no key at all.</summary>
-    public IReadOnlySet<int> Unkeyed => _unkeyed;
-
     /// <summary>A value two graphs share when every choice resolved to the same edges.</summary>
     public string Signature { get; private set; } = "";
-
-    private HashSet<int> Reach(int from, IReadOnlySet<int> stop)
-    {
-        var reached = new HashSet<int>();
-        var queue = new Queue<int>();
-        if (stop.Contains(from) && from != Root) return reached;
-
-        reached.Add(from);
-        queue.Enqueue(from);
-
-        while (queue.Count > 0)
-            foreach (int next in _next[queue.Dequeue()])
-                if (!stop.Contains(next) && reached.Add(next)) queue.Enqueue(next);
-
-        return reached;
-    }
 
     /// <summary>Builds the graph a project's behaviour has for one pair of hand types.</summary>
     public static StateGraph Build(GraphReach behaviour, int right, int left, IReadOnlySet<string> keys)
@@ -137,15 +140,22 @@ internal sealed class StateGraph
             return nested;
         }
 
+        // A machine is entered at its start state -- or, when its start state mode is sync
+        // (1, from a variable) or random (2), at any of them.
         void Enter(int from, hkbStateMachine machine)
         {
-            int start = behaviour.HandBinding(machine, "startStateId") ?? machine.m_startStateId;
-            if (StateOf(machine, start) is not null)
+            IEnumerable<int> starts = machine.m_startStateMode is StartSync or StartRandom
+                ? machine.m_states.Select(s => s.m_stateId)
+                : [behaviour.HandBinding(machine, "startStateId") ?? machine.m_startStateId];
+
+            foreach (int start in starts)
             {
+                if (GraphReach.StateOf(machine, start) is null) continue;
                 int to = StateNode(machine, start);
                 graph._next[from].Add(to);
                 free.Add((from, to));
             }
+
             if (known.Add(machine)) machines.Add(machine);
         }
 
@@ -162,6 +172,22 @@ internal sealed class StateGraph
                 int node = StateNode(machine, state.m_stateId);
                 var nested = Own(node, state.m_generator);
                 foreach (hkbStateMachine inner in nested) Enter(node, inner);
+
+                // a machine's random-transition event takes any state to any other
+                if (behaviour.EventName(machine, machine.m_randomTransitionEventId) is { } random)
+                {
+                    bool key = keys.Contains(random);
+                    if (!graph._entered.TryGetValue(random, out var entered)) graph._entered[random] = entered = [];
+
+                    foreach (hkbStateMachineStateInfo other in machine.m_states)
+                    {
+                        if (other.m_stateId == state.m_stateId) continue;
+                        int to = StateNode(machine, other.m_stateId);
+                        graph._next[node].Add(to);
+                        if (!key) free.Add((node, to));
+                        if (!entered.Contains(to)) entered.Add(to);
+                    }
+                }
 
                 IEnumerable<hkbStateMachineTransitionInfo> leaving = (state.m_transitions?.m_transitions ?? []).Concat(wild);
                 foreach (hkbStateMachineTransitionInfo info in leaving)
@@ -195,22 +221,21 @@ internal sealed class StateGraph
                     if (!graph._entered.TryGetValue(name, out var entered)) graph._entered[name] = entered = [];
 
                     // Through a nested state, the event is known by that state alone: the
-                    // container above it is entered by every event naming one of its
-                    // states, and blocking it would give each of them all of the others.
-                    int known2 = targets[^1];
-                    if (!entered.Contains(known2)) entered.Add(known2);
+                    // container above it is entered by every event naming one of its states.
+                    int entry = targets[^1];
+                    if (!entered.Contains(entry)) entered.Add(entry);
                 }
             }
         }
 
         // what the graph reaches without any key: nesting, and transitions on anything else
-        graph._unkeyed.Add(Root);
+        graph._home.Add(Root);
         var queue = new Queue<int>([Root]);
         while (queue.Count > 0)
         {
             int at = queue.Dequeue();
             foreach (int next in graph._next[at])
-                if (free.Contains((at, next)) && graph._unkeyed.Add(next)) queue.Enqueue(next);
+                if (free.Contains((at, next)) && graph._home.Add(next)) queue.Enqueue(next);
         }
 
         graph.Signature = string.Join(";", graph._next.Select(n => string.Join(",", n))) + "#" +

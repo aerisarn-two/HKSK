@@ -183,7 +183,7 @@ public static class SetDataGenerator
 
             if (!bySignature.TryGetValue(graph.Signature, out var seen))
             {
-                FileSet unkeyed = files.Of(graph.ClipsOf(graph.Unkeyed));
+                FileSet home = files.Of(graph.ClipsOf(graph.Home));
                 var regions = new Dictionary<string, FileSet>(StringComparer.OrdinalIgnoreCase);
                 List<string> here = [];
 
@@ -192,8 +192,8 @@ public static class SetDataGenerator
                     if (!graph.Handles(name)) continue;
                     here.Add(name);
 
-                    FileSet region = files.Of(graph.ClipsOf(graph.Region(name)));
-                    region.ExceptWith(unkeyed);
+                    FileSet region = files.Of(graph.ClipsOf(graph.UntilHome(name)));
+                    region.ExceptWith(home);
                     regions[name] = region;
                 }
 
