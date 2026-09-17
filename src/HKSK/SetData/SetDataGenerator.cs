@@ -125,7 +125,9 @@ public static class SetDataGenerator
             List<hkbClipGenerator> clips = reach.ClipsOfAttack(name);
             if (clips.Count == 0) continue;
 
-            attacks.Add(new AttackData { EventName = name, Mirrored = 0, Clips = [.. clips.Select(c => c.m_name)] });
+            // a clip is named once, as the race looks it up by name: two branches holding a
+            // clip of the same name are one entry
+            attacks.Add(new AttackData { EventName = name, Mirrored = 0, Clips = [.. clips.Select(c => c.m_name).Distinct(StringComparer.OrdinalIgnoreCase)] });
         }
 
         return attacks;
@@ -302,7 +304,10 @@ public static class SetDataGenerator
         block.Sets.Add(baseSet);
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { BaseSetName };
-        foreach (Candidate c in merged.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+        // The race asks for attacks with hand types and no key, and takes the first set whose
+        // ranges hold (§4.6): a set split by weapon for an idle event holds no attacks, and
+        // placed first it answered for the weapon set behind it. Sets with attacks go first.
+        foreach (Candidate c in merged.OrderByDescending(c => c.Attacks.Count > 0).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
         {
             string name = c.Name;
             for (int n = 2; !names.Add(name); n++) name = $"{Path.GetFileNameWithoutExtension(c.Name)}_{n}.txt";

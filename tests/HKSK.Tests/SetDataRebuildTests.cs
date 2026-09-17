@@ -172,6 +172,42 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         Assert.All(bear, f => Assert.DoesNotContain(f, after));
     }
 
+    // The race's question (§4.6): no key, both hand types; a set without hand variables
+    // never answers it, and a project with a single set answers with that set.
+    private static ProjectAttackBlock? AttacksFor(AnimationSetDataProject project, int right, int left) =>
+        project.Sets.Sets.FirstOrDefault(s =>
+            s.HandVariables.Variables.Count > 0 &&
+            s.HandVariables.Variables.All(v => v.Name switch
+            {
+                "iRightHandType" => v.Min <= right && right <= v.Max,
+                "iLeftHandType" => v.Min <= left && left <= v.Max,
+                _ => v.Min <= 0 && 0 <= v.Max,
+            }))
+        ?? (project.Sets.Sets.Count == 1 ? project.Sets.Sets[0] : null);
+
+    [MastersFact]
+    public void EveryWeaponARaceFindsAttacksForInTheShippedFileItFindsAttacksFor()
+    {
+        int answered = 0, lost = 0;
+
+        foreach (AnimationSetDataProject shipped in _built.Shipped.Projects)
+        {
+            AnimationSetDataProject made = _built.Made.Project(shipped.Name)!;
+            foreach ((int right, int left) in HandCombinations.All)
+            {
+                if (AttacksFor(shipped, right, left) is not { Attacks.Attacks.Count: > 0 }) continue;
+
+                answered++;
+                if (AttacksFor(made, right, left) is not { Attacks.Attacks.Count: > 0 }) lost++;
+            }
+        }
+
+        // a weapon set has to come before the sets split by weapon for an idle event, which
+        // hold no attacks; sorted by name, those answered first for the empty hands
+        Assert.Equal(4538, answered);
+        Assert.Equal(0, lost);
+    }
+
     [MastersFact]
     public void AnAttackIsTheNestedStateItsTransitionNames()
     {
