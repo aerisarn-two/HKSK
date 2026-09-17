@@ -69,6 +69,10 @@ and recorded beside it):
   1, set on 124: it marks a moving attack (§4.6), and was long misnamed "mirrored".
 - **Checksums**: 77 of the 990 sets name no animations at all, which is normal.
 
+The `V3` line is not decoration: the parser reads the number after the `V` and compares it
+with 3 (`0x14053de18`). At 3 and above each checksum entry is the three numbers above;
+below 3 it is a single line, read and thrown away. Every shipped set says `V3`.
+
 ## 2. The checksums decode completely
 
 Each animation is three lines: the checksum of its folder, the checksum of its file name,
@@ -76,6 +80,12 @@ and `7891816` — `0x786B68`, the bytes of `hkx` reversed, a constant rather tha
 checksum. The checksum is CRC-32 over the lower-cased text, polynomial `0x04C11DB7`,
 reflected in and out, **with no initial value and no final xor** — not the zlib variant,
 which is why a stock CRC-32 does not reproduce these numbers (`HKSK.Cache.HavokCrc`).
+
+The three land in a 12-byte record in a different order from the file's:
+`0x14053de91`–`0x14053debf` writes the **name** checksum at +0x00, the `hkx` constant at
++0x04 and the **folder** checksum at +0x08. That is `BSResource::ID` — file, extension,
+directory — which is what §4.4's loader takes, and it settles which of the first two lines
+is the folder and which the stem.
 
 The folder is **data-relative and has no trailing separator**, the name is the bare stem:
 
@@ -285,6 +295,13 @@ Two details of the parse are not visible in the file's own description. The vers
 is optional: a first line starting with `V` is taken as the version, and anything else is
 read straight away as the swap event count. And **a set with no swap events is given one**
 — the empty string, from `0x14053d650` — so that it can still be selected.
+
+**The set names are read and discarded.** The project loop at `0x14053b200`–`0x14053b243`
+reads each name with the readline helper into one scratch buffer on the stack, overwriting
+it every time, and only then allocates the `count` sets of 0x88 bytes. Nothing keeps them,
+and no field of a set holds one: a set is addressed by its index, so **only the order
+matters**. It is in the split form, where the names are file names, that they are
+load-bearing.
 
 The singleton is referenced by 15 functions. Five are its own life cycle — the loader,
 the destructor path, creation and destruction at start-up and shutdown. The other ten are
@@ -792,9 +809,20 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
 - **the moving-attack flag** (§4.6) is written as 0 throughout. What it means is read; what
-  decides it is not in the behaviour graphs as a rule: a bone switch separates the
-  werewolf's running attacks, and the player's and the floating creatures' flagged attacks
-  have nothing in common a graph walk finds.
+  decides it is not. Every rule tried was measured against the 124 flagged attacks in the
+  shipped file and none separates them:
+
+  | tried | why it fails |
+  | --- | --- |
+  | the clip's `hkbClipGenerator` mirror bit | 122 flagged with no mirrored clip, 19 clear with every clip mirrored — the name "mirrored" came from HKSK's first reader and was never checked |
+  | the race's `ATKD` flags on the matching attack | flagged and clear attacks share every combination of them |
+  | `bAnimationDriven` around the attack's states | set and clear on both sides |
+  | the attack blended into locomotion — a state parallel to the movement machine, a partial-bone or layered generator, a bone switch | separates the werewolf's running attacks and nothing else; the player's and the floating creatures' flagged attacks are ordinary states |
+  | travelling variants inside the state, or the clips' own root motion | the flagged set includes attacks whose clips travel and attacks whose clips do not |
+
+  What is left is that it was authored per attack, which is what the exe's use of it
+  suggests: it is the animator saying "this one's reach is the actor's speed, not the
+  clip's".
 
 In the executable:
 
@@ -805,6 +833,12 @@ In the executable:
   `0x1407c58f0` and `0x1407c5e00`.
 - **which field the movement controller's records hold at +0x58.** The records come from
   the idle manager; that the field is the idle's event is likely, not shown.
+- **what the global list of `BSResource::ID`s at `0x14315c938` is.** It is an array of the
+  same 12-byte records the checksums parse into, created and destroyed with the singleton
+  (`0x140090110`, `0x141718c10`). The loader searches it (`0x14053b3c6`–`0x14053b426`) and
+  the per-request collector reserves room for all of it on top of the set's own
+  (`0x14053ce58`), so every request carries it. Neither function fills it; what does was
+  not found.
 
 In game, the test that decides §4.5: remove one travelling clip's checksum from a creature's
 set, and see whether that clip plays late, plays after the first time, or never plays. The
