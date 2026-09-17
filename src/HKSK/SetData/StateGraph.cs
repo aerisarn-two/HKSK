@@ -47,7 +47,8 @@ internal sealed class StateGraph
 
     /// <summary>
     /// Everything an event can lead to before the graph is home again: every transition,
-    /// on a key or not, followed from the states it enters, stopping at home states.
+    /// on a key or not, followed from the states it enters, stopping at home states and at
+    /// the doors of other idles.
     /// </summary>
     public HashSet<int> UntilHome(string eventName)
     {
@@ -58,12 +59,20 @@ internal sealed class StateGraph
         foreach (int target in targets)
             if (!_home.Contains(target) && reached.Add(target)) queue.Enqueue(target);
 
+        // another idle's door is where another set begins
         while (queue.Count > 0)
             foreach (int next in _next[queue.Dequeue()])
-                if (!_home.Contains(next) && reached.Add(next)) queue.Enqueue(next);
+                if (!_home.Contains(next) && !_doors.Contains(next) && reached.Add(next)) queue.Enqueue(next);
 
         return reached;
     }
+
+    /// <summary>
+    /// States a key enters straight from home: where an idle begins. A chair's entry is a
+    /// door; its exit and its next clip, entered from inside the chair, are not.
+    /// </summary>
+    private readonly HashSet<int> _doors = [];
+    private readonly List<(int From, int To)> _keyedEdges = [];
 
     /// <summary>Every state the root can reach.</summary>
     public HashSet<int> Everything()
@@ -185,6 +194,7 @@ internal sealed class StateGraph
                         int to = StateNode(machine, other.m_stateId);
                         graph._next[node].Add(to);
                         if (!key) free.Add((node, to));
+                        else graph._keyedEdges.Add((node, to));
                         if (!entered.Contains(to)) entered.Add(to);
                     }
                 }
@@ -215,6 +225,7 @@ internal sealed class StateGraph
                     {
                         graph._next[node].Add(t);
                         if (!key) free.Add((node, t));
+                        else graph._keyedEdges.Add((node, t));
                     }
 
                     if (name is null) continue;
@@ -237,6 +248,9 @@ internal sealed class StateGraph
             foreach (int next in graph._next[at])
                 if (free.Contains((at, next)) && graph._home.Add(next)) queue.Enqueue(next);
         }
+
+        foreach ((int from, int to) in graph._keyedEdges)
+            if (graph._home.Contains(from) && !graph._home.Contains(to)) graph._doors.Add(to);
 
         graph.Signature = string.Join(";", graph._next.Select(n => string.Join(",", n))) + "#" +
                           string.Join(";", graph._clips.Select(c => string.Join(",", c.Select(RuntimeHelpers.GetHashCode).Order())));

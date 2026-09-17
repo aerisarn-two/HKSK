@@ -50,8 +50,8 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         Assert.Equal(49, _built.Made.Projects.Count);
         Assert.Equal(_built.Shipped.Projects.Select(p => p.Name).Order(), _built.Made.Projects.Select(p => p.Name).Order());
 
-        Assert.Equal(1883, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
-        Assert.Equal(67034, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
+        Assert.Equal(2241, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
+        Assert.Equal(57495, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
         Assert.Equal(3819, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Attacks.Attacks.Count)));
     }
 
@@ -149,7 +149,7 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         // (the dialogue idle_A_*Trans idles), and the first-person killmoves copied into
         // each of the draugr's sets (§5.7)
         Assert.Equal(2689, wanted);
-        Assert.Equal(2147, loaded);
+        Assert.Equal(2145, loaded);
     }
 
     [CorpusFact]
