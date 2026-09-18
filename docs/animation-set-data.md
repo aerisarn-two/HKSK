@@ -542,8 +542,22 @@ reader is the melee combat context:
   (`0x143138d50`, the `animationdatasinglefile.txt` side) for the clips' movement and the
   time of their `HitFrame` annotation, and returns the time, the translation at the end of
   the clip and the translation at the hit frame.
-- It then stores a reach: **-1 when the flag is set**, the length of the final translation,
-  scaled by the actor, when not.
+- It then stores a reach at the entry's `+0x20`: **-1 when the flag is set** (the constant at
+  `0x141769578`), otherwise `sqrt(x^2+y^2+z^2)` of the final translation, scaled by the actor.
+  The hit frame's time goes to `+0x24`, the two translations to `+0x08` and `+0x14`, both
+  already scaled. The actor's longest reach, kept with `maxss` at `+0x30` of the context,
+  therefore rises with a cleared flag and never with a set one.
+- **What a cleared flag costs, in the check** (`0x1408a2ee0`): `comiss` against zero, and a
+  reach of zero or more **skips the attacker's own speed entirely** -- the call that fetches
+  it (`0x14069c550`) is inside the branch. What is left is the clip's root motion, plus the
+  base the context carries, plus one combat setting from `+0x1a8`, plus the **target's**
+  speed times the time to the hit frame; squared and compared with the distance between the
+  two actors (`0x140855660`), and the function returns false when the actors are farther
+  apart than that. For an attack whose clip does not travel, the first term is 0: the actor
+  will not swing until it is already within the base reach, and its own approach counts for
+  nothing. Where the flag is set, the reach becomes the attacker's speed times that same
+  time. Either way the hit frame's translation is rotated into the actor's frame
+  (`0x1402e8840`) and added to its position to predict where the blow lands.
 - The attack check (`0x1408a2ee0`, from `CombatBehaviorAttack` and `CombatBehaviorBash`)
   reads a reach below zero as "the attacker's own speed times the time to the hit frame" --
   the speed from the actor's process, `+0xf8 -> +0x8 -> +0x2a8` -- and it is the only reader
