@@ -977,13 +977,26 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   six projects that use the flag, with a blender (`hkbBlenderGenerator`, over every parent) no
   more than two levels above the clip:
 
-      rule                                              caught   false   wrong of 71
-      assume clear                                           0       0            34
-      blender <= 2 levels, or travel >= 300                 25       3            12
-      blender <= 2 levels, or clip speed ~ locomotion       12       0            22
+      rule                                                   caught   false   wrong of 71
+      assume clear                                                0       0            34
+      any blender <= 2 levels, or travel >= 300                  25       3            12
+      locomotion-blender <= 5..10 levels, or travel >= 300       21       3            16
+      locomotion-blender at any depth, or travel >= 300          27      33            40
+      any blender <= 2 levels, or clip speed ~ locomotion        12       0            22
 
-  Over all 49 projects it is 45 wrong against 34 for assuming clear, since the other 43 never
-  use the flag -- so it describes those six and generalises to nothing.
+  Over all 49 projects the first is 45 wrong against 34 for assuming clear, since the other 43
+  never use the flag -- so it describes those six and generalises to nothing.
+
+  **The depth limit is doing real work, and only the second row's is untuned.** A blender's
+  distance above the clip ought not to matter, and it stops mattering once the blender is
+  required to have another arm holding a movement tree -- four or more travelling clips. The
+  nearest such blender, inside the six, sits at depth 2, 4 or 5 for six attacks, all flagged;
+  at 11 and beyond for fifty, eighteen flagged and thirty-two clear; and **nowhere between 6
+  and 10**. The far ones are the graph-wide blends every attack passes through, the player's
+  `PlayerStaggerStandingBlend` and `PlayerStaggerMovingBlend` at 12 and 13, which is why
+  dropping the limit costs 28 more errors. Any cutoff in that hole gives the identical 16, so
+  that rule has no fitted parameter. The 12-error row buys its four fewer errors with a limit
+  of 2 that cannot be moved: at 4 it costs five more.
 
   Its three false positives are the lunges whose travel is their own: the player's
   `attackPowerStartForward` at 484.5 and the netch's `attackStartPowerStanding` at 443.4.
