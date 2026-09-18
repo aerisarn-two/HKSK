@@ -1110,6 +1110,37 @@ the graph says the character is sprinting over that state:
   `attackPowerStart_StandingAttack`. The netch drifts and the witchlight hovers always: there
   is no blend and no travel to find, because their motion is not in the animation at all.
 
+  **The masters record no trace of the flag, but they record the intent behind it.** If a tool
+  -- the Creation Kit -- had written ESM data from the flag, or the flag from ESM data, some
+  per-attack field would follow it. None does. The race's attack data (`ATKD`) is decisive: the
+  player's `AttackStartH2HRight` (flagged) and `attackStartDualWield` (clear) have byte-identical
+  records -- damage 1, chance 1, flags 0, angles 0/35, no stagger, no attack type, no knockdown,
+  recovery 0, stamina 1 -- so neither can be computed from the other. The 74 idle records that
+  carry an attack event all have flags 0 and no loop or replay timing, flagged or clear.
+
+  What the idles do carry is **conditions** saying when each attack is chosen, and those express
+  the same judgement independently:
+
+      idle condition                   attacks                                              flag
+      IsSprinting == 1                 the player's six sprint attacks, the werewolf's
+                                         AttackStartDualSprinting                              1
+      IsSprinting == 1                 the werewolf's AttackStartLeftSprinting and
+                                         AttackStartRightSprinting                             0
+      GetMovementDirection == 0..4     the player's directional and standing power attacks  0
+      GetMovementSpeed <= 1            the werewolf's AttackStartLeftPower and RightPower   0
+      no movement condition            the werewolf's running powers and backhand, the
+                                         netch's swipes, the player's attackStart             1
+      no movement condition            the netch's attackStartPowerStanding                 0
+
+  They settle the werewolf's running powers against its power combos, which the graph could not:
+  the combos may only be chosen standing still and are clear, the running powers carry no such
+  restriction and are flagged. And they show the sprinting pair is **vanilla's inconsistency,
+  not ours**: the werewolf's left and right sprinting attacks have the very condition of its
+  flagged dual sprint, and the derivation flags all three. It is still not a rule -- the netch's
+  standing power attack has no movement condition and is clear, and an idle is not tied to a
+  project, so `attackStart` or `attackStartLeft` can only be matched to one through the idle
+  tree.
+
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
   the six projects almost exactly:
