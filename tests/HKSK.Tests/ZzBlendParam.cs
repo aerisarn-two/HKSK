@@ -14,6 +14,7 @@ public sealed class ZzBlendParam
     {
         var cache = SkyrimCache.Load(Corpus.Root!);
         var L = new List<string>();
+        var travelOfAll = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         string[] wanted =
         [
             "BackhandBlend", "HowlExplodeBlend", "LeftAttackForwardBlend", "RightAttackBlend",
@@ -22,7 +23,7 @@ public sealed class ZzBlendParam
             "PlayerStaggerStandingBlend_MT", "L1_AttackBlend", "R1_AttackBlend",
         ];
 
-        foreach (string stem in new[] { "DefaultMale", "WerewolfBeastProject", "AtronachStormProject" })
+        foreach (string stem in new[] { "DwarvenSpiderCenturionProject", "SphereCenturion" })
         {
             string? path = cache.FindProjectFile(stem);
             if (path is null) continue;
@@ -32,10 +33,32 @@ public sealed class ZzBlendParam
             foreach (var s in walk.Steps)
                 if (s.Node is hkbBehaviorGraph g) vars[s.File] = [.. g.m_data?.m_stringData?.m_variableNames ?? []];
 
+            if (cache.OpenActor(stem) is { } actorFor)
+                foreach (var g2 in actorFor.Clips.GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                    travelOfAll[g2.Key] = g2.Max(c => c.Slot?.Motion?.Travel ?? 0f);
+
+            float Travel(IHavokObject? arm)
+            {
+                if (arm is null) return 0f;
+                float max = 0f;
+                var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+                var st = new Stack<IHavokObject>(); st.Push(arm);
+                while (st.Count > 0)
+                {
+                    var n = st.Pop();
+                    if (!seen.Add(n)) continue;
+                    if (n is hkbClipGenerator c) max = Math.Max(max, travelOfAll.GetValueOrDefault(c.m_name));
+                    foreach (var (_, _, k) in HKSK.Havok.HavokEdges.Of(n)) st.Push(k);
+                }
+                return max;
+            }
+
             L.Add($"======== {stem}");
             foreach (var s in walk.Steps)
             {
-                if (s.Node is not hkbBlenderGenerator bl || !wanted.Contains(bl.m_name, StringComparer.OrdinalIgnoreCase)) continue;
+                if (s.Node is not hkbBlenderGenerator bl) continue;
+            bool onSpeed = true;   // every blender, to see what its parameter is
+            if (!onSpeed && !wanted.Contains(bl.m_name, StringComparer.OrdinalIgnoreCase)) continue;
 
                 var names = vars.GetValueOrDefault(s.File) ?? [];
                 string Bound(IHavokObject o, string member)
@@ -53,8 +76,7 @@ public sealed class ZzBlendParam
                 }
 
                 var arms = bl.m_children.Select((c, i) =>
-                    $"#{i} w={c?.m_weight:0.##}{(c is null ? "" : Bound(c, "weight") is "(constant)" ? "" : " <-" + Bound(c, "weight"))}"
-                    + $" [{(c?.m_generator as hkbNode)?.m_name ?? "?"}]");
+                    $"#{i} axis={c?.m_weight:0.##} [{(c?.m_generator as hkbNode)?.m_name ?? "?"}] travel<={Travel(c?.m_generator):0.0}");
 
                 L.Add($"   {bl.m_name,-36} flags 0x{bl.m_flags:x}  param {bl.m_blendParameter:0.##} <- {Bound(bl, "blendParameter")}  " +
                       $"cyclic {bl.m_minCyclicBlendParameter:0.##}..{bl.m_maxCyclicBlendParameter:0.##}  sync {bl.m_indexOfSyncMasterChild}");

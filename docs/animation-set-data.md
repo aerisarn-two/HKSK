@@ -822,13 +822,16 @@ That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
-The moving-attack flag is derived **in part** (§6). `SetDataGenerator` sets it where the graph
-interpolates the attack by speed -- `GraphReach.TravelChosenBySpeed` -- which yields 15
-(project, event) pairs: 13 of vanilla's 38, plus the Vampire Lord's two left and right attacks,
-which have the same speed-parametric blend in a project vanilla never flagged at all. The other
-25 are the sprint and run attacks, whose travel is indistinguishable from a lunge's by root
-motion alone, and the hovering creatures, whose motion is in no asset. For those,
-`setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped file:
+The moving-attack flag is derived **in part** (§6), by `GraphReach.TravelChosenBySpeed`: the
+attack's travel is the actor's when a blender above its clips is parametric on speed, or when the
+graph raises `IsSprinting` over the state. That yields 30 (project, event) pairs -- **26 of
+vanilla's 38** -- and four vanilla does not have, all of which look like vanilla's own omissions:
+the Vampire Lord's two, which carry the player's speed-parametric blend in a project that flags
+nothing, and the werewolf's `AttackStartLeftSprinting` and `AttackStartRightSprinting`, which it
+leaves clear while flagging `AttackStartDualSprinting` beside them. The 12 not derived are the
+hovering creatures, the werewolf's side and running-power attacks and the player's `bashStart`.
+For those, `setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped
+file:
 
     attacks flagged as moving              1,180 of 3,819
     attacks the shipped file answered      3,305; the other 514 nobody shipped
@@ -869,8 +872,8 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is derived for one of its three families and copied for
-  the rest; `setgen --flags-from` is still the only way to reproduce all 38.
+- **the moving-attack flag** (§4.6) is derived for two of its three families -- 26 of vanilla's
+  38 -- and copied for the rest; `setgen --flags-from` is still the only way to reproduce all 38.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
   **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
@@ -1028,13 +1031,17 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 
       family                                                          flagged  shown by
       the clip is chosen by a speed-parametric blend                       12  the behaviour
-      the clip has the locomotion baked into its own travel (>= 300)       15  the cache
-      the creature is simply always moving -- storm atronach's two, the
-        netch, the witchlight, the werewolf's two side attacks and its
-        dual sprint                                                         7  nothing
+      the state raises IsSprinting: single-direction locomotion, so
+        there is no blend, but the actor is carried at sprint speed        14  the behaviour
+      the creature is simply always moving -- the storm atronach's
+        three, the netch's two, the witchlight's, the werewolf's side
+        and running-power attacks, the player's bashStart                  12  nothing
 
   All three say the same thing in different vocabularies: this attack's travel is the actor's,
-  not this clip's. Only the first two are decidable from the assets.
+  not this clip's. **The first two are decidable and are derived** (§5.7); only the third is
+  not, and it is what `--flags-from` is for. The second was found by asking why the sprint
+  attacks have no blend: sprinting has one direction, so there is nothing to interpolate --
+  the graph states the condition in a variable instead.
 
   **The best rule found, and why it is still not one.** Read the flag as "this attack's reach
   is the locomotion's, not the animation's" and two things stand for it: the attack is blended

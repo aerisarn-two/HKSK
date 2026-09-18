@@ -209,32 +209,43 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
     }
 
     [MastersFact]
-    public void TheMovingAttackFlagIsDerivedWhereTheGraphInterpolatesTheAttackBySpeed()
+    public void TheMovingAttackFlagIsDerivedWhereTheAttackTravelsAtTheActorsSpeed()
     {
-        // The one family of the flag that follows from the assets: a blender above the clips is
-        // parametric on the actor's speed, so the attack has no root motion of its own to
-        // measure (docs/animation-set-data.md §4.6, §6). The other two families -- the sprint
-        // attacks and the creatures that never stop moving -- are not derivable and stay 0.
+        // The two families of the flag that follow from the assets: a blender above the clips
+        // is parametric on the actor's speed, so no single root motion exists, or the graph
+        // raises IsSprinting over the state, which is the same thing with the blend missing
+        // because sprinting has one direction (docs/animation-set-data.md §4.6, §6).
+        // 26 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
+        // Lord carries the player's speed-parametric blend in a project that flags nothing, and
+        // the werewolf flags AttackStartDualSprinting while leaving its left and right alone.
         var flagged = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (AnimationSetDataProject project in _built.Made.Projects)
             foreach (AttackData attack in project.Sets.Sets.SelectMany(s => s.Attacks.Attacks))
                 if (attack.MovingAttack != 0)
                     flagged.Add($"{project.Stem}/{attack.EventName}");
 
-        Assert.Equal(
+        string[] expected =
             [
                 "DefaultFemale/attackStart", "DefaultFemale/AttackStartH2HLeft",
                 "DefaultFemale/AttackStartH2HRight", "DefaultFemale/attackStartLeftHand",
+                "DefaultFemale/attackPowerStart_2HMSprint", "DefaultFemale/attackPowerStart_2HWSprint",
+                "DefaultFemale/attackPowerStart_Sprint", "DefaultFemale/attackPowerStart_SprintLeftHand",
+                "DefaultFemale/attackStartSprint", "DefaultFemale/attackStartSprintLeftHand",
                 "DefaultMale/attackStart", "DefaultMale/AttackStartH2HLeft",
                 "DefaultMale/AttackStartH2HRight", "DefaultMale/attackStartLeftHand",
-                // the same speed-parametric blend, in a project vanilla flags nothing in
-                "VampireLord/AttackStartLeft", "VampireLord/AttackStartRight",
+                "DefaultMale/attackPowerStart_2HMSprint", "DefaultMale/attackPowerStart_2HWSprint",
+                "DefaultMale/attackPowerStart_Sprint", "DefaultMale/attackPowerStart_SprintLeftHand",
+                "DefaultMale/attackStartSprint", "DefaultMale/attackStartSprintLeftHand",
+                "VampireLord/attackStartLeft", "VampireLord/attackStartRight",
                 "WerewolfBeastProject/AttackStartBackHand", "WerewolfBeastProject/AttackStartDual",
-                "WerewolfBeastProject/AttackStartDualRunning", "WerewolfBeastProject/AttackStartLeft",
-                "WerewolfBeastProject/AttackStartRight",
-            ],
-            flagged,
-            StringComparer.OrdinalIgnoreCase);
+                "WerewolfBeastProject/AttackStartDualRunning",
+                "WerewolfBeastProject/AttackStartDualSprinting",
+                "WerewolfBeastProject/AttackStartLeftSprinting",
+                "WerewolfBeastProject/AttackStartRightSprinting",
+                "WerewolfBeastProject/attackStartLeft", "WerewolfBeastProject/attackStartRight",
+            ];
+
+        Assert.Equal(new SortedSet<string>(expected, StringComparer.OrdinalIgnoreCase), flagged);
     }
 
     [MastersFact]

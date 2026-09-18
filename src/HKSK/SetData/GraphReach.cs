@@ -322,6 +322,19 @@ internal sealed class GraphReach
     /// parent is followed</strong>, because a clip generator is often shared and a walk records
     /// only the first parent it happened to reach.
     /// </para>
+    /// <para>
+    /// A <strong>sprint attack</strong> is the same situation with the blend missing. Sprinting
+    /// is single-direction locomotion, so there is nothing to interpolate and the attack is one
+    /// clip in a state -- but the character is still carried at sprint speed, and the graph says
+    /// so by raising <c>IsSprinting</c> over that state. So the answer is also yes when a node
+    /// on the way up, or a modifier one of them attaches, binds that variable. Against the
+    /// shipped file the two together are right about 25 of the 34 attacks whose clips can be
+    /// resolved, with four disagreements: the Vampire Lord's two, whose blend is the player's
+    /// pattern in a project that flags nothing, and the werewolf's
+    /// <c>AttackStartLeftSprinting</c> and <c>AttackStartRightSprinting</c>, which vanilla
+    /// leaves clear while flagging <c>AttackStartDualSprinting</c> beside them. What is left
+    /// undecided is the hovering creatures (§6).
+    /// </para>
     /// </remarks>
     public bool TravelChosenBySpeed(IEnumerable<hkbClipGenerator> clips)
     {
@@ -338,8 +351,48 @@ internal sealed class GraphReach
             {
                 if (!seen.Add(up)) continue;
                 if (up is hkbBlenderGenerator blender && ParametricOnSpeed(blender)) return true;
+                if (up is hkbNode node && Writes(node, Sprinting)) return true;
+                if (up is hkbModifierGenerator { m_modifier: { } modifier } && Attaches(modifier, Sprinting)) return true;
                 queue.Enqueue(up);
             }
+
+        return false;
+    }
+
+    /// <summary>The variable a graph raises while the character sprints.</summary>
+    private const string Sprinting = "IsSprinting";
+
+    /// <summary>Whether a node binds a member to the named variable, either way round.</summary>
+    private bool Writes(hkbNode node, string variable)
+    {
+        if (node.m_variableBindingSet is not { } bindings) return false;
+        if (!_tables.TryGetValue(_fileOf.GetValueOrDefault(node, ""), out Variables? table)) return false;
+
+        foreach (hkbVariableBindingSetBinding binding in bindings.m_bindings)
+            if (binding.m_variableIndex >= 0
+                && table.NameOf(binding.m_variableIndex) is { } name
+                && string.Equals(name, variable, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+        return false;
+    }
+
+    /// <summary>Whether the modifiers a generator attaches touch the named variable.</summary>
+    private bool Attaches(IHavokObject modifier, string variable)
+    {
+        var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+        var stack = new Stack<IHavokObject>();
+        stack.Push(modifier);
+
+        while (stack.Count > 0)
+        {
+            IHavokObject at = stack.Pop();
+            if (!seen.Add(at)) continue;
+            if (at is hkbGenerator && !ReferenceEquals(at, modifier)) continue;  // not down another branch
+            if (at is hkbNode node && Writes(node, variable)) return true;
+
+            foreach ((_, _, IHavokObject child) in HavokEdges.Of(at)) stack.Push(child);
+        }
 
         return false;
     }
