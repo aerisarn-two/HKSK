@@ -1170,6 +1170,19 @@ the graph says the character is sprinting over that state:
   `DualWieldPowerAttack` has none and is clear -- ordinary attacks against power attacks, which is
   the name-shape correlation below once more.
 
+  **The idle tree and the graph read together.** An idle gates which behaviour branch is ever
+  entered, so the two are one condition, not two votes. Read jointly they agree everywhere they
+  meet: no attack the behaviour flags has an idle confining it to standing still or to a fixed
+  direction, and the idle roots test the behaviour's own variables. The werewolf's and the Vampire
+  Lord's ordinary attack roots both require `bIsSynced == 0`, `bFailMoveStart == 0` and
+  **`bAnimationDriven == 0`** -- the attack may only start while the controller, not the
+  animation, is carrying the actor, which is the moving-attack premise written into the idle tree.
+  Its power-attack root asks only `bIsSynced == 0` and leaves the split to `GetMovementSpeed`. So
+  the four flags the derivation adds are not a disagreement between the sources: the Vampire Lord's
+  pair has the flagged werewolf attacks' blend *and* their gates, and the werewolf's left and right
+  sprints have its flagged dual sprint's `IsSprinting` in both, under the same root. Vanilla left
+  those four clear, and nothing in either source says why.
+
   **Everything combined, and how far a fit can be pushed.** With every feature on one table --
   the behaviour rule, the idle tree's requirements, root motion, the race's attack data, how much
   of the creature's own locomotion travels -- over the 341 (project, event) pairs:
