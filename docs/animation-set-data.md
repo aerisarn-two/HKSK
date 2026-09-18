@@ -558,13 +558,15 @@ reader is the melee combat context:
   nothing. Where the flag is set, the reach becomes the attacker's speed times that same
   time. Either way the hit frame's translation is rotated into the actor's frame
   (`0x1402e8840`) and added to its position to predict where the blow lands.
-- The attack check (`0x1408a2ee0`, from `CombatBehaviorAttack` and `CombatBehaviorBash`)
-  reads a reach below zero as "the attacker's own speed times the time to the hit frame" --
-  the speed from the actor's process, `+0xf8 -> +0x8 -> +0x2a8` -- and it is the only reader
-  of `fCombatAttackMovingAttackDistance`, `fCombatAttackMovingAttackReachMult` and
-  `fCombatAttackMovingStrikeAngleMult`. With the flag clear, the clip's root motion is the
-  reach, and the translation at the hit frame, rotated into the actor's frame, is where the
-  blow lands.
+- The check is reached from `CombatBehaviorAttack` and `CombatBehaviorBash`, and the
+  attacker's speed it uses on the set-flag path comes from the actor's process,
+  `+0xf8 -> +0x8 -> +0x2a8`. The `fCombatAttackMovingAttackDistance`,
+  `fCombatAttackMovingAttackReachMult` and `fCombatAttackMovingStrikeAngleMult` settings were
+  tied to this function by an earlier search; **what the instructions show is one settings
+  float read from `+0x1a8` of the combat settings structure, on the path both flags take** --
+  the settings are reached by offset into a structure rather than as three globals, and which
+  of them `+0x1a8` is has not been established. Do not repeat the claim that the flag gates
+  them without checking that.
 
 So the flag says where an attack's travel comes from, and the 38 events it is set on say it
 plainly: **it marks an attack the character makes while it is still moving.** It says so only

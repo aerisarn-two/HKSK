@@ -94,7 +94,7 @@ internal sealed class GraphReach
     /// the transition names or the event's own transitions below, else the start state.
     /// </summary>
     /// <remarks>
-    /// Narrower than an event's region (<see cref="StateGraph.Region"/>), because the race
+    /// Narrower than everything an event leads to (<see cref="StateGraph.UntilHome"/>), because the race
     /// reads it as the clips of <em>that</em> attack: the chaurus's eleven attacks enter
     /// one state, and the nested state each transition names is what tells them apart.
     /// </remarks>

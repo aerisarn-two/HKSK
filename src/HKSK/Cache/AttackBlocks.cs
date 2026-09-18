@@ -70,19 +70,49 @@ public sealed class AttackData
     /// <para>
     /// Read by the melee combat context (<c>0x1408a3d30</c>, reached from
     /// <c>CombatBehaviorContextMelee</c>). For each attack the actor's race can make with
-    /// its hand types, it finds this entry by event name, takes the animation data of its
-    /// clips -- the translation at the end and at the <c>HitFrame</c> annotation, and the
-    /// hit frame's time -- and records a reach: <strong>-1 when this is set</strong>, the
-    /// length of the final translation when not. The attack check (<c>0x1408a2ee0</c>)
-    /// then takes a reach below zero to mean the attacker's own speed times the time to
-    /// the hit frame, and the <c>fCombatAttackMoving*</c> settings apply.
+    /// its hand types, it finds this entry by event name and asks the animation data
+    /// (<c>0x140442a80</c>) for the clips' translation at the end, their translation at the
+    /// <c>HitFrame</c> annotation, and the hit frame's time. All six translation floats are
+    /// multiplied by the actor's scale, and a <em>reach</em> is recorded:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><strong>set</strong>: -1, the constant at <c>0x141769578</c>;</item>
+    /// <item><strong>clear</strong>: the length of the scaled end translation,
+    /// <c>sqrt(x*x + y*y + z*z)</c> -- zero for a clip that does not travel.</item>
+    /// </list>
+    /// <para>
+    /// The entry keeps that reach at <c>+0x20</c> and the hit frame's time at <c>+0x24</c>.
+    /// The actor's longest reach, a running <c>maxss</c> at <c>+0x30</c> of the context,
+    /// rises with a cleared flag and never with a set one, -1 losing every comparison.
     /// </para>
     /// <para>
-    /// So it is set on the attacks whose travel is the character's locomotion rather than
-    /// the clip's -- the player's regular, sprint and bash attacks, the werewolf's running
-    /// ones -- and clear on lunges and power attacks, whose root motion is where the blow
-    /// lands. It was called "mirrored" until the executable was read; it has nothing to do
-    /// with mirroring. <c>docs/animation-set-data.md</c> §4.6.
+    /// The attack check (<c>0x1408a2ee0</c>) compares the reach with zero, and
+    /// <strong>a reach of zero or more skips the attacker's own speed altogether</strong> --
+    /// the call that fetches it sits inside the branch. The distance the attack is allowed
+    /// is then the clip's root motion, plus the base the context carries, plus one combat
+    /// setting, plus the <em>target's</em> speed times the time to the hit frame. That sum
+    /// is squared and compared with the distance between the two actors, and the check
+    /// returns false -- no attack -- when they are farther apart. With the flag set the
+    /// first term is the attacker's own speed times that same time instead. Either way the
+    /// hit frame's translation is rotated into the actor's frame and added to its position
+    /// to predict where the blow lands.
+    /// </para>
+    /// <para>
+    /// So for an attack whose clips do not travel, leaving this clear contributes 0 to the
+    /// allowed distance: the actor waits until it is already within the base reach, and gets
+    /// no credit for closing while it swings. The shipped game does exactly that on 21
+    /// attacks, so it is not plainly a mistake to copy.
+    /// </para>
+    /// <para>
+    /// It is set on attacks whose travel is the character's locomotion rather than the
+    /// clip's -- the player's regular, sprint and hand-to-hand attacks, the werewolf's
+    /// running and side ones -- and clear on lunges and power attacks, whose root motion is
+    /// where the blow lands. Only 6 of the 45 projects with attacks use it at all, and
+    /// nothing in the races, the character files or the behaviours distinguishes those six,
+    /// so it was authored per attack: <see cref="HKSK.SetData.SetDataGenerator"/> writes 0
+    /// and <c>setgen --flags-from</c> copies the shipped values.
+    /// It was called "mirrored" until the executable was read; it has nothing to do with
+    /// mirroring. <c>docs/animation-set-data.md</c> §4.6 and §6.
     /// </para>
     /// </remarks>
     public int MovingAttack { get; set; }
