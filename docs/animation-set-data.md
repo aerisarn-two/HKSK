@@ -1170,6 +1170,31 @@ the graph says the character is sprinting over that state:
   `DualWieldPowerAttack` has none and is clear -- ordinary attacks against power attacks, which is
   the name-shape correlation below once more.
 
+  **Everything combined, and how far a fit can be pushed.** With every feature on one table --
+  the behaviour rule, the idle tree's requirements, root motion, the race's attack data, how much
+  of the creature's own locomotion travels -- over the 341 (project, event) pairs:
+
+      rule                                                         caught   invented   wrong
+      assume clear                                                   0/38          0      38
+      behaviour OR idle tree (what the generator does)              30/38          4      12
+      + hovering & LeftAttack, - speed blend & angle,
+        - sprint idle & knockdown                                   33/38          0       5
+
+  The second row is principled and is what ships. The third is a fit, and each clause shows it.
+  *Hovering* is real -- the storm atronach animates travel in 6% of its non-attack clips, the
+  wisp in 7% -- but it catches the wisp's four clear attacks as well, and what excludes them is the
+  race's `LeftAttack` bit, which says nothing about movement. The two removals drop the Vampire
+  Lord's pair because its attacks are angled ±25 and the werewolf's sprinting pair because they
+  knock down: true of those four, meaningless as a reason, and they remove flags the engine would
+  be better for having.
+
+  The last five cannot be fitted at all. The werewolf's side attacks match only "no idle, no
+  travel, angled", which 24 clear attacks share (the chaurus, the mudcrab, the sabre cat); the
+  player's `bashStart` matches only "bash with an idle", which the draugr's, skeleton's, falmer's
+  and steam centurion's clear bashes share, and is flagged per set anyway; and the witchlight's one
+  attack looks like some 150 clear ones in every field. Past the behaviour and the idle tree, what
+  separates flagged from clear is the attack's identity.
+
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
   the six projects almost exactly:
