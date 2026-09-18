@@ -86,22 +86,34 @@ public sealed class AttackData
     /// rises with a cleared flag and never with a set one, -1 losing every comparison.
     /// </para>
     /// <para>
-    /// The attack check (<c>0x1408a2ee0</c>) compares the reach with zero, and
-    /// <strong>a reach of zero or more skips the attacker's own speed altogether</strong> --
-    /// the call that fetches it sits inside the branch. The distance the attack is allowed
-    /// is then the clip's root motion, plus the base the context carries, plus one combat
-    /// setting, plus the <em>target's</em> speed times the time to the hit frame. That sum
-    /// is squared and compared with the distance between the two actors, and the check
-    /// returns false -- no attack -- when they are farther apart. With the flag set the
-    /// first term is the attacker's own speed times that same time instead. Either way the
-    /// hit frame's translation is rotated into the actor's frame and added to its position
-    /// to predict where the blow lands.
+    /// The attack check (<c>0x1408a2ee0</c>) uses that reach twice, and the flag is
+    /// <strong>which of two estimates it trusts, not a bonus added to the other</strong>.
+    /// </para>
+    /// <para>
+    /// First an early-out. A reach of zero or more skips the attacker's own speed altogether
+    /// -- the call that fetches it sits inside the branch -- so the distance the attack is
+    /// allowed is the clip's root motion, plus the base the context carries, plus one combat
+    /// setting, plus the <em>target's</em> speed times the time to the hit frame. Squared,
+    /// compared with the distance between the two actors, and false -- no attack -- when they
+    /// are farther apart. With the flag set the first term is the attacker's own speed times
+    /// that same time <em>instead of</em> the clip's travel.
+    /// </para>
+    /// <para>
+    /// Then the finer test, on predicted positions. The hit frame's translation is rotated
+    /// into the actor's frame and added to its position to say where the blow lands, whatever
+    /// the flag; the reach is compared with zero a second time (<c>0x1408a31bd</c>) to predict
+    /// <em>where the attacker will be</em> when it does. Set: <c>0x140853fb0</c> projects the
+    /// actor forward along its own motion for that time. Clear: the end translation, rotated,
+    /// is added to its position -- but only when the reach exceeds <strong>5.0</strong> units;
+    /// at or below that the branch is skipped and the actor is modelled as not moving. The
+    /// target is predicted the same way, and the distance between the two predictions carries
+    /// the rest of the check.
     /// </para>
     /// <para>
     /// So for an attack whose clips do not travel, leaving this clear contributes 0 to the
-    /// allowed distance: the actor waits until it is already within the base reach, and gets
-    /// no credit for closing while it swings. The shipped game does exactly that on 21
-    /// attacks, so it is not plainly a mistake to copy.
+    /// allowed distance and fails the 5.0 gate: the actor waits until it is already within
+    /// the base reach, and is treated as standing still for the whole swing. The shipped game
+    /// does exactly that on 21 attacks, so it is not plainly a mistake to copy.
     /// </para>
     /// <para>
     /// It is set on attacks whose travel is the character's locomotion rather than the

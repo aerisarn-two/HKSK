@@ -555,9 +555,24 @@ reader is the melee combat context:
   two actors (`0x140855660`), and the function returns false when the actors are farther
   apart than that. For an attack whose clip does not travel, the first term is 0: the actor
   will not swing until it is already within the base reach, and its own approach counts for
-  nothing. Where the flag is set, the reach becomes the attacker's speed times that same
-  time. Either way the hit frame's translation is rotated into the actor's frame
-  (`0x1402e8840`) and added to its position to predict where the blow lands.
+  nothing. Where the flag is set, the reach **replaces** that term with the attacker's speed
+  times the same time -- the clip's travel is not added to it, it is the alternative to it.
+- **The flag chooses a predictor twice.** Past the early-out, the hit frame's translation is
+  rotated into the actor's frame (`0x1402e8840`) and added to its position to say where the
+  blow lands, whatever the flag. Then the check tests the reach against zero a second time
+  (`0x1408a31bd`) and predicts **where the attacker will be** when it lands, two ways:
+
+      flag set    0x140853fb0 projects the actor forward along its own motion for that time
+      flag clear  the end translation, rotated by the actor's matrix, is added to its
+                  position -- but only when the reach is more than 5.0 units; at or below
+                  that the branch is skipped and the actor is modelled as not moving at all
+
+  The target's position is predicted the same way, and the distance between the two
+  *predicted* positions is what the rest of the check works on: against 32.0 first, then
+  against a squared base-plus-setting, with 128.0, 2.0 and 0.9 in the arc tests
+  (`0x1408dc090`, `0x1408544a0`). So the flag is not a reach bonus, it is which of two
+  estimates of the attacker's future position the AI trusts -- and a cleared flag on a clip
+  that travels nothing fails the 5.0 gate, which is the state 21 shipped attacks are in.
 - The check is reached from `CombatBehaviorAttack` and `CombatBehaviorBash`, and the
   attacker's speed it uses on the set-flag path comes from the actor's process,
   `+0xf8 -> +0x8 -> +0x2a8`. The `fCombatAttackMovingAttackDistance`,
