@@ -126,7 +126,7 @@ public sealed class ZzMissedFlags
                         if (up is hkbModifierGenerator mg2 && mg2.m_modifier is not null) Vars(mg2.m_modifier);
                         if (touched.Any(v => v.Contains("sprint", StringComparison.OrdinalIgnoreCase))) sprint = true;
                         if (touched.Any(v => string.Equals(v, "IsSprinting", StringComparison.OrdinalIgnoreCase))) strict = true;
-                        if (d == 0 && touched.Any(v => v.Contains("sprint", StringComparison.OrdinalIgnoreCase))) near = true;
+                        if (d < 4 && touched.Any(v => v.Contains("sprint", StringComparison.OrdinalIgnoreCase))) near = true;
 
                         if (up is hkbBlenderGenerator bp && (bp.m_variableBindingSet?.m_bindings ?? [])
                                 .Any(b => b.m_memberPath == "blendParameter" && b.m_variableIndex >= 0 && b.m_variableIndex < names.Length

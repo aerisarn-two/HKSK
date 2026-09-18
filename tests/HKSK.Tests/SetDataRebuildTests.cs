@@ -213,9 +213,9 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
     {
         // The two families of the flag that follow from the assets: a blender above the clips
         // is parametric on the actor's speed, so no single root motion exists, or the graph
-        // raises IsSprinting over the state, which is the same thing with the blend missing
+        // says the character is sprinting over that state -- the same case with no blend,
         // because sprinting has one direction (docs/animation-set-data.md §4.6, §6).
-        // 26 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
+        // 28 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
         // Lord carries the player's speed-parametric blend in a project that flags nothing, and
         // the werewolf flags AttackStartDualSprinting while leaving its left and right alone.
         var flagged = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -236,6 +236,7 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
                 "DefaultMale/attackPowerStart_2HMSprint", "DefaultMale/attackPowerStart_2HWSprint",
                 "DefaultMale/attackPowerStart_Sprint", "DefaultMale/attackPowerStart_SprintLeftHand",
                 "DefaultMale/attackStartSprint", "DefaultMale/attackStartSprintLeftHand",
+                "NetchProject/attackStartLeft", "NetchProject/attackStartRight",
                 "VampireLord/attackStartLeft", "VampireLord/attackStartRight",
                 "WerewolfBeastProject/AttackStartBackHand", "WerewolfBeastProject/AttackStartDual",
                 "WerewolfBeastProject/AttackStartDualRunning",

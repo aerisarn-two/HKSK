@@ -824,12 +824,14 @@ That puts the derivable part at 2,145 of about 2,200.
 
 The moving-attack flag is derived **in part** (§6), by `GraphReach.TravelChosenBySpeed`: the
 attack's travel is the actor's when a blender above its clips is parametric on speed, or when the
-graph raises `IsSprinting` over the state. That yields 30 (project, event) pairs -- **26 of
+graph raises `IsSprinting` over the state. That yields 32 (project, event) pairs -- **28 of
 vanilla's 38** -- and four vanilla does not have, all of which look like vanilla's own omissions:
 the Vampire Lord's two, which carry the player's speed-parametric blend in a project that flags
 nothing, and the werewolf's `AttackStartLeftSprinting` and `AttackStartRightSprinting`, which it
-leaves clear while flagging `AttackStartDualSprinting` beside them. The 12 not derived are the
-hovering creatures, the werewolf's side and running-power attacks and the player's `bashStart`.
+leaves clear while flagging `AttackStartDualSprinting` beside them. The 10 not derived are the storm
+atronach's three and the witchlight's one -- projects where *every* attack is flagged, so the
+fact is about the creature and not the attack -- the werewolf's side and running-power attacks,
+and the player's `bashStart`, which vanilla flags only in the hand-to-hand sets.
 For those, `setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped
 file:
 
@@ -872,7 +874,7 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is derived for two of its three families -- 26 of vanilla's
+- **the moving-attack flag** (§4.6) is derived for two of its three families -- 28 of vanilla's
   38 -- and copied for the rest; `setgen --flags-from` is still the only way to reproduce all 38.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
@@ -1031,17 +1033,29 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 
       family                                                          flagged  shown by
       the clip is chosen by a speed-parametric blend                       12  the behaviour
-      the state raises IsSprinting: single-direction locomotion, so
-        there is no blend, but the actor is carried at sprint speed        14  the behaviour
+the graph says the character is sprinting over that state:
+        single-direction locomotion, so there is no blend, but the
+        actor is carried at sprint speed anyway                           16  the behaviour
       the creature is simply always moving -- the storm atronach's
-        three, the netch's two, the witchlight's, the werewolf's side
-        and running-power attacks, the player's bashStart                  12  nothing
+        three and the witchlight's one, whose projects flag every
+        attack they own; the werewolf's side and running-power
+        attacks; the player's bashStart                                   10  nothing
 
   All three say the same thing in different vocabularies: this attack's travel is the actor's,
   not this clip's. **The first two are decidable and are derived** (§5.7); only the third is
   not, and it is what `--flags-from` is for. The second was found by asking why the sprint
   attacks have no blend: sprinting has one direction, so there is nothing to interpolate --
-  the graph states the condition in a variable instead.
+  the graph states the condition in a variable instead, `IsSprinting` where the player and
+  the werewolf read it and `iSyncSprintState` near the clip where the netch does.
+
+  The third family was examined for a condition of the same kind and has none. The storm
+  atronach and the witchlight **flag every attack they own** -- 3 of 3 and 1 of 1 -- so there is
+  no clear attack to contrast with and nothing per-attack to find; what those projects record is
+  a fact about the creature. The werewolf's `AttackStartLeftSide`, `AttackStartRightSide` and its
+  two running-power attacks touch `IsAttacking` and nothing else, exactly as its clear power
+  combos do. The player's `bashStart` touches `iIsInSneak`, `iLeftHandType` and `iRightHandType`,
+  the same three as the clear `bashPowerStart`, and vanilla flags it **only in the hand-to-hand
+  sets** -- a per-set value, which no per-attack rule can express.
 
   **The best rule found, and why it is still not one.** Read the flag as "this attack's reach
   is the locomotion's, not the animation's" and two things stand for it: the attack is blended

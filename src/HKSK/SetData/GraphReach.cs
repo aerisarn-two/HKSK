@@ -328,8 +328,10 @@ internal sealed class GraphReach
     /// clip in a state -- but the character is still carried at sprint speed, and the graph says
     /// so by raising <c>IsSprinting</c> over that state. So the answer is also yes when a node
     /// on the way up, or a modifier one of them attaches, binds that variable. Against the
-    /// shipped file the two together are right about 25 of the 34 attacks whose clips can be
-    /// resolved, with four disagreements: the Vampire Lord's two, whose blend is the player's
+    /// The variable is <c>IsSprinting</c> where the player and the werewolf read it, and a sync
+    /// state near the clip -- <c>iSyncSprintState</c> within <see cref="NearTheClip"/> levels --
+    /// where the netch does. Against the shipped file the two rules together derive 28 of its 38
+    /// flags, with four disagreements: the Vampire Lord's two, whose blend is the player's
     /// pattern in a project that flags nothing, and the werewolf's
     /// <c>AttackStartLeftSprinting</c> and <c>AttackStartRightSprinting</c>, which vanilla
     /// leaves clear while flagging <c>AttackStartDualSprinting</c> beside them. What is left
@@ -342,19 +344,27 @@ internal sealed class GraphReach
         _parents ??= Parents();
 
         var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
-        var queue = new Queue<IHavokObject>();
+        var queue = new Queue<(IHavokObject Node, int Depth)>();
         foreach (hkbClipGenerator clip in clips)
-            if (seen.Add(clip)) queue.Enqueue(clip);
+            if (seen.Add(clip)) queue.Enqueue((clip, 0));
 
         while (queue.Count > 0)
-            foreach (IHavokObject up in _parents.GetValueOrDefault(queue.Dequeue()) ?? [])
+        {
+            (IHavokObject at, int depth) = queue.Dequeue();
+
+            foreach (IHavokObject up in _parents.GetValueOrDefault(at) ?? [])
             {
                 if (!seen.Add(up)) continue;
                 if (up is hkbBlenderGenerator blender && ParametricOnSpeed(blender)) return true;
-                if (up is hkbNode node && Writes(node, Sprinting)) return true;
-                if (up is hkbModifierGenerator { m_modifier: { } modifier } && Attaches(modifier, Sprinting)) return true;
-                queue.Enqueue(up);
+
+                // IsSprinting says it outright, wherever it is read; a sync state only means
+                // the clip belongs to the sprint set when it is near it
+                if (Touches(up, name => string.Equals(name, Sprinting, StringComparison.OrdinalIgnoreCase))) return true;
+                if (depth < NearTheClip && Touches(up, name => name.Contains("sprint", StringComparison.OrdinalIgnoreCase))) return true;
+
+                queue.Enqueue((up, depth + 1));
             }
+        }
 
         return false;
     }
@@ -362,23 +372,29 @@ internal sealed class GraphReach
     /// <summary>The variable a graph raises while the character sprints.</summary>
     private const string Sprinting = "IsSprinting";
 
-    /// <summary>Whether a node binds a member to the named variable, either way round.</summary>
-    private bool Writes(hkbNode node, string variable)
+    /// <summary>How far from a clip a sync state still says something about that clip.</summary>
+    private const int NearTheClip = 4;
+
+    /// <summary>Whether a node, or a modifier it attaches, binds a variable the test accepts.</summary>
+    private bool Touches(IHavokObject node, Func<string, bool> wanted) =>
+        node is hkbNode n && Binds(n, wanted)
+        || node is hkbModifierGenerator { m_modifier: { } modifier } && Attaches(modifier, wanted);
+
+    /// <summary>Whether a node binds any member to a variable the test accepts.</summary>
+    private bool Binds(hkbNode node, Func<string, bool> wanted)
     {
         if (node.m_variableBindingSet is not { } bindings) return false;
         if (!_tables.TryGetValue(_fileOf.GetValueOrDefault(node, ""), out Variables? table)) return false;
 
         foreach (hkbVariableBindingSetBinding binding in bindings.m_bindings)
-            if (binding.m_variableIndex >= 0
-                && table.NameOf(binding.m_variableIndex) is { } name
-                && string.Equals(name, variable, StringComparison.OrdinalIgnoreCase))
+            if (binding.m_variableIndex >= 0 && table.NameOf(binding.m_variableIndex) is { } name && wanted(name))
                 return true;
 
         return false;
     }
 
-    /// <summary>Whether the modifiers a generator attaches touch the named variable.</summary>
-    private bool Attaches(IHavokObject modifier, string variable)
+    /// <summary>Whether the modifiers a generator attaches touch such a variable.</summary>
+    private bool Attaches(IHavokObject modifier, Func<string, bool> wanted)
     {
         var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
         var stack = new Stack<IHavokObject>();
@@ -389,7 +405,7 @@ internal sealed class GraphReach
             IHavokObject at = stack.Pop();
             if (!seen.Add(at)) continue;
             if (at is hkbGenerator && !ReferenceEquals(at, modifier)) continue;  // not down another branch
-            if (at is hkbNode node && Writes(node, variable)) return true;
+            if (at is hkbNode node && Binds(node, wanted)) return true;
 
             foreach ((_, _, IHavokObject child) in HavokEdges.Of(at)) stack.Push(child);
         }

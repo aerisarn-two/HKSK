@@ -125,7 +125,7 @@ public sealed class AttackData
     /// <see cref="HKSK.SetData.SetDataGenerator"/> derives them: a blender above the clips
     /// parametric on the actor's speed, so no single root motion exists, or a state that raises
     /// <c>IsSprinting</c>, which is the same case with no blend because sprinting has one
-    /// direction. That covers 26 of vanilla's 38; the hovering creatures are copied with
+    /// direction. That covers 28 of vanilla's 38; the rest are copied with
     /// <c>setgen --flags-from</c>.
     /// It was called "mirrored" until the executable was read; it has nothing to do with
     /// mirroring. <c>docs/animation-set-data.md</c> §4.6 and §6.
