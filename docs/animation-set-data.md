@@ -932,6 +932,24 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   witchlight is at zero. The werewolf is the one that looks heavily revised -- 214 of its
   426 named nodes end in digits -- and it is also the creature with the most flags.
 
+  One thing holds without exception, though it decides nothing on its own. **No flagged
+  attack's clips travel a middling distance.** The 34 flagged events sit at exactly 0 (19 of
+  them) or at 300.4 and above (15: the sprint and running attacks, up to 625), and not one
+  lands in between, where 98 clear attacks do. The longest travel in the file belongs to a
+  clear attack, the wolf's and the dog's `attackStart_SkeeverLungeLong` at 670.7.
+
+      named clips' travel     flagged   clear
+      exactly 0                    19     164
+      0 < travel < 300              0      98
+      travel >= 300.4              15      27
+
+  So `travel == 0 or travel >= 300` is **necessary** for the flag and nowhere near
+  sufficient: it admits 191 clear attacks. Paired with `bAnimationDriven` it gets no better
+  -- `not A and not R and travel <= 5` mislabels 103 of the 323 attacks where assuming 0
+  mislabels 34. It reads as the judgement it is: flag the attack when the clip's own travel
+  is either nothing or plainly the locomotion baked in, and leave it when the clip travels a
+  believable lunge.
+
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
   the six projects almost exactly:
