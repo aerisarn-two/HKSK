@@ -1053,7 +1053,17 @@ the graph says the character is sprinting over that state:
   no clear attack to contrast with and nothing per-attack to find; what those projects record is
   a fact about the creature. The werewolf's `AttackStartLeftSide`, `AttackStartRightSide` and its
   two running-power attacks touch `IsAttacking` and nothing else, exactly as its clear power
-  combos do. The player's `bashStart` touches `iIsInSneak`, `iLeftHandType` and `iRightHandType`,
+  combos do, and every werewolf attack -- flagged or clear -- is entered by an unconditioned
+  wildcard in `Behavior16`. The side attacks match the clear combos in transition flags
+  (`0x0d00`) and effect (`QuarterSecondBlend`, 0.25 s) as well. The running powers differ in
+  three ways and none generalises: `0x0200` in the flag word, Havok's permission to re-enter from
+  any state rather than anything about movement; a shorter `PowerAttackBlend`; and the race's
+  attack type, **`PowerAttackTypeForward`** where the combos have `PowerAttackTypeStanding`.
+  That keyword is the engine's own "chosen while moving forward", but the player's
+  `attackPowerStartForward` family and the bear's, scrib's and vampire brute's forward powers
+  carry it too and are clear -- 6 flagged against 10. The side attacks' ±45 attack angle is
+  shared with some 40 clear attacks. No transition syncs an attack to locomotion: every
+  transition effect has flags 0. The player's `bashStart` touches `iIsInSneak`, `iLeftHandType` and `iRightHandType`,
   the same three as the clear `bashPowerStart`, and vanilla flags it **only in the hand-to-hand
   sets** -- a per-set value, which no per-attack rule can express.
 
