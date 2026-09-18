@@ -946,9 +946,30 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   So `travel == 0 or travel >= 300` is **necessary** for the flag and nowhere near
   sufficient: it admits 191 clear attacks. Paired with `bAnimationDriven` it gets no better
   -- `not A and not R and travel <= 5` mislabels 103 of the 323 attacks where assuming 0
-  mislabels 34. It reads as the judgement it is: flag the attack when the clip's own travel
-  is either nothing or plainly the locomotion baked in, and leave it when the clip travels a
-  believable lunge.
+  mislabels 34.
+
+  The gap is a **decision and not an absence**, which is worth separating out. Inside the six
+  projects that use the flag there are 71 attacks, and they fall like this:
+
+      named clips' travel     flagged   clear
+      exactly 0                    19      14
+      0 < travel < 300              0      20
+      travel >= 300                15       3
+
+  Those 20 mid-travel attacks are the player's directional power attacks, 58.3 to 297.1 units
+  -- `attackPowerStartDualWield`, `attackPowerStartBackward`, `attackPowerStartLeft`, the two
+  hand-to-hand forwards and the rest. The flag was there to use on every one of them and was
+  used on none, so the empty band is a choice.
+
+  Outside that band travel decides nothing. Large travel is flagged 15 times of 18, the
+  exceptions being the player's `attackPowerStartForward` at 484.5 and the netch's
+  `attackStartPowerStanding` at 443.4. Zero travel is flagged 19 times of 33; the 14 that are
+  clear are `attackPowerStartInPlace` and `attackPowerStartInPlaceLeftHand`,
+  `attackStartDualWield`, `bashStart` and `bashPowerStart` for both sexes, and the werewolf's
+  `AttackStartLeftPower`, `AttackStartRightPower`, `AttackStartLeftSprinting` and
+  `AttackStartRightSprinting`. In that band the clear ones are the power attacks and the
+  bashes and the flagged ones are the ordinary attacks, which is the name-shape correlation
+  below arriving from another direction rather than a rule about travel.
 
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
