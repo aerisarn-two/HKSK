@@ -872,6 +872,28 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
       wisp                4 attacks, floats, travel 0          all clear
       witchlight          1 attack,  floats, travel 0          flagged
 
+  One correlation is worth recording because it is the strongest there is, and because it
+  shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
+  the six projects almost exactly:
+
+      prefix                          flagged   clear     all 49 projects
+      attackPowerStart_ (underscore)       10       0      10 / 27
+      bashStart                             2       0       2 / 15
+      attackStart   (no underscore)        24       8      24 / 118
+      attackStart_  (underscore)             2       8       2 / 149
+      attackPowerStart (no underscore)      0      26       0 / 28
+      bashPowerStart                        0       2       0 / 4
+
+  The player is the cleanest: `attackPowerStart_` 4 of 4 flagged and `attackPowerStart` 0 of
+  13, `attackStart` 6 of 7 and `attackStart_` 0 of 4. Note that the underscore means opposite
+  things on either side of `Power`, which is the tell. As a predictor the shape gets 10 of 82
+  wrong inside those six projects, against 38 for assuming 0 -- a real gain -- and 126 of 341
+  wrong over the whole file, because creatures name their attacks `attackStart_Something` and
+  147 of those 149 are clear. It cannot be a mechanism either: the name is an event declared
+  in a behaviour and the flag is a byte in a text file, with nothing between them but whoever
+  wrote both. What it records is which events the player's animators revisited, and that pass
+  is where the flags came from.
+
   Every rule tried, and what it scored against the 38 flagged events:
 
   | tried | why it fails |
