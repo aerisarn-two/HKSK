@@ -872,6 +872,35 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
       wisp                4 attacks, floats, travel 0          all clear
       witchlight          1 attack,  floats, travel 0          flagged
 
+  **What the six have in common was looked for in all three places a project is described,
+  and it is not there.**
+
+  *The races* (`RACE`, as the masters have them). The six span everything: unarmed reach 0
+  (one of the witchlight's races) to 256 (the netch, the player's two-handed entries),
+  unarmed damage 0 to 70, sizes small to large. No race flag is shared by all six -- the
+  only ones unique to them, `Playable`, `FaceGenHead`, `Child`, `OverlayHeadPartList`, are
+  the player's humanoid races and say nothing about the werewolf or the netch -- and no
+  attack-data flag either: `PowerAttack`, `LeftAttack`, `BashAttack` and `RotatingAttack`
+  occur on both sides. The attack and strike angles do not separate them.
+
+  *The character files*. Nothing is 6 of 6 against 0 of 43. Foot IK is driven on 2 of the
+  six and 14 of the rest; 3 of the six declare character properties and 22 of the rest do.
+  The one property that looked like an answer, **`bAnimationDrivenAttacks`, is on 12
+  projects and none of the six** -- but those 12 are the quadrupeds, who share
+  `quadrupedbehavior.hkx` and its whole property set (`IsBear`, `IsCow`, `IsSabreCat`), so
+  it is a family trait and not a discriminator.
+
+  *The behaviours*. Of 639 distinct variables, 3,741 events, 99 character properties and 89
+  node classes across the 49 projects, **not one is present in all six and absent from all
+  43**, nor the reverse -- and not even loosely: allowing four exceptions on either side
+  still finds nothing.
+
+  Editing marks do not separate them either. The share of nodes still carrying the
+  behaviour tool's own name (`Behavior16`, `ModifierGenerator07`) averages 3.9% over the six
+  and 3.6% over the rest; the hare, the mudcrab and the slaughterfish lead the table and the
+  witchlight is at zero. The werewolf is the one that looks heavily revised -- 214 of its
+  426 named nodes end in digits -- and it is also the creature with the most flags.
+
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
   the six projects almost exactly:
