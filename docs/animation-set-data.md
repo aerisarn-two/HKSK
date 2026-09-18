@@ -822,16 +822,18 @@ That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
-The moving-attack flag is derived **in part** (§6), by `GraphReach.TravelChosenBySpeed`: the
-attack's travel is the actor's when a blender above its clips is parametric on speed, or when the
-graph raises `IsSprinting` over the state. That yields 32 (project, event) pairs -- **28 of
-vanilla's 38** -- and four vanilla does not have, all of which look like vanilla's own omissions:
+The moving-attack flag is derived **in part** (§6). The attack's travel is the actor's when a
+blender above its clips is parametric on speed or the graph says the character is sprinting over
+the state (`GraphReach.TravelChosenBySpeed`), or when the idle tree only chooses the attack on the
+move (`GameEvents.MovingAttacks`, read from the masters by `setgen`). That yields 34 (project,
+event) pairs -- **30 of vanilla's 38** -- and four vanilla does not have, all of which look like vanilla's own omissions:
 the Vampire Lord's two, which carry the player's speed-parametric blend in a project that flags
 nothing, and the werewolf's `AttackStartLeftSprinting` and `AttackStartRightSprinting`, which it
-leaves clear while flagging `AttackStartDualSprinting` beside them. The 10 not derived are the storm
-atronach's three and the witchlight's one -- projects where *every* attack is flagged, so the
-fact is about the creature and not the attack -- the werewolf's side and running-power attacks,
-and the player's `bashStart`, which vanilla flags only in the hand-to-hand sets.
+leaves clear while flagging `AttackStartDualSprinting` beside them. The 8 not derived are the storm
+atronach's three and the witchlight's one -- projects where *every* attack is flagged and no idle
+chooses any of them, so the fact is about the creature and not the attack -- the werewolf's two
+side attacks, which no idle chooses either, and the player's `bashStart`, which vanilla flags only
+in the hand-to-hand sets.
 For those, `setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped
 file:
 
@@ -874,8 +876,9 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is derived for two of its three families -- 28 of vanilla's
-  38 -- and copied for the rest; `setgen --flags-from` is still the only way to reproduce all 38.
+- **the moving-attack flag** (§4.6) is derived where the behaviour or the idle tree states it --
+  30 of vanilla's 38 -- and copied for the rest; `setgen --flags-from` is still the only way to
+  reproduce all 38.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
   **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
@@ -1140,6 +1143,32 @@ the graph says the character is sprinting over that state:
   standing power attack has no movement condition and is clear, and an idle is not tied to a
   project, so `attackStart` or `attackStartLeft` can only be matched to one through the idle
   tree.
+
+  **The idle tree, read in full.** An idle is chosen as the first child whose conditions pass, so
+  what it really requires is its own conditions, its ancestors', and the *failure* of every
+  sibling tried before it. Tying each idle to its creature through the behaviour file it names,
+  and reading it that way:
+
+      the idle requires                      caught   invented   (of 110 attack events with an idle)
+      IsSprinting == 1                           11          2   the werewolf's left and right sprints
+      moving: a speed above standing, or
+        tried only after a standing sibling       2          0   the werewolf's running powers
+
+  `WerewolfLeftRunningPowerAttack` has no condition of its own. Its parent excludes sprinting and
+  it is tried only after `WerewolfLeftPowerAttack[GetMovementSpeed <= 1]` has failed: it is the
+  power attack for when the werewolf is running, stated by elimination, and flagged; the standing
+  sibling is clear. The graph cannot show this -- both are one clip in a state behind an
+  unconditioned wildcard -- and the masters state it outright, so `setgen` reads it
+  (`MasterData.ChosenOnTheMove`) and the generator flags it. Movement *direction* is deliberately
+  not counted: `GetMovementDirection == 1` chooses the player's forward lunge, whose travel is its
+  own, and every directional power attack is clear.
+
+  What the idles cannot explain is where there are none. Only 13 of the 45 projects with attacks
+  choose any attack through an idle; the storm atronach, the witchlight and the werewolf's side
+  attacks are chosen from the race's attack data alone. And an idle with no movement condition
+  decides nothing either way: the player's `attackStart` has none and is flagged, its
+  `DualWieldPowerAttack` has none and is clear -- ordinary attacks against power attacks, which is
+  the name-shape correlation below once more.
 
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside

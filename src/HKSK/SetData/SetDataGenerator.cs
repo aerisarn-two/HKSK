@@ -20,10 +20,18 @@ namespace HKSK.SetData;
 /// Each project's attack events, from the attack data of the races that use it, by
 /// project stem.
 /// </param>
+/// <param name="MovingAttacks">
+/// Each project's attack events that the idle tree only chooses while the character is
+/// moving, by project stem: an idle that requires <c>IsSprinting</c>, or a movement speed,
+/// or is tried only after a sibling for standing still has failed. The werewolf's running
+/// power attacks are the case the behaviour cannot show -- one clip in a state, no blend, no
+/// variable -- and the idle tree states outright (<c>docs/animation-set-data.md</c> §6).
+/// </param>
 public sealed record GameEvents(
     IReadOnlySet<string> Idle,
     IReadOnlySet<string> Equip,
-    IReadOnlyDictionary<string, IReadOnlySet<string>> Attacks);
+    IReadOnlyDictionary<string, IReadOnlySet<string>> Attacks,
+    IReadOnlyDictionary<string, IReadOnlySet<string>>? MovingAttacks = null);
 
 /// <summary>
 /// Writes <c>animationsetdatasinglefile.txt</c> from what the game needs of it.
@@ -98,25 +106,28 @@ public static class SetDataGenerator
         var files = new ProjectFiles(meshes, project);
         IReadOnlySet<string> attackEvents = events.Attacks.GetValueOrDefault(project.Name)
                                             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlySet<string> moving = events.MovingAttacks?.GetValueOrDefault(project.Name)
+                                      ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         return reach.ChoosesByHand
-            ? ByHand(reach, files, events, attackEvents, slack)
-            : Whole(reach, files, attackEvents);
+            ? ByHand(reach, files, events, attackEvents, moving, slack)
+            : Whole(reach, files, attackEvents, moving);
     }
 
     // A project that never chooses by hand type: one set, everything in it.
-    private static ProjectAttackListBlock Whole(GraphReach reach, ProjectFiles files, IReadOnlySet<string> attackEvents)
+    private static ProjectAttackListBlock Whole(
+        GraphReach reach, ProjectFiles files, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving)
     {
         reach.SetHands(0, 0);
 
         var set = new ProjectAttackBlock();
         foreach (string path in files.All) set.Checksums.Add(path);
-        set.Attacks.Attacks.AddRange(Attacks(reach, attackEvents));
+        set.Attacks.Attacks.AddRange(Attacks(reach, attackEvents, moving));
 
         return new ProjectAttackListBlock { SetFiles = [WholeSetName], Sets = [set] };
     }
 
-    private static List<AttackData> Attacks(GraphReach reach, IReadOnlySet<string> attackEvents)
+    private static List<AttackData> Attacks(GraphReach reach, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving)
     {
         var attacks = new List<AttackData>();
 
@@ -130,9 +141,10 @@ public static class SetDataGenerator
             attacks.Add(new AttackData
             {
                 EventName = name,
-                // the flag when the graph interpolates the attack by speed, so no single root
-                // motion exists to measure (docs/animation-set-data.md §4.6, §6)
-                MovingAttack = reach.TravelChosenBySpeed(clips) ? 1 : 0,
+                // the flag when the attack's travel is the actor's: the graph interpolates it
+                // by speed or plays it while sprinting, or the idle tree only chooses it on the
+                // move (docs/animation-set-data.md §4.6, §6)
+                MovingAttack = reach.TravelChosenBySpeed(clips) || moving.Contains(name) ? 1 : 0,
                 Clips = [.. clips.Select(c => c.m_name).Distinct(StringComparer.OrdinalIgnoreCase)],
             });
         }
@@ -175,7 +187,8 @@ public static class SetDataGenerator
 
     // A project that chooses by hand type: a base set, weapon sets, and a set per event.
     private static ProjectAttackListBlock ByHand(
-        GraphReach reach, ProjectFiles files, GameEvents events, IReadOnlySet<string> attackEvents, double slack)
+        GraphReach reach, ProjectFiles files, GameEvents events, IReadOnlySet<string> attackEvents,
+        IReadOnlySet<string> moving, double slack)
     {
         IReadOnlyList<(int Right, int Left)> combinations = HandCombinations.All;
 
@@ -188,7 +201,7 @@ public static class SetDataGenerator
         foreach ((int right, int left) in combinations)
         {
             StateGraph graph = StateGraph.Build(reach, right, left, events.Idle);
-            attacks[(right, left)] = Attacks(reach, attackEvents);
+            attacks[(right, left)] = Attacks(reach, attackEvents, moving);
 
             if (!bySignature.TryGetValue(graph.Signature, out var seen))
             {

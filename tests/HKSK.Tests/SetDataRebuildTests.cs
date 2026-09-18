@@ -211,11 +211,12 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
     [MastersFact]
     public void TheMovingAttackFlagIsDerivedWhereTheAttackTravelsAtTheActorsSpeed()
     {
-        // The two families of the flag that follow from the assets: a blender above the clips
-        // is parametric on the actor's speed, so no single root motion exists, or the graph
-        // says the character is sprinting over that state -- the same case with no blend,
-        // because sprinting has one direction (docs/animation-set-data.md §4.6, §6).
-        // 28 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
+        // What follows from the assets: a blender above the clips is parametric on the actor's
+        // speed, so no single root motion exists; or the graph says the character is sprinting
+        // over that state -- the same case with no blend, because sprinting has one direction;
+        // or the idle tree only chooses the attack on the move, which is how the werewolf's
+        // running powers are told from its standing power combos (docs/animation-set-data.md
+        // §4.6, §6). 30 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
         // Lord carries the player's speed-parametric blend in a project that flags nothing, and
         // the werewolf flags AttackStartDualSprinting while leaving its left and right alone.
         var flagged = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -241,6 +242,8 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
                 "WerewolfBeastProject/AttackStartBackHand", "WerewolfBeastProject/AttackStartDual",
                 "WerewolfBeastProject/AttackStartDualRunning",
                 "WerewolfBeastProject/AttackStartDualSprinting",
+                "WerewolfBeastProject/AttackStartLeftRunningPower",
+                "WerewolfBeastProject/AttackStartRightRunningPower",
                 "WerewolfBeastProject/AttackStartLeftSprinting",
                 "WerewolfBeastProject/AttackStartRightSprinting",
                 "WerewolfBeastProject/attackStartLeft", "WerewolfBeastProject/attackStartRight",

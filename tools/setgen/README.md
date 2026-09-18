@@ -14,9 +14,9 @@ Writes `animationsetdatasinglefile.txt` from the game's other assets:
   weapons load different files.
 - `--flags-from` — a shipped `animationsetdatasinglefile.txt` to take the moving-attack
   flag from. Most of that flag cannot be derived (`docs/animation-set-data.md` §4.6, §6):
-  without this, the 32 attacks whose travel is the actor's -- interpolated by a
-  speed-parametric blend, or made while the graph says the character is sprinting -- are still
-  flagged, and 10 of vanilla's 38 are not.
+  without this, the 34 attacks whose travel is the actor's -- interpolated by a
+  speed-parametric blend, made while the graph says the character is sprinting, or chosen by
+  the idle tree only on the move -- are still flagged, and 8 of vanilla's 38 are not.
 - `--force` — allow writing over the shipped file inside `<meshes>`, which is otherwise
   refused.
 
