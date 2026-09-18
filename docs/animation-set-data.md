@@ -971,6 +971,36 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   bashes and the flagged ones are the ordinary attacks, which is the name-shape correlation
   below arriving from another direction rather than a rule about travel.
 
+  **The best rule found, and why it is still not one.** Read the flag as "this attack's reach
+  is the locomotion's, not the animation's" and two things stand for it: the attack is blended
+  into locomotion, or its clip has the locomotion baked into its own travel. Scored inside the
+  six projects that use the flag, with a blender (`hkbBlenderGenerator`, over every parent) no
+  more than two levels above the clip:
+
+      rule                                              caught   false   wrong of 71
+      assume clear                                           0       0            34
+      blender <= 2 levels, or travel >= 300                 25       3            12
+      blender <= 2 levels, or clip speed ~ locomotion       12       0            22
+
+  Over all 49 projects it is 45 wrong against 34 for assuming clear, since the other 43 never
+  use the flag -- so it describes those six and generalises to nothing.
+
+  Its three false positives are the lunges whose travel is their own: the player's
+  `attackPowerStartForward` at 484.5 and the netch's `attackStartPowerStanding` at 443.4.
+  Telling a lunge from baked-in locomotion should be what the clip's *speed* settles, and the
+  third row is that attempt -- **inconclusive, not refuted**, because the denominator used
+  there, the fastest non-attack clip, is 3,529 u/s for the player and plainly not a locomotion
+  speed. The raw figures do separate: the player's flagged sprint attacks run at 370 to 417
+  u/s and every clear player attack at 323 or below. Doing it properly wants the run and
+  sprint speeds from the `MOVT` records, which `docs/speed-data.md` already reads.
+
+  Its nine false negatives are the cases where the character is moving for a reason the graph
+  does not state: the werewolf's `AttackStartLeft`, `AttackStartRight` and `AttackStartBackHand`
+  (blended, but four levels up), its `LeftSide`, `RightSide` and `DualSprinting`, the netch's
+  `attackStartLeft`, the witchlight's `attackStart_Attack1` and the storm atronach's
+  `attackPowerStart_StandingAttack`. The netch drifts and the witchlight hovers always: there
+  is no blend and no travel to find, because their motion is not in the animation at all.
+
   One correlation is worth recording because it is the strongest there is, and because it
   shows what kind of thing the flag is. The **shape of the event's name** tracks it, inside
   the six projects almost exactly:
