@@ -1004,6 +1004,25 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   `AttackStartRight`, built on the same speed-parametric pattern in a project that flags none
   of its four attacks: the graph was templated and the set data was never tuned.
 
+  **The rule's exceptions were examined and nothing is missing from it.** The two it invents
+  are the Vampire Lord's `AttackStartLeft` and `AttackStartRight`, and their blends are the same
+  pattern to the letter -- `Forward_BlendAttackLeft`, parametric on `SampledSpeed`, the standing
+  attack at axis 5 travelling nothing and `MT RunForwardAttackLeft` at axis 303 travelling 444.
+  No condition separates them from the player's; vanilla flagged none of that project's four
+  attacks, and the cost is real, since its entry names `MT AttackLeft` and combat therefore
+  measures a vampire lord as standing still while it swings in flight.
+
+  Of the ones it misses, **14 have nothing in the graph that chooses their clip at all** -- a
+  single clip in a state: the sprint power attacks, the werewolf's side and running-power
+  attacks and its dual sprint, the storm atronach's two power attacks, the netch's and the
+  witchlight's. The storm atronach's swipe sits under a blend with `CombatIdle` whose parameter
+  is constant. And the sprint attacks are chosen by a **selector bound to the weapon**:
+  `AttackForwardSprintMSG`, `selectedGeneratorIndex <- iRightHandType`, over clips travelling
+  333, 333, 333, 333, 333, 494 and 494 -- the same "no single reach" situation in a different
+  node. Adding that as a second rule was measured and **rejected: it catches 2 flagged attacks
+  and 8 clear ones**, because the player's `attackPowerStartBackward`, `attackPowerStartLeft`,
+  `attackPowerStartRight` and `attackPowerStartDualWield` have exactly that shape and are clear.
+
   That accounts for 12 of the 34 flags. The rest fall into two more families, and every flag
   in the file belongs to exactly one:
 
