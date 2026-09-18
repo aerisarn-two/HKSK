@@ -971,6 +971,46 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   bashes and the flagged ones are the ordinary attacks, which is the name-shape correlation
   below arriving from another direction rather than a rule about travel.
 
+  **What the flagged attacks are, in three families.** The blend above an attack is not a
+  static fact about mixing -- a blender's arms are weighted at runtime, and the ones over the
+  player's and the werewolf's attacks are **parametric on the actor's speed**, so whether the
+  locomotion arm contributes is `SpeedDamped` or `SampledSpeed` at that instant:
+
+      1HM_Forward_AttackLeft_Blend   blendParameter <- SpeedDamped
+         axis  25  1HM_AttackLeft          the standing swing, travels nothing
+         axis  82  1HM_WalkFwdAttackLeft
+         axis 232  1HM_RunFwdAttackLeft    travels a long way
+      LeftAttackForwardBlend (werewolf)   blendParameter <- SampledSpeed
+         axis  50  LeftAttackStandingBehavior
+         axis 325  LeftAttackRunningDirectionalBlend   (itself parametric on Direction)
+
+  The axis positions are speeds in units per second. So **the attack has no single root
+  motion**: the clip that plays is interpolated by how fast the actor is going, from a
+  standing swing that travels nothing to a run attack that travels far. The set data has one
+  `reach` per attack entry and there is no right number to put in it, which is what the flag
+  is for -- it tells combat to compute the distance from the same speed the graph is blending
+  by.
+
+  Tested as a rule, "an ancestor blender whose `blendParameter` is bound to a variable named
+  for speed" fires on **14 attacks in the whole game and 12 of them are flagged**. It needs no
+  depth limit -- the only depths that occur are 2 and 4 -- and inside the six projects it is
+  never wrong. The two exceptions are the **Vampire Lord's** `AttackStartLeft` and
+  `AttackStartRight`, built on the same speed-parametric pattern in a project that flags none
+  of its four attacks: the graph was templated and the set data was never tuned.
+
+  That accounts for 12 of the 34 flags. The rest fall into two more families, and every flag
+  in the file belongs to exactly one:
+
+      family                                                          flagged  shown by
+      the clip is chosen by a speed-parametric blend                       12  the behaviour
+      the clip has the locomotion baked into its own travel (>= 300)       15  the cache
+      the creature is simply always moving -- storm atronach's two, the
+        netch, the witchlight, the werewolf's two side attacks and its
+        dual sprint                                                         7  nothing
+
+  All three say the same thing in different vocabularies: this attack's travel is the actor's,
+  not this clip's. Only the first two are decidable from the assets.
+
   **The best rule found, and why it is still not one.** Read the flag as "this attack's reach
   is the locomotion's, not the animation's" and two things stand for it: the attack is blended
   into locomotion, or its clip has the locomotion baked into its own travel. Scored inside the
