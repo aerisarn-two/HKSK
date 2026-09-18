@@ -120,9 +120,12 @@ public sealed class AttackData
     /// clip's -- the player's regular, sprint and hand-to-hand attacks, the werewolf's
     /// running and side ones -- and clear on lunges and power attacks, whose root motion is
     /// where the blow lands. Only 6 of the 45 projects with attacks use it at all, and
-    /// nothing in the races, the character files or the behaviours distinguishes those six,
-    /// so it was authored per attack: <see cref="HKSK.SetData.SetDataGenerator"/> writes 0
-    /// and <c>setgen --flags-from</c> copies the shipped values.
+    /// nothing in the races, the character files or the behaviours distinguishes those six.
+    /// One family of it <em>is</em> derivable, and <see cref="HKSK.SetData.SetDataGenerator"/>
+    /// derives it: where a blender above the clips is parametric on the actor's speed, the
+    /// attack has no root motion of its own to measure. That covers 13 of vanilla's 38; the
+    /// sprint attacks and the hovering creatures are copied with
+    /// <c>setgen --flags-from</c>.
     /// It was called "mirrored" until the executable was read; it has nothing to do with
     /// mirroring. <c>docs/animation-set-data.md</c> §4.6 and §6.
     /// </para>

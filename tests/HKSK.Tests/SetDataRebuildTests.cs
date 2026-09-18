@@ -209,6 +209,35 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
     }
 
     [MastersFact]
+    public void TheMovingAttackFlagIsDerivedWhereTheGraphInterpolatesTheAttackBySpeed()
+    {
+        // The one family of the flag that follows from the assets: a blender above the clips is
+        // parametric on the actor's speed, so the attack has no root motion of its own to
+        // measure (docs/animation-set-data.md §4.6, §6). The other two families -- the sprint
+        // attacks and the creatures that never stop moving -- are not derivable and stay 0.
+        var flagged = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (AnimationSetDataProject project in _built.Made.Projects)
+            foreach (AttackData attack in project.Sets.Sets.SelectMany(s => s.Attacks.Attacks))
+                if (attack.MovingAttack != 0)
+                    flagged.Add($"{project.Stem}/{attack.EventName}");
+
+        Assert.Equal(
+            [
+                "DefaultFemale/attackStart", "DefaultFemale/AttackStartH2HLeft",
+                "DefaultFemale/AttackStartH2HRight", "DefaultFemale/attackStartLeftHand",
+                "DefaultMale/attackStart", "DefaultMale/AttackStartH2HLeft",
+                "DefaultMale/AttackStartH2HRight", "DefaultMale/attackStartLeftHand",
+                // the same speed-parametric blend, in a project vanilla flags nothing in
+                "VampireLord/AttackStartLeft", "VampireLord/AttackStartRight",
+                "WerewolfBeastProject/AttackStartBackHand", "WerewolfBeastProject/AttackStartDual",
+                "WerewolfBeastProject/AttackStartDualRunning", "WerewolfBeastProject/AttackStartLeft",
+                "WerewolfBeastProject/AttackStartRight",
+            ],
+            flagged,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    [MastersFact]
     public void AnAttackIsTheNestedStateItsTransitionNames()
     {
         // the chaurus's attacks all enter one state; the nested state id is what separates them

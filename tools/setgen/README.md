@@ -13,9 +13,9 @@ Writes `animationsetdatasinglefile.txt` from the game's other assets:
   The default, 1.5, keeps the player's sets to a few thousand; 1 splits a set wherever two
   weapons load different files.
 - `--flags-from` — a shipped `animationsetdatasinglefile.txt` to take the moving-attack
-  flag from. It is the one value in the file nothing derives (`docs/animation-set-data.md`
-  §4.6, §6); without this the flag is written as 0 everywhere, which tells the combat AI to
-  measure every attack by its animation's own travel.
+  flag from. Most of that flag cannot be derived (`docs/animation-set-data.md` §4.6, §6):
+  without this, the 15 attacks whose travel the graph interpolates by speed are still
+  flagged, and the sprint attacks and hovering creatures -- 25 of vanilla's 38 -- are not.
 - `--force` — allow writing over the shipped file inside `<meshes>`, which is otherwise
   refused.
 

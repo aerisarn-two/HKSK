@@ -41,6 +41,7 @@ internal sealed class GraphReach
     private readonly List<hkbStateMachine> _machines = [];
     private Dictionary<string, List<hkbStateMachine>>? _byEvent;
     private HashSet<IHavokObject>? _reachable;
+    private Dictionary<IHavokObject, List<IHavokObject>>? _parents;
 
     private GraphReach(string projectFile)
     {
@@ -295,6 +296,82 @@ internal sealed class GraphReach
         }
 
         return clips;
+    }
+
+    /// <summary>
+    /// Whether an attack's travel is chosen by how fast the character is moving, which means
+    /// the attack has no root motion of its own to measure.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// True when a blender above any of the clips is <em>parametric on speed</em>: its
+    /// <c>blendParameter</c> is bound to a variable named for speed, and its arms sit at
+    /// positions along that axis in units per second. The player's
+    /// <c>1HM_Forward_AttackLeft_Blend</c> puts the standing swing at 25, the walking one at 82
+    /// and the running one at 232, on <c>SpeedDamped</c>; the werewolf's
+    /// <c>LeftAttackForwardBlend</c> puts standing at 50 and its running directional blend at
+    /// 325, on <c>SampledSpeed</c>. So the clip that plays -- and how far it carries the
+    /// character -- is interpolated at runtime, and the single reach the set data can state for
+    /// the attack has no correct value. That is what the moving-attack flag is for: it tells
+    /// combat to measure the attack from the same speed the graph blends by
+    /// (<c>docs/animation-set-data.md</c> §4.6).
+    /// </para>
+    /// <para>
+    /// Distance does not enter it: of the 14 attacks in the shipped game this holds for, the
+    /// blender sits two levels above the clip in eleven and four in the rest. <strong>Every
+    /// parent is followed</strong>, because a clip generator is often shared and a walk records
+    /// only the first parent it happened to reach.
+    /// </para>
+    /// </remarks>
+    public bool TravelChosenBySpeed(IEnumerable<hkbClipGenerator> clips)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
+        _parents ??= Parents();
+
+        var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+        var queue = new Queue<IHavokObject>();
+        foreach (hkbClipGenerator clip in clips)
+            if (seen.Add(clip)) queue.Enqueue(clip);
+
+        while (queue.Count > 0)
+            foreach (IHavokObject up in _parents.GetValueOrDefault(queue.Dequeue()) ?? [])
+            {
+                if (!seen.Add(up)) continue;
+                if (up is hkbBlenderGenerator blender && ParametricOnSpeed(blender)) return true;
+                queue.Enqueue(up);
+            }
+
+        return false;
+    }
+
+    private bool ParametricOnSpeed(hkbBlenderGenerator blender)
+    {
+        if (blender.m_variableBindingSet is not { } bindings) return false;
+        if (!_tables.TryGetValue(_fileOf.GetValueOrDefault(blender, ""), out Variables? table)) return false;
+
+        foreach (hkbVariableBindingSetBinding binding in bindings.m_bindings)
+            if (binding.m_memberPath == "blendParameter"
+                && binding.m_variableIndex >= 0
+                && table.NameOf(binding.m_variableIndex) is { } name
+                && name.Contains("speed", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+        return false;
+    }
+
+    /// <summary>Every parent of every node the root reaches, all of them, not the first seen.</summary>
+    private Dictionary<IHavokObject, List<IHavokObject>> Parents()
+    {
+        var parents = new Dictionary<IHavokObject, List<IHavokObject>>(ReferenceEqualityComparer.Instance);
+
+        foreach (IHavokObject node in Reachable(Root!))
+            foreach (IHavokObject child in Children(node))
+            {
+                if (!parents.TryGetValue(child, out List<IHavokObject>? list)) parents[child] = list = [];
+                if (!list.Any(x => ReferenceEquals(x, node))) list.Add(node);
+            }
+
+        return parents;
     }
 
     private IEnumerable<IHavokObject> Reachable(hkbGenerator root)

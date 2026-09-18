@@ -822,8 +822,13 @@ That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
-The moving-attack flag is not derived at all (§6). `setgen --flags-from <shipped file>` takes
-it, and nothing else, from a shipped file:
+The moving-attack flag is derived **in part** (§6). `SetDataGenerator` sets it where the graph
+interpolates the attack by speed -- `GraphReach.TravelChosenBySpeed` -- which yields 15
+(project, event) pairs: 13 of vanilla's 38, plus the Vampire Lord's two left and right attacks,
+which have the same speed-parametric blend in a project vanilla never flagged at all. The other
+25 are the sprint and run attacks, whose travel is indistinguishable from a lunge's by root
+motion alone, and the hovering creatures, whose motion is in no asset. For those,
+`setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped file:
 
     attacks flagged as moving              1,180 of 3,819
     attacks the shipped file answered      3,305; the other 514 nobody shipped
@@ -864,7 +869,8 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is derived from nothing; `setgen --flags-from` copies it.
+- **the moving-attack flag** (§4.6) is derived for one of its three families and copied for
+  the rest; `setgen --flags-from` is still the only way to reproduce all 38.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
   **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
