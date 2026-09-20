@@ -108,26 +108,45 @@ public static class SetDataGenerator
                                             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlySet<string> moving = events.MovingAttacks?.GetValueOrDefault(project.Name)
                                       ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool hovers = Hovers(reach, project);
 
         return reach.ChoosesByHand
-            ? ByHand(reach, files, events, attackEvents, moving, slack)
-            : Whole(reach, files, attackEvents, moving);
+            ? ByHand(reach, files, events, attackEvents, moving, hovers, slack)
+            : Whole(reach, files, attackEvents, moving, hovers);
+    }
+
+    /// <summary>
+    /// Whether the controller carries the creature wherever it goes: nothing in its graph blends
+    /// by speed, and the clips it blends by direction -- its locomotion, where it has any -- move
+    /// the root by nothing. The storm atronach, the wisp and the witchlight; not the flyers,
+    /// whose direction blends carry the travel, and not the spider centurion, which walks.
+    /// </summary>
+    private static bool Hovers(GraphReach reach, ActorProject project)
+    {
+        if (reach.AnimatesBySpeed) return false;
+
+        var travel = project.Clips
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Max(c => c.Slot?.Motion?.Travel ?? 0f), StringComparer.OrdinalIgnoreCase);
+
+        // the engine's own gate: a reach of five units or less is no movement (§4.6)
+        return reach.LocomotionClips().All(c => travel.GetValueOrDefault(c.m_name) <= 5f);
     }
 
     // A project that never chooses by hand type: one set, everything in it.
     private static ProjectAttackListBlock Whole(
-        GraphReach reach, ProjectFiles files, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving)
+        GraphReach reach, ProjectFiles files, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving, bool hovers)
     {
         reach.SetHands(0, 0);
 
         var set = new ProjectAttackBlock();
         foreach (string path in files.All) set.Checksums.Add(path);
-        set.Attacks.Attacks.AddRange(Attacks(reach, attackEvents, moving));
+        set.Attacks.Attacks.AddRange(Attacks(reach, attackEvents, moving, hovers));
 
         return new ProjectAttackListBlock { SetFiles = [WholeSetName], Sets = [set] };
     }
 
-    private static List<AttackData> Attacks(GraphReach reach, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving)
+    private static List<AttackData> Attacks(GraphReach reach, IReadOnlySet<string> attackEvents, IReadOnlySet<string> moving, bool hovers)
     {
         var attacks = new List<AttackData>();
 
@@ -141,10 +160,13 @@ public static class SetDataGenerator
             attacks.Add(new AttackData
             {
                 EventName = name,
-                // the flag when the attack's travel is the actor's: the graph interpolates it
-                // by speed or plays it while sprinting, or the idle tree only chooses it on the
-                // move (docs/animation-set-data.md §4.6, §6)
-                MovingAttack = reach.TravelChosenBySpeed(clips) || moving.Contains(name) ? 1 : 0,
+                // The flag when the attack's travel is the actor's: the graph interpolates it by
+                // speed or plays it while sprinting, the idle tree only chooses it on the move,
+                // or the controller carries the creature always. Never inside a branch that
+                // raises bAnimationDriven, where the clip's root motion is the travel
+                // (docs/animation-set-data.md §4.6, §6).
+                MovingAttack = (reach.TravelChosenBySpeed(clips) || moving.Contains(name) || hovers)
+                               && !reach.PlaysAnimationDriven(clips) ? 1 : 0,
                 Clips = [.. clips.Select(c => c.m_name).Distinct(StringComparer.OrdinalIgnoreCase)],
             });
         }
@@ -188,7 +210,7 @@ public static class SetDataGenerator
     // A project that chooses by hand type: a base set, weapon sets, and a set per event.
     private static ProjectAttackListBlock ByHand(
         GraphReach reach, ProjectFiles files, GameEvents events, IReadOnlySet<string> attackEvents,
-        IReadOnlySet<string> moving, double slack)
+        IReadOnlySet<string> moving, bool hovers, double slack)
     {
         IReadOnlyList<(int Right, int Left)> combinations = HandCombinations.All;
 
@@ -201,7 +223,7 @@ public static class SetDataGenerator
         foreach ((int right, int left) in combinations)
         {
             StateGraph graph = StateGraph.Build(reach, right, left, events.Idle);
-            attacks[(right, left)] = Attacks(reach, attackEvents, moving);
+            attacks[(right, left)] = Attacks(reach, attackEvents, moving, hovers);
 
             if (!bySignature.TryGetValue(graph.Signature, out var seen))
             {

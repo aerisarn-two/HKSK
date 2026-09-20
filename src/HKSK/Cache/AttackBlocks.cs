@@ -121,11 +121,15 @@ public sealed class AttackData
     /// running and side ones -- and clear on lunges and power attacks, whose root motion is
     /// where the blow lands. Only 6 of the 45 projects with attacks use it at all, and
     /// nothing in the races, the character files or the behaviours distinguishes those six.
-    /// Most of it <em>is</em> derivable, and <see cref="HKSK.SetData.SetDataGenerator"/> derives
-    /// it: a blender above the clips parametric on the actor's speed, so no single root motion
-    /// exists; a state that raises <c>IsSprinting</c>, the same case with no blend because
-    /// sprinting has one direction; or an idle the tree only chooses on the move. That covers 30
-    /// of vanilla's 38; the rest are copied with <c>setgen --flags-from</c>.
+    /// Nearly all of it <em>is</em> derivable, and <see cref="HKSK.SetData.SetDataGenerator"/>
+    /// derives it from the engine's own condition: a blender above the clips parametric on the
+    /// actor's speed, so no single root motion exists; a state that raises <c>IsSprinting</c>,
+    /// the same case with no blend because sprinting has one direction; an idle the tree only
+    /// chooses on the move; or a creature the controller carries always, which is what a graph
+    /// with no speed blend and no travel under its direction blends shows. Never inside a branch
+    /// that raises <c>bAnimationDriven</c>, since the engine then moves the actor by the clip.
+    /// That covers 33 of vanilla's 38, differs from it once on purpose, and
+    /// <c>setgen --flags-from</c> copies vanilla's values instead.
     /// It was called "mirrored" until the executable was read; it has nothing to do with
     /// mirroring. <c>docs/animation-set-data.md</c> §4.6 and §6.
     /// </para>

@@ -211,14 +211,21 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
     [MastersFact]
     public void TheMovingAttackFlagIsDerivedWhereTheAttackTravelsAtTheActorsSpeed()
     {
-        // What follows from the assets: a blender above the clips is parametric on the actor's
-        // speed, so no single root motion exists; or the graph says the character is sprinting
-        // over that state -- the same case with no blend, because sprinting has one direction;
-        // or the idle tree only chooses the attack on the move, which is how the werewolf's
-        // running powers are told from its standing power combos (docs/animation-set-data.md
-        // §4.6, §6). 30 of vanilla's 38 come out. The four extra are vanilla's own omissions: the Vampire
-        // Lord carries the player's speed-parametric blend in a project that flags nothing, and
-        // the werewolf flags AttackStartDualSprinting while leaving its left and right alone.
+        // What follows from the assets and the engine's own logic: a blender above the clips is
+        // parametric on the actor's speed, so no single root motion exists; the graph says the
+        // character is sprinting over that state -- the same case with no blend, because
+        // sprinting has one direction; the idle tree only chooses the attack on the move; or the
+        // controller carries the creature always, which is what a hovering creature's graph shows
+        // (no speed blend, no root motion under its direction blends). Never inside a branch that
+        // raises bAnimationDriven, where the clip's root motion moves the character
+        // (docs/animation-set-data.md §4.6, §6).
+        //
+        // 33 of vanilla's 38 come out. The eight extra are vanilla's own omissions: the Vampire
+        // Lord carries the player's speed-parametric blend in a project that flags nothing, the
+        // werewolf flags AttackStartDualSprinting while leaving its left and right alone, and the
+        // wisp hovers exactly as the witchlight does. The one deliberate difference is the storm
+        // atronach's standing power attack, which vanilla flags although the graph drives it by
+        // animation.
         var flagged = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (AnimationSetDataProject project in _built.Made.Projects)
             foreach (AttackData attack in project.Sets.Sets.SelectMany(s => s.Attacks.Attacks))
@@ -227,6 +234,7 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
 
         string[] expected =
             [
+                "AtronachStormProject/attackPowerStart_ForwardAttack", "AtronachStormProject/attackStart_Attack_Swipe",
                 "DefaultFemale/attackStart", "DefaultFemale/AttackStartH2HLeft",
                 "DefaultFemale/AttackStartH2HRight", "DefaultFemale/attackStartLeftHand",
                 "DefaultFemale/attackPowerStart_2HMSprint", "DefaultFemale/attackPowerStart_2HWSprint",
@@ -247,6 +255,9 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
                 "WerewolfBeastProject/AttackStartLeftSprinting",
                 "WerewolfBeastProject/AttackStartRightSprinting",
                 "WerewolfBeastProject/attackStartLeft", "WerewolfBeastProject/attackStartRight",
+                "WispProject/attackStart_Attack1", "WispProject/attackStart_Attack2",
+                "WispProject/attackStart_TouchPush", "WispProject/bashStart",
+                "WitchlightProject/attackStart_Attack1",
             ];
 
         Assert.Equal(new SortedSet<string>(expected, StringComparer.OrdinalIgnoreCase), flagged);

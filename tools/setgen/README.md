@@ -13,10 +13,12 @@ Writes `animationsetdatasinglefile.txt` from the game's other assets:
   The default, 1.5, keeps the player's sets to a few thousand; 1 splits a set wherever two
   weapons load different files.
 - `--flags-from` — a shipped `animationsetdatasinglefile.txt` to take the moving-attack
-  flag from. Most of that flag cannot be derived (`docs/animation-set-data.md` §4.6, §6):
-  without this, the 34 attacks whose travel is the actor's -- interpolated by a
-  speed-parametric blend, made while the graph says the character is sprinting, or chosen by
-  the idle tree only on the move -- are still flagged, and 8 of vanilla's 38 are not.
+  flag from. Without this the flag is derived from the engine's own condition
+  (`docs/animation-set-data.md` §4.6, §6): the 41 attacks whose travel is the actor's --
+  interpolated by a speed-parametric blend, made while the graph says the character is
+  sprinting, chosen by the idle tree only on the move, or made by a hovering creature -- are
+  flagged unless the branch raises `bAnimationDriven`. That is 33 of vanilla's 38, with 8 more
+  and 5 fewer, one of the five on purpose; this option reproduces vanilla's 38 instead.
 - `--force` — allow writing over the shipped file inside `<meshes>`, which is otherwise
   refused.
 

@@ -32,6 +32,9 @@ internal sealed class GraphReach
 
     private const int FlagDisabled = 0x20, FlagToNestedStateIdIsValid = 0x2000;
 
+    /// <summary>Set on every blender whose arms sit on an axis, whatever drives the parameter.</summary>
+    private const short FlagParametric = 0x1;
+
     private static readonly Regex Identifier = new(@"[A-Za-z_]\w*", RegexOptions.Compiled);
 
     private readonly string _folder;
@@ -413,19 +416,124 @@ internal sealed class GraphReach
         return false;
     }
 
-    private bool ParametricOnSpeed(hkbBlenderGenerator blender)
+    private bool ParametricOnSpeed(hkbBlenderGenerator blender) =>
+        ParametricOn(blender, name => name.Contains("speed", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether any blender in the graph interpolates by the character's speed -- the mark of
+    /// locomotion the animation drives. A creature without one either flies by direction
+    /// alone or is carried by the controller (<see cref="LocomotionClips"/> tells which).
+    /// </summary>
+    public bool AnimatesBySpeed => Reachable(Root!).OfType<hkbBlenderGenerator>().Any(ParametricOnSpeed);
+
+    /// <summary>
+    /// The clips the graph blends by direction: the creature's locomotion, where it has any.
+    /// A hovering creature's carry no root motion, a flying creature's do.
+    /// </summary>
+    public IEnumerable<hkbClipGenerator> LocomotionClips()
+    {
+        var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+        foreach (hkbBlenderGenerator blender in Reachable(Root!).OfType<hkbBlenderGenerator>())
+        {
+            // bound to Direction, or parametric with the parameter set by a modifier rather
+            // than a binding -- the spider centurion's and the flyers' are the latter
+            bool direction = ParametricOn(blender, name => name.Contains("direction", StringComparison.OrdinalIgnoreCase))
+                             || (blender.m_flags & FlagParametric) != 0 && !ParametricOn(blender, _ => true);
+            if (!direction) continue;
+            foreach (hkbBlenderGeneratorChild? arm in blender.m_children)
+                if (arm?.m_generator is { } generator)
+                    foreach (IHavokObject node in Reachable(generator))
+                        if (node is hkbClipGenerator clip && seen.Add(clip)) yield return clip;
+        }
+    }
+
+    /// <summary>
+    /// Whether the attack plays inside a branch that raises <c>bAnimationDriven</c>: a
+    /// <c>BSIsActiveModifier</c> or a machine's <c>isActive</c> bound to it. There the clip's
+    /// root motion moves the character, and combat is right to measure the attack by it
+    /// (<c>docs/reverse-engineering.md</c> §4, "Who sets bAnimationDriven").
+    /// </summary>
+    public bool PlaysAnimationDriven(IEnumerable<hkbClipGenerator> clips)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
+        _animationDriven ??= AnimationDrivenClips();
+        return clips.Any(_animationDriven.Contains);
+    }
+
+    private HashSet<IHavokObject>? _animationDriven;
+
+    private HashSet<IHavokObject> AnimationDrivenClips()
+    {
+        _parents ??= Parents();
+        var covered = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+
+        foreach (IHavokObject node in Reachable(Root!).ToList())
+        {
+            if (node is not hkbNode raiser || !Binds(raiser, IsAnimationDriven, "bIsActive", "isActive")) continue;
+
+            // the branch the raiser is active with: the machine itself, or the generator the
+            // modifier is attached to
+            IHavokObject? scope = node as hkbStateMachine;
+            for (IHavokObject at = node; scope is null;)
+            {
+                IHavokObject? up = _parents.GetValueOrDefault(at)?.FirstOrDefault();
+                if (up is null) break;
+                if (up is hkbModifierGenerator { m_generator: { } generator }) scope = generator;
+                at = up;
+            }
+            if (scope is null) continue;
+
+            foreach (IHavokObject below in Reachable(scope))
+                if (below is hkbClipGenerator) covered.Add(below);
+        }
+
+        return covered;
+
+        static bool IsAnimationDriven(string name) => string.Equals(name, "bAnimationDriven", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether a node binds one of the named members to a variable the test accepts.</summary>
+    private bool Binds(hkbNode node, Func<string, bool> wanted, params string[] members)
+    {
+        if (node.m_variableBindingSet is not { } bindings) return false;
+        if (!_tables.TryGetValue(_fileOf.GetValueOrDefault(node, ""), out Variables? table)) return false;
+
+        foreach (hkbVariableBindingSetBinding binding in bindings.m_bindings)
+            if (binding.m_variableIndex >= 0
+                && members.Any(m => binding.m_memberPath == m || binding.m_memberPath.StartsWith(m, StringComparison.Ordinal))
+                && table.NameOf(binding.m_variableIndex) is { } name && wanted(name))
+                return true;
+
+        return false;
+    }
+
+    private bool ParametricOn(hkbBlenderGenerator blender, Func<string, bool> wanted)
     {
         if (blender.m_variableBindingSet is not { } bindings) return false;
         if (!_tables.TryGetValue(_fileOf.GetValueOrDefault(blender, ""), out Variables? table)) return false;
 
         foreach (hkbVariableBindingSetBinding binding in bindings.m_bindings)
-            if (binding.m_memberPath == "blendParameter"
-                && binding.m_variableIndex >= 0
-                && table.NameOf(binding.m_variableIndex) is { } name
-                && name.Contains("speed", StringComparison.OrdinalIgnoreCase))
+            if (binding.m_memberPath == "blendParameter" && binding.m_variableIndex >= 0
+                && table.NameOf(binding.m_variableIndex) is { } name && wanted(name))
                 return true;
 
         return false;
+    }
+
+    private IEnumerable<IHavokObject> Reachable(IHavokObject root)
+    {
+        var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
+        var stack = new Stack<IHavokObject>();
+        stack.Push(root);
+
+        while (stack.Count > 0)
+        {
+            IHavokObject node = stack.Pop();
+            if (!seen.Add(node)) continue;
+
+            yield return node;
+            foreach (IHavokObject child in Children(node)) stack.Push(child);
+        }
     }
 
     /// <summary>Every parent of every node the root reaches, all of them, not the first seen.</summary>
@@ -443,19 +551,4 @@ internal sealed class GraphReach
         return parents;
     }
 
-    private IEnumerable<IHavokObject> Reachable(hkbGenerator root)
-    {
-        var seen = new HashSet<IHavokObject>(ReferenceEqualityComparer.Instance);
-        var stack = new Stack<IHavokObject>();
-        stack.Push(root);
-
-        while (stack.Count > 0)
-        {
-            IHavokObject node = stack.Pop();
-            if (!seen.Add(node)) continue;
-
-            yield return node;
-            foreach (IHavokObject child in Children(node)) stack.Push(child);
-        }
-    }
 }

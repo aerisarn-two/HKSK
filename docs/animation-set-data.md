@@ -862,20 +862,25 @@ That puts the derivable part at 2,145 of about 2,200.
 
 `SetDataRebuildTests` holds these numbers.
 
-The moving-attack flag is derived **in part** (§6). The attack's travel is the actor's when a
-blender above its clips is parametric on speed or the graph says the character is sprinting over
-the state (`GraphReach.TravelChosenBySpeed`), or when the idle tree only chooses the attack on the
-move (`GameEvents.MovingAttacks`, read from the masters by `setgen`). That yields 34 (project,
-event) pairs -- **30 of vanilla's 38** -- and four vanilla does not have, all of which look like vanilla's own omissions:
-the Vampire Lord's two, which carry the player's speed-parametric blend in a project that flags
-nothing, and the werewolf's `AttackStartLeftSprinting` and `AttackStartRightSprinting`, which it
-leaves clear while flagging `AttackStartDualSprinting` beside them. The 8 not derived are the storm
-atronach's three and the witchlight's one -- projects where *every* attack is flagged and no idle
-chooses any of them, so the fact is about the creature and not the attack -- the werewolf's two
-side attacks, which no idle chooses either, and the player's `bashStart`, which vanilla flags only
-in the hand-to-hand sets.
-For those, `setgen --flags-from <shipped file>` takes the flag, and nothing else, from a shipped
-file:
+The moving-attack flag is derived (§6) from the engine's own condition: the actor's movement until
+the hit comes from the controller and not from the clip's root motion. The attack's travel is the
+actor's when a blender above its clips is parametric on speed or the graph says the character is
+sprinting over the state (`GraphReach.TravelChosenBySpeed`); when the idle tree only chooses the
+attack on the move (`GameEvents.MovingAttacks`, read from the masters by `setgen`); or when the
+creature hovers -- no speed-parametric blend anywhere in its graph and no root motion under its
+direction blends (`SetDataGenerator.Hovers`). Never inside a branch that raises `bAnimationDriven`
+(`GraphReach.PlaysAnimationDriven`), where the engine moves the actor by the clip. That yields 41
+(project, event) pairs -- **33 of vanilla's 38** -- and eight vanilla does not have, each the same
+case as one it flags: the Vampire Lord's two carry the player's speed-parametric blend in a project
+that flags nothing; the werewolf's `AttackStartLeftSprinting` and `AttackStartRightSprinting` sit
+beside its flagged `AttackStartDualSprinting` with the same idle condition; and the wisp's four
+hover exactly as the witchlight's one does. The 5 not derived: the storm atronach's
+`attackPowerStart_StandingAttack`, **left clear on purpose** because `StandingPowerAttackBehavior`
+raises `bAnimationDriven` and the engine therefore moves it by its clip, whatever the file says;
+the player's `bashStart`, which vanilla flags in one set of thirteen (§3.4); and the werewolf's two
+side attacks, zero-travel swipes on a walking creature about which no asset says anything.
+For anyone who wants vanilla's values rather than the engine's, `setgen --flags-from <shipped
+file>` takes the flag, and nothing else, from a shipped file:
 
     attacks flagged as moving              1,180 of 3,819
     attacks the shipped file answered      3,305; the other 514 nobody shipped
@@ -916,8 +921,9 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   same files; the shipped groups follow the idle tree's authoring, an entry's variants
   together.
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
-- **the moving-attack flag** (§4.6) is derived where the behaviour or the idle tree states it --
-  30 of vanilla's 38 -- and copied for the rest; `setgen --flags-from` is still the only way to
+- **the moving-attack flag** (§4.6) is derived from the engine's condition -- 33 of vanilla's 38,
+  eight more where vanilla left the same case clear, one fewer where vanilla contradicts its own
+  engine -- and `setgen --flags-from` copies vanilla's values instead, which is the only way to
   reproduce all 38.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
@@ -1071,7 +1077,7 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
   and 8 clear ones**, because the player's `attackPowerStartBackward`, `attackPowerStartLeft`,
   `attackPowerStartRight` and `attackPowerStartDualWield` have exactly that shape and are clear.
 
-  That accounts for 12 of the 34 flags. The rest fall into two more families, and every flag
+  That accounts for 12 of the 34 flags. The rest fall into three more families, and every flag
   in the file belongs to exactly one:
 
       family                                                          flagged  shown by
@@ -1079,22 +1085,35 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 the graph says the character is sprinting over that state:
         single-direction locomotion, so there is no blend, but the
         actor is carried at sprint speed anyway                           16  the behaviour
-      the creature is simply always moving -- the storm atronach's
-        three and the witchlight's one, whose projects flag every
-        attack they own; the werewolf's side and running-power
-        attacks; the player's bashStart                                   10  nothing
+      the creature hovers -- the controller carries it always, so
+        its graph has no speed blend and nothing under its direction
+        blends travels: the storm atronach's three, the witchlight's
+        one                                                                4  the behaviour and the cache
+      the werewolf's side and running-power attacks; the player's
+        bashStart                                                          6  nothing
 
-  All three say the same thing in different vocabularies: this attack's travel is the actor's,
-  not this clip's. **The first two are decidable and are derived** (§5.7); only the third is
-  not, and it is what `--flags-from` is for. The second was found by asking why the sprint
+  All four say the same thing in different vocabularies: this attack's travel is the actor's,
+  not this clip's. **The first three are decidable and are derived** (§5.7), under one guard the
+  engine imposes: an attack inside a branch that raises `bAnimationDriven` is moved by its clip,
+  so it is never flagged, which takes the storm atronach's `attackPowerStart_StandingAttack` back
+  out. Only the fourth is not decidable, and it is what `--flags-from` is for. The second was found by asking why the sprint
   attacks have no blend: sprinting has one direction, so there is nothing to interpolate --
   the graph states the condition in a variable instead, `IsSprinting` where the player and
   the werewolf read it and `iSyncSprintState` near the clip where the netch does.
 
-  The third family was examined for a condition of the same kind and has none. The storm
-  atronach and the witchlight **flag every attack they own** -- 3 of 3 and 1 of 1 -- so there is
-  no clear attack to contrast with and nothing per-attack to find; what those projects record is
-  a fact about the creature. The werewolf's `AttackStartLeftSide`, `AttackStartRightSide` and its
+  The third family is a fact about the creature, and the test for it had to be sharpened once.
+  "No locomotion clip travels" is false for every hoverer, because their staggers and recoils
+  travel; what does not travel is what the graph blends by *direction* -- its locomotion. So the
+  rule is: no `hkbBlenderGenerator` in the project is parametric on a speed variable, and every
+  clip under a blender bound to a direction variable, or parametric on a constant, travels 5 or
+  less -- the engine's own gate for "not moving" (§4.6). That is 0 for the storm atronach's eight
+  such clips and the wisp's eight, vacuous for the witchlight, which blends nothing by direction;
+  and it is refused for the dwarven spider centurion, whose walk travels 100, and for the flyers,
+  whose direction-blended clips travel 341 to 8,447. The storm atronach and the witchlight **flag
+  every attack they own** -- 3 of 3 and 1 of 1 -- so there is no clear attack to contrast with,
+  and the wisp, which hovers the same way, flags none: the rule sides with the engine and flags
+  its four. The fourth family was examined for a condition of the same kind and has none. The
+  werewolf's `AttackStartLeftSide`, `AttackStartRightSide` and its
   two running-power attacks touch `IsAttacking` and nothing else, exactly as its clear power
   combos do, and every werewolf attack -- flagged or clear -- is entered by an unconditioned
   wildcard in `Behavior16`. The side attacks match the clear combos in transition flags
@@ -1229,11 +1248,14 @@ the graph says the character is sprinting over that state:
 
       rule                                                         caught   invented   wrong
       assume clear                                                   0/38          0      38
-      behaviour OR idle tree (what the generator does)              30/38          4      12
+      behaviour OR idle tree                                        30/38          4      12
+      behaviour OR idle tree OR hovering, unless animation-driven
+        (what the generator does)                                   33/38          8      13
       + hovering & LeftAttack, - speed blend & angle,
         - sprint idle & knockdown                                   33/38          0       5
 
-  The second row is principled and is what ships. The third is a fit, and each clause shows it.
+  The third row is principled and is what ships; it is "wrong" by 13 only if vanilla is the
+  measure, and §4.6 says the engine is. The fourth is a fit, and each clause shows it.
   *Hovering* is real -- the storm atronach animates travel in 6% of its non-attack clips, the
   wisp in 7% -- but it catches the wisp's four clear attacks as well, and what excludes them is the
   race's `LeftAttack` bit, which says nothing about movement. The two removals drop the Vampire
