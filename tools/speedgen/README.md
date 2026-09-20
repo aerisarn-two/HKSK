@@ -36,10 +36,12 @@ absent project, unchanged. A block is written for every value the graph can put
 `iState` at -- its initial value, its tagging generators, its state manager's rows
 and its expressions -- because that value is what the engine reads back to choose the
 movement type and what the sampler keys the table on. Six such keys get no block on
-purpose: a tag places them in a subtree nothing under which reads the sampler and
-nothing sampler-fed is live beside it, the player's mounted states, so a block there
-would be unread. For the rest of the tagged keys -- the attacks, the perk stances --
-the graph is driven into the state and the ladder live beside it is read.
+purpose: driven into their state, nothing sampler-fed is live beside them and the
+pose carries no root motion -- the rider's mounted states, the first-person camera
+-- or the cache lacks the clip's motion, the horse's sprint; an absent block is the
+game's own answer, the request unchanged. For the other tagged keys -- the attacks,
+the perk stances, the sprints -- the graph is driven into the state and the ladder
+live beside it, or the flat pose it plays, is read.
 
 Against the shipped file (`SpeedDataRebuildTests`):
 

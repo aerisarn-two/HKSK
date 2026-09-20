@@ -66,12 +66,12 @@ public sealed class SpeedDataRebuildTests
     /// the netch's sprint, the sphere's ranged stance, the horker's swim.
     /// </para>
     /// <para>
-    /// Six writable keys get no block on purpose. A tag places them in a subtree
-    /// nothing under which reads the sampler, driving the graph into that state
-    /// finds no sampler-fed ladder beside it either, and no other reading applies --
-    /// the player's mounted states, whose blends run on the horse's own sampled
-    /// speed -- so whatever a block said there would be unread, and running the
-    /// graph with <c>iState</c> pinned would only hand them another state's curve.
+    /// Six writable keys get no block on purpose. Driven into their state, nothing
+    /// sampler-fed is live beside them and the pose there carries no root motion --
+    /// the rider on its saddle offset, the first-person camera -- or, for the horse's
+    /// own sprint, a clip whose motion block the cache does not hold. Nothing the
+    /// animation does there can be measured, and an absent block is the game's own
+    /// answer: the request passes through unchanged.
     /// </para>
     /// </remarks>
     [MastersFact]
@@ -123,13 +123,14 @@ public sealed class SpeedDataRebuildTests
         // How each block was placed: the graph declares it under a tag or a row, an
         // expression pairs it, the graph driven into a tagged state shows the ladder
         // live beside it (the attacks over the weapon locomotion, the perk states
-        // over the bow and block locomotion), a tag
+        // over the bow and block locomotion) or, with none live, the flat pose it
+        // plays (the sprints, the bleedout, the power attacks), a tag
         // over a compass of clips makes it flat, or the graph is run.
         var routes = inferred.How.Values.GroupBy(v => v).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(37, routes["declared"]);
         Assert.Equal(50, routes["paired"]);
-        Assert.Equal(12, routes["tagged"]);
-        Assert.Equal(15, routes["flat"]);
+        Assert.Equal(23, routes["tagged"]);
+        Assert.Equal(4, routes["flat"]);
         Assert.False(routes.ContainsKey("alike"));
         Assert.Equal(13, routes["evaluated"]);
         Assert.Equal(1, routes["standing"]);

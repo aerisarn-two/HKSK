@@ -392,7 +392,15 @@ public static class SpeedDataGenerator
             if (!run.Active.Any(n => ReferenceEquals(n.Generator, live))) continue;
 
             var ladders = Ladders.ActiveIn(run, walk, parameter);
-            if (ladders.Count == 0) continue;
+
+            // Landed, and nothing sampler-fed live beside it: the state plays what
+            // it plays at one speed -- the horse's sprint is a single clip -- and
+            // the curve is flat at what its clips deliver.
+            if (ladders.Count == 0)
+            {
+                if (live is hkbGenerator under && Flat(walk, properties, actor, under) is { } flat) return flat;
+                continue;
+            }
 
             foreach ((hkbBlenderGenerator blend, float _, float _) in ladders)
                 foreach ((LocomotionState state, var arms) in built)

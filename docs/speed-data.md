@@ -1774,12 +1774,13 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   is what those eight get either way;
 - **the keys** are the values the graph writes, not the constants it declares. 128
   blocks; 76 of vanilla's 86, the other ten being the eight unread tables and the two
-  keys no graph can write. Six writable keys are refused: a tag places them in a
-  subtree nothing under which reads the sampler, nothing sampler-fed is live beside
-  them either, and no other reading applies -- the player's mounted states, whose
-  blends run on the horse's speed -- so a block there is unread, and running the
-  graph with `iState` pinned would only hand them another state's curve, since
-  nothing in any graph selects on `iState`.
+  keys no graph can write. Six writable keys are refused. Driven into their state,
+  nothing sampler-fed is live beside them and the pose there carries no root motion
+  -- the rider's mounted sprint and swim on its saddle offset, the first-person
+  sprint and its mounted states, a camera -- or, for the horse's own sprint, a clip
+  whose motion block the cache does not hold (§6.3). Nothing the animation does there
+  can be measured, and an absent block is the game's own answer: the request passes
+  through unchanged, which for a camera carried at the body's speed is exact.
 
   For such a key the graph is first driven *into* the tagged state
   (`SpeedDataGenerator.TaggedAt`): one event per state on the way up that is neither
@@ -1821,8 +1822,10 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   (`ActiveGenerators.Evaluate(..., finishClips: false)`), and the attack states land:
   the player's keys 12 and 13 take the weapon locomotion live beside the attack,
   which is the layered reading the flag work found from the other side
-  (`docs/animation-set-data.md` §6). Twelve keys are placed this way, six remain
-  unread;
+  (`docs/animation-set-data.md` §6). Where the state lands and nothing sampler-fed
+  is live beside it, the pose it plays is read flat -- the sprints, the bleedout,
+  the power attacks -- so the flat reading off a tag's subtree is now only a
+  fallback. Twenty-three keys are placed this way, six remain unread;
 - **the curve** is §6 at the goal speed itself. The query applies no offset; the
   0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
   keeps it for reading that file;
