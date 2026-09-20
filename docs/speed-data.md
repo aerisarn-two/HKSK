@@ -307,6 +307,76 @@ only between gaits (§6), which is the smallest table a creature can have.
 The `Skyrim.esm` records are read here through Mutagen (`tools/speedgen/MasterData`),
 and writing one is the same API in the other direction.
 
+### 7.4 `iState` and `iState_<MNAM>`: the protocol between a graph and the engine
+
+Two variables with similar names do two different jobs, and authoring a creature
+means writing both correctly.
+
+**`iState_<MNAM>` is a declaration.** It is an integer variable in the project's
+**root** behaviour graph whose name is the `iState_` prefix followed by a movement
+type's `MNAM`, and whose **initial value** is the state id the graph will use for
+that movement type. It is never read by the graph and never bound to anything: it
+exists so that the engine, at graph load, can build a table of `state id → MNAM`
+from the variable names (§4.5). One per movement type the creature can be in.
+
+**`iState` is the current state.** It is the integer the graph *holds* at one of
+those ids, and it is the graph's responsibility to hold it there. The engine reads
+it, never writes it, and does two things with the value: it looks the id up in the
+table above and applies the movement type of that name to the actor, and it hands
+the same id to `BSSpeedSamplerModifier` as the key of the speed table. Nothing in
+any shipped graph selects a generator on `iState` — it is an output, not a switch —
+and reading it as a switch is the mistake that made the block set look arbitrary.
+
+The graph holds `iState` by one of four means, and a new creature should use the
+first that fits (`StateKeys` reads all four):
+
+1. **the variable's initial value** — a creature with one movement type sets
+   `iState`'s initial value to that id and is done: the chicken, the hare, the
+   troll. 22 of the 41 sampled projects need nothing more;
+2. **`BSiStateTaggingGenerator`** — a generator that wraps a subtree and sets
+   `iState` to `m_iStateToSetAs` while the subtree is active, with `m_iPriority`
+   settling which tag wins when several are active at once (the humanoid stacks
+   sneak over weapon over locomotion this way). This is the right tool for a
+   *stance*: sneaking, a drawn bow, blocking, a mounted state, an attack. Put the
+   tag directly above the state's locomotion, and any ladder under it is that
+   key's ladder by declaration (§5.3);
+3. **`BSIStateManagerModifier`** — a modifier carrying rows of (state machine,
+   state id) → `iState`, for a graph that wants one table rather than tags in
+   many files (the spriggan, the vampire lord, the werewolf);
+4. **an expression** — `hkbEvaluateExpressionModifier` writing
+   `iState = iState_<MNAM>`, or choosing with `cond`, or offsetting
+   (`iState = iState_DeerDefault + iMovementSpeed`, where the graph computes
+   `iMovementSpeed` from `Speed`). This is how a graph changes movement type by
+   *speed* rather than by stance: the deer walks in one type and runs in another.
+
+Rules the engine imposes, each learned from a shipped creature that breaks it:
+
+- **declare in the root graph.** A referenced file's declaration is not scanned; a
+  shared template that declares a species' constants for the whole family
+  (`quadrupedbehavior.hkx`) is ignored in favour of the root's, and where the two
+  disagree the root wins;
+- **the id is unique within the root**, and any value works; the shipped
+  conventions (§7.3) are for readability;
+- **the name must equal `MNAM`**, case-insensitive, or the state resolves to no
+  movement type and the actor keeps whatever it had. A declared id that nothing
+  writes is harmless and dead — the sampler will never be asked for it, and the
+  generator writes no block for it;
+- **an id written but not declared** still keys the sampler: the rider's mounted
+  states are declared in the horse's file, not the player's root, so the player's
+  `iState` reaches 60–63 with no movement type of its own, and the table is asked
+  for those keys all the same. Declare what you write;
+- **the sampler's answer goes where the ladders read it**: bind every locomotion
+  ladder's `blendParameter` to the sampler's output variable (`SpeedSampled` by
+  convention), not to `Speed`, or the table is consulted and ignored — the netch
+  and the slaughterfish ship that way.
+
+The minimal correct creature, then: one `MOVT` with an `MNAM`, one
+`iState_<MNAM>` in the root graph initialised to some id, `iState` initialised to
+the same id, one `BSSpeedSamplerModifier` bound to `iState`, `Direction`, `Speed`
+and `SpeedSampled`, and a locomotion compass whose ladders read `SpeedSampled` with
+their rungs at the `MOVT`'s speeds. Add a movement type by adding a `MOVT`, its
+declaration, and one of the four writers above; `speedgen` then writes its block.
+
 ## 8. Generating the table
 
 `HKSK.Speed.SpeedDataGenerator` writes it, `tools/speedgen` runs it. It is written
