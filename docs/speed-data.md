@@ -266,8 +266,8 @@ A `MOVT` record carries an editor id, an **`MNAM` name**, and the speeds:
     BackWalk     BackRun        walking and running
     LeftWalk     LeftRun
     RightWalk    RightRun
-    RotateInPlaceWalk / RotateInPlaceRun / RotateWhileMovingRun   yaw rates
-    the anim-change thresholds and the flags the record type carries
+    RotateInPlaceWalk / RotateInPlaceRun / RotateWhileMovingRun   yaw rates   (SPED)
+    Directional / MovementSpeed / RotationSpeed                   anim-change thresholds (INAM, §7.5)
 
 **`MNAM` is the join.** The root behaviour graph declares `iState_<MNAM>` with the
 state id as its initial value, and the engine matches the suffix against `MNAM`
@@ -391,6 +391,34 @@ the same id, one `BSSpeedSamplerModifier` bound to `iState`, `Direction`, `Speed
 and `SpeedSampled`, and a locomotion compass whose ladders read `SpeedSampled` with
 their rungs at the `MOVT`'s speeds. Add a movement type by adding a `MOVT`, its
 declaration, and one of the four writers above; `speedgen` then writes its block.
+
+### 7.5 The anim-change thresholds
+
+The `INAM` subrecord holds three floats -- a **directional** threshold in radians, a
+**movement-speed** threshold in units per second, a **rotation-speed** threshold --
+named in the record type for the change in the request that is large enough to be
+worth changing the animation for. Measured over the 106 shipped records:
+
+    absent                                          12   the stances and the flyers:
+                                                         NPCBowDrawn, NPCBlocking, NPCMagic,
+                                                         NPCMagicCasting, NPCBleedout, the
+                                                         atronachs, the dragon's four
+    all three FLT_MAX                               88   never
+    Directional = pi/4, MovementSpeed = 100          4   WolfDefault, WolfRun, ScribDefault,
+                                                         NPCHorse (the rider)
+    MovementSpeed = 100 only                         2   HorseSprint, HorseSwim
+
+`FLT_MAX` is "never": the mechanism is switched off on every creature but the
+wolf, the scrib and the horse with its rider, where a heading change of 45° or a
+speed change of 100 u/s crosses it, and the rotation threshold is never set at all.
+So for authoring the answer is the shipped default -- write `FLT_MAX` three times,
+or omit the subrecord as the stances do -- and the six exceptions are the only
+place the field does anything. What it does there is not traced in the executable
+here (the movement controller's use of the record was not read); the names and the
+values say a re-selection of the locomotion animation on a large enough change of
+request, and the three creatures that set it are the ones whose direction blends
+are coarsest. Treat it as a tuning knob with a known safe value, not as data to
+derive.
 
 ## 8. Generating the table
 
