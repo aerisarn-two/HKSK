@@ -70,3 +70,52 @@ public sealed class PointRetentionTests
         Assert.Equal([line[0], line[^1]], SpeedRecord.Retain(line));
     }
 }
+
+public sealed class PointRetentionEquivalenceTests
+{
+    // The one-pass band intersection keeps exactly what stretching the line and
+    // re-checking every skipped sample keeps, on curves of every shape.
+    [Fact]
+    public void TheOnePassKeepsWhatTheQuadraticPassKept()
+    {
+        var random = new Random(7);
+        for (int trial = 0; trial < 300; trial++)
+        {
+            int n = random.Next(2, 400);
+            float tolerance = random.Next(0, 3) switch { 0 => 2f, 1 => 0.5f, _ => 0.1f };
+            List<SpeedPoint> sweep = [];
+            double y = random.NextDouble() * 10;
+            for (int i = 0; i < n; i++)
+            {
+                y += random.Next(0, 4) switch { 0 => 0, 1 => random.NextDouble() * 3, 2 => -random.NextDouble(), _ => random.NextDouble() * 0.2 };
+                sweep.Add(new SpeedPoint(i * 0.5f, (float)y));
+            }
+            Assert.Equal(Reference(sweep, tolerance), SpeedRecord.Retain(sweep, tolerance));
+        }
+    }
+
+    private static List<SpeedPoint> Reference(IReadOnlyList<SpeedPoint> sweep, float tolerance)
+    {
+        if (sweep.Count <= 2) return [.. sweep];
+        List<SpeedPoint> kept = [sweep[0]];
+        int anchor = 0;
+        for (int next = 1; next < sweep.Count; next++)
+        {
+            if (Covers(sweep, anchor, next, tolerance)) continue;
+            anchor = next - 1;
+            kept.Add(sweep[anchor]);
+            next--;
+        }
+        kept.Add(sweep[^1]);
+        return kept;
+    }
+
+    private static bool Covers(IReadOnlyList<SpeedPoint> sweep, int from, int to, float tolerance)
+    {
+        SpeedPoint a = sweep[from], b = sweep[to];
+        double slope = ((double)b.Y - a.Y) / ((double)b.X - a.X);
+        for (int k = from + 1; k < to; k++)
+            if (Math.Abs(sweep[k].Y - (a.Y + slope * (sweep[k].X - a.X))) > tolerance) return false;
+        return true;
+    }
+}

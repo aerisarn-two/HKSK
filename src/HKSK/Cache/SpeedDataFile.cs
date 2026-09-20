@@ -125,33 +125,40 @@ public sealed class SpeedRecord
     /// </remarks>
     public static List<SpeedPoint> Retain(IReadOnlyList<SpeedPoint> sweep, float tolerance = RetentionTolerance)
     {
+        ArgumentNullException.ThrowIfNull(sweep);
         if (sweep.Count <= 2) return [.. sweep];
 
+        // The line from the anchor covers every skipped sample exactly when its slope
+        // lies inside all of their tolerance bands, so the bands are intersected as
+        // the line stretches rather than re-checked from the anchor each time: the
+        // same choice of points in one pass, where checking again is quadratic in
+        // the run and a flat tail of several thousand samples took seconds.
         List<SpeedPoint> kept = [sweep[0]];
-        int anchor = 0;
+        SpeedPoint anchor = sweep[0];
+        double lowest = double.NegativeInfinity, highest = double.PositiveInfinity;
 
         for (int next = 1; next < sweep.Count; next++)
         {
-            if (Covers(sweep, anchor, next, tolerance)) continue;
+            SpeedPoint b = sweep[next];
+            double run = (double)b.X - anchor.X;
+            double slope = ((double)b.Y - anchor.Y) / run;
 
-            anchor = next - 1;
-            kept.Add(sweep[anchor]);
-            next--;    // stretch again from the new start
+            if (slope < lowest || slope > highest)
+            {
+                anchor = sweep[next - 1];
+                kept.Add(anchor);
+                lowest = double.NegativeInfinity;
+                highest = double.PositiveInfinity;
+                next--;    // stretch again from the new start
+                continue;
+            }
+
+            lowest = Math.Max(lowest, ((double)b.Y - tolerance - anchor.Y) / run);
+            highest = Math.Min(highest, ((double)b.Y + tolerance - anchor.Y) / run);
         }
 
         kept.Add(sweep[^1]);
         return kept;
-    }
-
-    private static bool Covers(IReadOnlyList<SpeedPoint> sweep, int from, int to, float tolerance)
-    {
-        SpeedPoint a = sweep[from], b = sweep[to];
-        double slope = ((double)b.Y - a.Y) / ((double)b.X - a.X);
-
-        for (int k = from + 1; k < to; k++)
-            if (Math.Abs(sweep[k].Y - (a.Y + slope * (sweep[k].X - a.X))) > tolerance) return false;
-
-        return true;
     }
 }
 
