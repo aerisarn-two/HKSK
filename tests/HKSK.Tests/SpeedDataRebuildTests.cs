@@ -53,25 +53,25 @@ public sealed class SpeedDataRebuildTests
     /// by the graph after all -- not by which constants it declares, which is where
     /// the draugr pair looked underivable, but by which values it can write: the
     /// initial value, the tagging generators, the state manager's rows and the
-    /// expressions (<see cref="StateKeys"/>). That is 125 blocks over the 41 projects
+    /// expressions (<see cref="StateKeys"/>). That is 128 blocks over the 41 projects
     /// with a <c>BSSpeedSamplerModifier</c>.
     /// </para>
     /// <para>
     /// 76 of vanilla's 86 are among them. The 10 that are not, the engine never asks
     /// for: eight are the projects without a sampler, whose tables nothing reads, and
     /// two -- the spriggan's and the lurker's key 1 -- are constants no writer in the
-    /// graph ever assigns, so <c>iState</c> cannot reach them. The 49 vanilla does not
+    /// graph ever assigns, so <c>iState</c> cannot reach them. The 52 vanilla does not
     /// ship are keys the graph writes and the sweep skipped: FirstPerson's stances,
     /// the draugr skeleton's weapons, the player's and the horse's mounted states,
     /// the netch's sprint, the sphere's ranged stance, the horker's swim.
     /// </para>
     /// <para>
-    /// Nine writable keys get no block on purpose. A tag or a manager row places
-    /// them in a subtree nothing under which reads the sampler, and no other reading
-    /// applies -- the player's mounted states, whose blends run on the horse's own
-    /// sampled speed -- so whatever a block said there would be unread, and running
-    /// the graph with <c>iState</c> pinned would only hand them another state's
-    /// curve.
+    /// Six writable keys get no block on purpose. A tag places them in a subtree
+    /// nothing under which reads the sampler, driving the graph into that state
+    /// finds no sampler-fed ladder beside it either, and no other reading applies --
+    /// the player's mounted states, whose blends run on the horse's own sampled
+    /// speed -- so whatever a block said there would be unread, and running the
+    /// graph with <c>iState</c> pinned would only hand them another state's curve.
     /// </para>
     /// </remarks>
     [MastersFact]
@@ -107,9 +107,9 @@ public sealed class SpeedDataRebuildTests
             "\n\nhow:\n" + string.Join("\n", inferred.How.OrderBy(h => h.Key).Select(h => $"{h.Key.Project} {h.Key.Key} {h.Value}")));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(125, made.Count);
+        Assert.Equal(128, made.Count);
         Assert.Equal(76, made.Intersect(shipped).Count());
-        Assert.Equal(49, made.Except(shipped).Count());
+        Assert.Equal(52, made.Except(shipped).Count());
         Assert.Equal(0, inferred.Unbuildable);
 
         (string, uint)[] unread =
@@ -122,20 +122,21 @@ public sealed class SpeedDataRebuildTests
 
         // How each block was placed: the graph declares it under a tag or a row, an
         // expression pairs it, the graph driven into a tagged state shows the ladder
-        // live beside it (the perk states, over the bow and block locomotion), a tag
+        // live beside it (the attacks over the weapon locomotion, the perk states
+        // over the bow and block locomotion), a tag
         // over a compass of clips makes it flat, or the graph is run.
         var routes = inferred.How.Values.GroupBy(v => v).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(37, routes["declared"]);
         Assert.Equal(50, routes["paired"]);
-        Assert.Equal(6, routes["tagged"]);
-        Assert.Equal(18, routes["flat"]);
+        Assert.Equal(12, routes["tagged"]);
+        Assert.Equal(15, routes["flat"]);
         Assert.False(routes.ContainsKey("alike"));
         Assert.Equal(13, routes["evaluated"]);
         Assert.Equal(1, routes["standing"]);
-        Assert.Equal(9, routes["unread"]);
+        Assert.Equal(6, routes["unread"]);
         Assert.Equal(
-            [("DefaultFemale", 13), ("DefaultFemale", 63), ("DefaultMale", 13), ("DefaultMale", 63),
-             ("FirstPerson", 1), ("FirstPerson", 13), ("FirstPerson", 61), ("FirstPerson", 63), ("HorseProject", 61)],
+            [("DefaultFemale", 63), ("DefaultMale", 63),
+             ("FirstPerson", 1), ("FirstPerson", 61), ("FirstPerson", 63), ("HorseProject", 61)],
             inferred.How.Where(h => h.Value == "unread").Select(h => h.Key).Order());
     }
 

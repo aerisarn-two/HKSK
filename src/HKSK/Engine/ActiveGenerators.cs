@@ -94,7 +94,7 @@ public static class ActiveGenerators
         hkbGenerator root, ProjectWalk walk,
         Action<IReadOnlyDictionary<string, Variables>>? drive = null,
         Properties? characterProperties = null,
-        Events? events = null, SpeedProjectBlock? speeds = null)
+        Events? events = null, SpeedProjectBlock? speeds = null, bool finishClips = true)
     {
         Dictionary<string, Variables> tables = new(StringComparer.OrdinalIgnoreCase);
         VariableSpace space = new();
@@ -126,7 +126,11 @@ public static class ActiveGenerators
 
             active = trace.Active;
             Settle(trace, reading);
-            Finished(trace.Active, walk, tables, raised);
+
+            // A graph read at rest has played its clips to the end, and their end
+            // triggers have fired. A caller reading a passing state -- an attack,
+            // whose own clip raises attackStop -- asks for the moment before.
+            if (finishClips) Finished(trace.Active, walk, tables, raised);
         }
 
         return new Evaluation(active, tables, walk);

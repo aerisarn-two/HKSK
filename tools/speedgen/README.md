@@ -26,7 +26,7 @@ masters, which the library deliberately does not.
 From the 41 actor projects that read the table, about seven seconds:
 
     projects   41
-    blocks     125  (2375 records, 62040 points, tolerance 0.5)
+    blocks     128  (2432 records, 62641 points, tolerance 0.5)
 
 The table is written for the engine that reads it, not to reproduce the shipped one
 (`docs/speed-data.md` §4.5, §8). A project is in it when its graph carries a
@@ -35,9 +35,11 @@ without one are left out, and the game answers a request for them as it answers 
 absent project, unchanged. A block is written for every value the graph can put
 `iState` at -- its initial value, its tagging generators, its state manager's rows
 and its expressions -- because that value is what the engine reads back to choose the
-movement type and what the sampler keys the table on. Nine such keys get no block on
-purpose: a tag places them in a subtree nothing under which reads the sampler, the
-player's mounted states, so a block there would be unread.
+movement type and what the sampler keys the table on. Six such keys get no block on
+purpose: a tag places them in a subtree nothing under which reads the sampler and
+nothing sampler-fed is live beside it, the player's mounted states, so a block there
+would be unread. For the rest of the tagged keys -- the attacks, the perk stances --
+the graph is driven into the state and the ladder live beside it is read.
 
 Against the shipped file (`SpeedDataRebuildTests`):
 
@@ -45,9 +47,9 @@ Against the shipped file (`SpeedDataRebuildTests`):
 | ----------------------------------------------------- | ------------------------ |
 | shipped blocks written                                | 76 of 86                 |
 | shipped blocks the engine never asks for              | 10 (8 projects with no sampler, 2 keys no graph writes) |
-| blocks the game does not ship                         | 49                       |
+| blocks the game does not ship                         | 52                       |
 | shipped points within 2%, read as the game reads them | 13,451 of 16,930 (79.5%) |
-| size                                                  | 518 KB                   |
+| size                                                  | 524 KB                   |
 
 Three choices cost against the shipped file and are kept because the engine is the
 measure: the curve is read at the goal speed itself, where the shipped sweeps read it

@@ -1772,13 +1772,14 @@ where the two disagree the shipped file is the one with the tool's habits in it:
 - **the projects** are the 41 with a sampler. The eight without one ship a table nothing
   reads, and the game answers a request for an absent project unchanged (§4.2), which
   is what those eight get either way;
-- **the keys** are the values the graph writes, not the constants it declares. 125
+- **the keys** are the values the graph writes, not the constants it declares. 128
   blocks; 76 of vanilla's 86, the other ten being the eight unread tables and the two
-  keys no graph can write. Nine writable keys are refused: a tag or a manager row
-  places them in a subtree nothing under which reads the sampler and no other reading
-  applies -- the player's mounted states, whose blends run on the horse's speed -- so
-  a block there is unread, and running the graph with `iState` pinned would only hand
-  them another state's curve, since nothing in any graph selects on `iState`.
+  keys no graph can write. Six writable keys are refused: a tag places them in a
+  subtree nothing under which reads the sampler, nothing sampler-fed is live beside
+  them either, and no other reading applies -- the player's mounted states, whose
+  blends run on the horse's speed -- so a block there is unread, and running the
+  graph with `iState` pinned would only hand them another state's curve, since
+  nothing in any graph selects on `iState`.
 
   For such a key the graph is first driven *into* the tagged state
   (`SpeedDataGenerator.TaggedAt`): one event per state on the way up that is neither
@@ -1798,16 +1799,23 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   and block locomotion live beside them is what vanilla ships for keys 16 and 17,
   which the masters' walks-alike reading also gave; the magic-casting state lands on
   its own ladder; the power attacks land and have no ladder beside them, so they
-  stay flat. The ordinary attack states still do not land. A bound chooser is now
-  pinned to the state where it can name it and to the machine's own start where an
-  event has to do the entering -- pinned to `AttackState`, `iWantBlock` started
-  `1HM_Behavior` inside it and the locomotion events walked it out; left alone, it
-  starts the machine blocking -- and still, with `iWantBlock` at 0 and `attackStart`
-  raised, the run settles in `BlockState`, although after the run
-  `Transitions.Next` from the ready state and from the block state both give
-  `AttackState`. Something in the visit differs from the settled tables, and it has
-  not been found. Until it is, the player's attack keys read flat from the attack
-  subtree;
+  stay flat. A bound chooser is pinned to the state where it can name it and to the
+  machine's own start where an event has to do the entering -- pinned to
+  `AttackState`, `iWantBlock` started `1HM_Behavior` inside it and the locomotion
+  events walked it out; left alone, it starts the machine blocking.
+
+  The ordinary attacks needed one more thing, and it is the nature of the state.
+  The evaluator reads a graph **at rest**: it runs passes until the selection stops
+  moving, and after each pass the clips it landed on have played to their end and
+  raised their end triggers. An attack is not a resting state -- its own clip raises
+  `attackStop`, and on the second pass the machine has left. Watched pass by pass,
+  `1HM_Behavior` sat in `AttackState` on the first and in `BlockState` on the next.
+  So a tagged state is read *as it passes*, with the end triggers held
+  (`ActiveGenerators.Evaluate(..., finishClips: false)`), and the attack states land:
+  the player's keys 12 and 13 take the weapon locomotion live beside the attack,
+  which is the layered reading the flag work found from the other side
+  (`docs/animation-set-data.md` §6). Twelve keys are placed this way, six remain
+  unread;
 - **the curve** is §6 at the goal speed itself. The query applies no offset; the
   0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
   keeps it for reading that file;
@@ -1822,7 +1830,7 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   top rung the curve is flat and the reach costs one point;
 - **retention** is the shipped file's own greedy pass at 0.5 units rather than 2:
   the game draws straight lines between the points it keeps, and 2 is coarse against
-  a half-unit grid. 62,040 points, 518 KB.
+  a half-unit grid. 62,641 points, 524 KB.
 
 Read back through the game's own lookup, the result holds 13,451 of the 16,930 shipped
 points on the 76 shared blocks (79.5%), and each of the three choices above costs

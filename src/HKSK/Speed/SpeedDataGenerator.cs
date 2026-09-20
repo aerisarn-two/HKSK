@@ -388,7 +388,9 @@ public static class SpeedDataGenerator
                     if (tables.TryGetValue(file, out Variables? table) && table.IndexOf(variable) is var index && index >= 0
                         && !(state > 1 && table.TypeOf(index) == VariableType.VARIABLE_TYPE_BOOL))
                         table.Set(variable, state);
-            }, properties, events);
+            // The state is read as it passes, before its clips end: an attack's own clip
+            // raises attackStop, and read at rest the graph has already left.
+            }, properties, events, finishClips: false);
 
             if (!run.Active.Any(n => ReferenceEquals(n.Generator, live))) continue;
 
