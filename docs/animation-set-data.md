@@ -241,6 +241,46 @@ staff animations.
 
 None of this is in the behaviour graphs, which is why a rebuild cannot reproduce it.
 
+### 3.4 How a set was emitted, and where the flag sat
+
+The split form under `animationsetdata/` is the authoring unit -- one text file per set --
+and every list in it was written out of a **sorted container**. Of the 774 lists in the merged
+file with more than one entry, 774 are in order under one collation: case-insensitive, with
+the underscore before digits and letters (`_MTSolo` before `1HMDual`, `RF_Shock_Guarded`
+before `RF_Shock01`), and set names compared without their `.txt`. That is a Windows word
+sort, not ASCII, and it holds for the set names within a project, the swap events, the hand
+variables, the attacks by event and the clips within an attack. Only two orders are not
+sorted, and both come from elsewhere: the projects follow the animation cache's build order,
+and a set's checksums follow the character file (§3.1). So the sets were emitted by a tool
+from maps keyed on those names; nobody typed 774 lists in collation order.
+
+The attack lists were curated, not enumerated. The player's `H2HDual.txt` -- unarmed right
+hand, one-handed weapon left -- carries nine attacks: the left hand's sprint attacks and
+directional power attacks, the right hook, the right hand's power punch. It does **not**
+carry `attackStartLeftHand`, the left weapon's ordinary swing, although `1HMDual.txt` and
+`RightHandStaffAndWeapon.txt` carry it for the same left hand. A generator working from the
+graph puts 34 attacks in that set, everything the behaviour can reach with those hands, the
+dragon-mount bite included. The shipped lists were chosen per hand pair by someone who knew
+which attacks that pairing makes, and they are not complete.
+
+The flag, then, is a value the tool carried per (set, attack) and wrote beside the event. Its
+values across the player's 26 attacking sets follow one policy to the letter: `attackStart`,
+`attackStartLeftHand`, the hand-to-hand hooks and every sprint attack are 1 in every set that
+lists them; every directional and standing power attack, every bash and the dual-wield specials
+are 0 in every set that lists them. Thirteen sets carry `attackStart` and all thirteen agree;
+thirteen carry `attackPowerStartForward` and all thirteen agree. The one break is
+`H2HShield.txt`, where `bashStart` with `Shd_Bash` is 1 while the same clip under the same
+event is 0 in `1HMShield.txt`, `MRhShield.txt` and `RightHandStaffAndShield.txt`, and the
+torch bash beside it in `H2HTorch.txt` is 0. A value held once per attack type and copied into
+each set would not break there; a value entered per set can. That is the shape of the flag's
+source: a column in the tool's per-set attack table, filled by the animator by attack type --
+ordinary and sprint attacks move, power attacks and bashes do not -- and slipped once.
+
+Nothing computed it. The race's attack data has no field that follows it (§6), the behaviour
+states it for 30 of the 38 and no rule reaches the rest, and the split files show the same 124
+values the merged file does. The Creation Kit could still *read* it -- that needs the
+executable to check -- but it did not produce it, and the masters carry no trace of it.
+
 ## 4. The engine side
 
 Addresses are virtual addresses in the retail `SkyrimSE.exe` (image base `0x140000000`),
