@@ -331,9 +331,10 @@ public static class SpeedDataGenerator
     /// </para>
     /// <para>
     /// The reading counts only when the writer itself came out live: the tagging
-    /// generator among the active generators, or the row's state's generator. A run
-    /// that settled elsewhere says nothing about this key, and the key falls to the
-    /// readings that do not need the graph run.
+    /// generator among the active generators, the row's state's generator, or the
+    /// generator an expression modifier hangs off. A run that settled elsewhere says
+    /// nothing about this key, and the key falls to the readings that do not need
+    /// the graph run.
     /// </para>
     /// </remarks>
     internal static List<(float Direction, SpeedLadder Ladder)>? TaggedAt(
@@ -346,12 +347,17 @@ public static class SpeedDataGenerator
         foreach (StateKeys.Writer writer in writers)
         {
             if (writer.Key != key || writer.Node is null) continue;
-            if (writer.By is not (StateKeys.By.Tag or StateKeys.By.Manager)) continue;
+            // An expression's key is placed by where the expression sits (Pairing),
+            // which is exact; driving the graph there is measured worse.
+            if (writer.By is StateKeys.By.Expression) continue;
 
+            // What has to come out active for the run to count: the tag, the row's
+            // state's generator, or the generator an expression modifier hangs off.
             IHavokObject? live = writer.Node switch
             {
                 hkbStateMachineStateInfo state => state.m_generator,
-                _ => writer.Node,
+                hkbGenerator generator => generator,
+                _ => GeneratorAbove(walk, writer.Node),
             };
             if (live is null) continue;
 
@@ -370,11 +376,18 @@ public static class SpeedDataGenerator
                     variables.Set("TurnDelta", 0f);
                     variables.Set("TurnDeltaDamped", 0f);
                     variables.Set("Speed", 100f);
+                    // A readied one-hander, since the transitions into the attack
+                    // states ask for a weapon in the right hand; a chain that runs
+                    // through the weapon selection pins its own type over this.
+                    variables.Set("iRightHandType", 1);
                 }
 
-                // A machine in sync mode starts where its variable says: say it.
+                // A machine chooses its state by a variable: say it. A boolean cannot
+                // hold a state id above 1, so such a pin is left to the event instead.
                 foreach ((string file, string variable, int state) in pins)
-                    if (tables.TryGetValue(file, out Variables? table)) table.Set(variable, state);
+                    if (tables.TryGetValue(file, out Variables? table) && table.IndexOf(variable) is var index && index >= 0
+                        && !(state > 1 && table.TypeOf(index) == VariableType.VARIABLE_TYPE_BOOL))
+                        table.Set(variable, state);
             }, properties, events);
 
             if (!run.Active.Any(n => ReferenceEquals(n.Generator, live))) continue;
@@ -394,9 +407,19 @@ public static class SpeedDataGenerator
         return null;
     }
 
+    private static hkbGenerator? GeneratorAbove(ProjectWalk walk, IHavokObject node)
+    {
+        for (IHavokObject? at = walk.StepOf(node)?.Parent; at is not null; at = walk.StepOf(at)?.Parent)
+            if (at is hkbGenerator generator) return generator;
+
+        return null;
+    }
+
     // How to put the graph in the state holding the node: one event for each state
-    // on the way up that is neither its machine's start nor chosen by a sync
-    // variable, and the sync variable pinned to the state where one chooses.
+    // on the way up that is neither its machine's start nor chosen by a variable,
+    // and the variable pinned to the state where one chooses -- a sync variable, a
+    // bound startStateId (the bleedout's i1stPerson, the weapon selection's
+    // iRightHandType, 1HM_Behavior's iWantBlock), or a manual selector's bound index.
     //
     // Raising every transition's event at once sends the graph anywhere -- the
     // player's root takes CartExit and GetUpExit as readily as attackStart -- so one
@@ -435,13 +458,27 @@ public static class SpeedDataGenerator
                     foreach (hkbStateMachineTransitionInfo transition in other.m_transitions?.m_transitions ?? [])
                         if (transition.m_toStateId == state.m_stateId) Add(transition.m_eventId);
 
-                bool synced = (StartStateMode)machine.m_startStateMode == StartStateMode.START_STATE_MODE_SYNC
-                              && machine.m_syncVariableIndex >= 0
-                              && (variables ??= new ProjectVariables(walk.Steps)).NameOf(step.File, machine.m_syncVariableIndex) is { } chooser
-                              && Pin(chooser);
-                bool Pin(string chooser) { pins.Add((step.File, chooser, state.m_stateId)); return true; }
+                variables ??= new ProjectVariables(walk.Steps);
+                bool picked = false;
+                if ((StartStateMode)machine.m_startStateMode == StartStateMode.START_STATE_MODE_SYNC
+                    && machine.m_syncVariableIndex >= 0
+                    && variables.NameOf(step.File, machine.m_syncVariableIndex) is { } sync)
+                { pins.Add((step.File, sync, state.m_stateId)); picked = true; }
 
-                levels.Add((!synced && machine.m_startStateId != state.m_stateId, here));
+                // A bound start state is pinned as well, and the event still raised:
+                // the pin may not take when the variable is a boolean.
+                int bound = Bindings.VariableFor(machine, "startStateId");
+                if (bound >= 0 && variables.NameOf(step.File, bound) is { } start)
+                    pins.Add((step.File, start, state.m_stateId));
+
+                levels.Add((!picked && machine.m_startStateId != state.m_stateId, here));
+            }
+
+            if (step.Parent is hkbManualSelectorGenerator selector && step.Member == "generators")
+            {
+                int bound = Bindings.VariableFor(selector, "selectedGeneratorIndex");
+                if (bound >= 0 && (variables ??= new ProjectVariables(walk.Steps)).NameOf(step.File, bound) is { } index)
+                    pins.Add((step.File, index, step.Index));
             }
 
             at = step.Parent;

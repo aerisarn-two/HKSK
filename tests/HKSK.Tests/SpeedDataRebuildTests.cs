@@ -121,13 +121,15 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(unread.Concat(unwritable).Order(), shipped.Except(made).Order());
 
         // How each block was placed: the graph declares it under a tag or a row, an
-        // expression pairs it, a tag over a compass of clips makes it flat, the
-        // masters say it walks like another, or the graph is run.
+        // expression pairs it, the graph driven into a tagged state shows the ladder
+        // live beside it (the perk states, over the bow and block locomotion), a tag
+        // over a compass of clips makes it flat, or the graph is run.
         var routes = inferred.How.Values.GroupBy(v => v).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(37, routes["declared"]);
         Assert.Equal(50, routes["paired"]);
+        Assert.Equal(6, routes["tagged"]);
         Assert.Equal(18, routes["flat"]);
-        Assert.Equal(6, routes["alike"]);
+        Assert.False(routes.ContainsKey("alike"));
         Assert.Equal(13, routes["evaluated"]);
         Assert.Equal(1, routes["standing"]);
         Assert.Equal(9, routes["unread"]);

@@ -1786,17 +1786,22 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   most other states on the way, then the shortest, since raising every transition's
   event at once sends the player's root through `CartExit` as readily as
   `attackStart` -- with each sync variable pinned to its state, and the evaluator
-  now following a transition's `toNestedStateId`. The reading counts only when the
+  now following a transition's `toNestedStateId` and descending a
+  `BSOffsetAnimationGenerator`, below which the player's whole third-person tree
+  hangs. A bound `startStateId` is pinned to the state as well -- the bleedout's
+  `i1stPerson`, the weapon selection's `iRightHandType` -- unless the variable is a
+  boolean that cannot hold the id, and a readied one-hander is assumed, since the
+  transitions into the attack states ask for one. The reading counts only when the
   writer itself comes out active, and then the sampler-fed ladders live beside it are
-  the key's. Measured: the sprint states land (the player's, the horse's, the rider's)
-  and carry no ladder, which agrees with vanilla's flat block 1; the bleedout does
-  not, because `BleedOutBehavior` picks its first- or third-person branch by a bound
-  start state the evaluation leaves at first person; and the attack states do not,
-  because `1HM_Behavior` settles in its block state on `attackStart` rather than in
-  `AttackState`. So no key is placed by this route yet, and the player's attack keys
-  read flat from the attack subtree. What it needs is the stance work of
-  `docs/behavior-engine.md` §4.7, the same gap as the evaluator's 17 misplaced
-  declared blocks;
+  the key's. Measured: the sprint states and the bleedout land and carry no ladder,
+  which agrees with vanilla's flat blocks 1 and 5; the perk states land, and the bow
+  and block locomotion live beside them is what vanilla ships for keys 16 and 17,
+  which the masters' walks-alike reading also gave; the magic-casting state lands on
+  its own ladder. The attack states still do not land: after the run the transition
+  from `1HM_Ready_State` into `AttackState` holds and is the one `Transitions.Next`
+  would take, yet the run settles in the ready state, so the order in which the
+  visit applies the pins and settles the machine is the next thing to read. Until
+  then the player's attack keys read flat from the attack subtree;
 - **the curve** is §6 at the goal speed itself. The query applies no offset; the
   0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
   keeps it for reading that file;

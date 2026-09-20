@@ -343,8 +343,15 @@ public static class ActiveGenerators
                 Visit(Referenced(reference, walk), weight, depth + 1, tables, trace, seen, motion);
                 break;
 
-            // hkbClipGenerator, BSSynchronizedClipGenerator, hkbReferencePoseGenerator
-            // and BSOffsetAnimationGenerator are leaves: they sample, they do not select.
+            // The offset generator plays its default generator and adds a bone offset
+            // clip on top. The player's whole third-person tree hangs below one, so
+            // treating it as a leaf left that tree unvisited.
+            case BSOffsetAnimationGenerator offset:
+                Visit(offset.m_pDefaultGenerator, weight, depth + 1, tables, trace, seen, motion);
+                break;
+
+            // hkbClipGenerator, BSSynchronizedClipGenerator and hkbReferencePoseGenerator
+            // are leaves: they sample, they do not select.
         }
 
         seen.Remove(node);
