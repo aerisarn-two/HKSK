@@ -29,7 +29,7 @@ namespace HKSK.Tests;
 public sealed class SpeedDataRebuildTests
 {
     private static SpeedDataGenerator.Inferred Infer(SkyrimCache cache, IReadOnlyDictionary<string, MovementType> movements)
-        => SpeedDataGenerator.Infer(cache, movements, Masters.RaceRoles());
+        => SpeedDataGenerator.Infer(cache, movements);
 
     private const double Tolerance = 0.02;
 
@@ -42,81 +42,49 @@ public sealed class SpeedDataRebuildTests
     private readonly List<string> _perKey = [];
 
     /// <summary>
-    /// How much of the shipped table the inference reproduces, and how much it
-    /// invents.
+    /// The table holds a block for every key a graph can put <c>iState</c> at, in
+    /// every project that reads the table, and nothing else.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The project list comes out right -- all 49, because every project with an
-    /// animation cache has a block and nothing else does. The key set does not.
-    /// It writes 144 blocks, of which <strong>79 are ones the game ships</strong> --
-    /// 92% of the file, against 51 before the evaluator. It misses 7 and invents
-    /// 65, and 10 declared movement types cannot be placed at all.
+    /// The engine reads <c>iState</c> back from the graph and applies the movement
+    /// type its <c>iState_</c> constant names, and the sampler keys the table on the
+    /// same value (<c>docs/speed-data.md</c> §4.5). So which blocks exist is decided
+    /// by the graph after all -- not by which constants it declares, which is where
+    /// the draugr pair looked underivable, but by which values it can write: the
+    /// initial value, the tagging generators, the state manager's rows and the
+    /// expressions (<see cref="StateKeys"/>). That is 125 blocks over the 41 projects
+    /// with a <c>BSSpeedSamplerModifier</c>.
     /// </para>
     /// <para>
-    /// <strong>Eight projects carry no <c>BSSpeedSamplerModifier</c> at all</strong>
-    /// and the game ships a one-key table for each. Having no sampler does not mean
-    /// having no ladder: <c>AtronachFlame</c> and <c>Dragon_Priest</c> drive their
-    /// locomotion blends straight from <c>Speed</c>, and reading that where no
-    /// sampled speed exists recovers both -- 242 of the atronach's 260 points and
-    /// 81 of the priest's 99.
+    /// 76 of vanilla's 86 are among them. The 10 that are not, the engine never asks
+    /// for: eight are the projects without a sampler, whose tables nothing reads, and
+    /// two -- the spriggan's and the lurker's key 1 -- are constants no writer in the
+    /// graph ever assigns, so <c>iState</c> cannot reach them. The 49 vanilla does not
+    /// ship are keys the graph writes and the sweep skipped: FirstPerson's stances,
+    /// the draugr skeleton's weapons, the player's and the horse's mounted states,
+    /// the netch's sprint, the sphere's ranged stance, the horker's swim.
     /// </para>
     /// <para>
-    /// The other six do not move on a curve at all. <c>AtronachStorm</c>,
-    /// <c>Wisp</c> and <c>Witchlight</c> ship a table of flat zero;
-    /// <c>DragonProject</c> ships a flat 384 and <c>IceWraith</c> a flat 319.67;
-    /// <c>ChaurusFlyer</c> is zero at most headings and not at the rest. With the
-    /// dwarven spider, whose directional blend carries no binding at all, they are
-    /// the 7 still missed.
-    /// </para>
-    /// <para>
-    /// The riekling was a tenth until the engine learned that an intro animation
-    /// has finished. Its two candidate compasses carry identical rung weights, so
-    /// the pairing scores them equally and says nothing; what settles it is running
-    /// the graph, and that used to rest in <c>MT_Equip</c> because its combat
-    /// machine is in <c>START_STATE_MODE_SYNC</c> on a variable starting at the
-    /// equip state. Raising the equip clip's own end trigger carries it through, and
-    /// the evaluator picks the bare-handed compass -- 138 of its 1037 points against
-    /// 99 for the crossbow one. It is still the worst block in the file and what it
-    /// needs is a model: its forward and backward records are exact and its lateral
-    /// ones are not a ladder response at all.
-    /// </para>
-    /// <para>
-    /// <strong>All 64 inventions are movement types declared and never swept.</strong>
-    /// FirstPerson alone is 18 of them: it declares the full 19-key humanoid set and
-    /// the game ships one. DefaultMale and DefaultFemale declare 19 and ship 14. The
-    /// draugr pair proves no rule can tell a declared-and-swept type from a
-    /// declared-and-not: same graph, same constants, same animations, six blocks
-    /// against one.
-    /// </para>
-    /// <para>
-    /// <strong>The evaluator is used where the heuristic cannot answer, not
-    /// instead of it.</strong> That is measured rather than assumed. On the 51
-    /// blocks both can reach the pairing holds 10145 of 11638 points while the
-    /// evaluator holds 7124, and the two disagree on 26 of the 51 -- pinning
-    /// <c>iState</c> puts the graph in <em>a</em> locomotion state but not reliably
-    /// the one the key denotes. On the 22 blocks the pairing cannot reach at all,
-    /// the evaluator holds 2190 of 4558, which is 22 blocks of the shipped file that
-    /// were simply absent before.
-    /// </para>
-    /// <para>
-    /// The 63 inventions are movement types declared and never swept, and the draugr
-    /// pair proves no rule can tell those from the swept ones: same graph, same
-    /// constants, same animations, six blocks against one. They are the price of
-    /// recall, not a defect.
+    /// Nine writable keys get no block on purpose. A tag or a manager row places
+    /// them in a subtree nothing under which reads the sampler, and no other reading
+    /// applies -- the player's mounted states, whose blends run on the horse's own
+    /// sampled speed -- so whatever a block said there would be unread, and running
+    /// the graph with <c>iState</c> pinned would only hand them another state's
+    /// curve.
     /// </para>
     /// </remarks>
     [MastersFact]
-    public void TheInferenceRecoversAllEightySixBlocks()
+    public void TheTableHoldsEveryKeyTheGraphCanWrite()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         Inferred inferred = Infer(cache, Masters.Read());
 
         SpeedDataFile vanilla = cache.SpeedData!;
 
-        Assert.Equal(49, inferred.Projects);
+        Assert.Equal(41, inferred.Projects);
         Assert.Equal(49, vanilla.Projects.Count);
-        Assert.Equal(vanilla.Projects.Order(), inferred.File.Projects.Order());
+        Assert.True(inferred.File.Projects.All(vanilla.Projects.Contains));
 
         var shipped = new HashSet<(string, uint)>();
         foreach (string name in vanilla.ProjectNames)
@@ -135,15 +103,38 @@ public sealed class SpeedDataRebuildTests
             $"invented {made.Except(shipped).Count()}\n" +
             $"unbuildable {inferred.Unbuildable}\n\n" +
             "missed:\n" + string.Join("\n", shipped.Except(made).OrderBy(x => x.Item1)) +
-            "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)));
+            "\n\ninvented:\n" + string.Join("\n", made.Except(shipped).OrderBy(x => x.Item1)) +
+            "\n\nhow:\n" + string.Join("\n", inferred.How.OrderBy(h => h.Key).Select(h => $"{h.Key.Project} {h.Key.Key} {h.Value}")));
 
         Assert.Equal(86, shipped.Count);
-        Assert.Equal(149, made.Count);
+        Assert.Equal(125, made.Count);
+        Assert.Equal(76, made.Intersect(shipped).Count());
+        Assert.Equal(49, made.Except(shipped).Count());
+        Assert.Equal(0, inferred.Unbuildable);
 
-        Assert.Equal(86, made.Intersect(shipped).Count());   // recovered, was 51
-        Assert.Equal(0, shipped.Except(made).Count());       // missed, was 35
-        Assert.Equal(63, made.Except(shipped).Count());      // invented, was 41
-        Assert.Equal(0, inferred.Unbuildable);               // unplaceable, was 50
+        (string, uint)[] unread =
+            [
+                ("AtronachFlame", 1), ("AtronachStormProject", 0), ("ChaurusFlyer", 0), ("Dragon_Priest", 0),
+                ("DragonProject", 0), ("IceWraithProject", 0), ("WispProject", 0), ("WitchlightProject", 0),
+            ];
+        (string, uint)[] unwritable = [("BenthicLurkerProject", 1), ("Spriggan", 1)];
+        Assert.Equal(unread.Concat(unwritable).Order(), shipped.Except(made).Order());
+
+        // How each block was placed: the graph declares it under a tag or a row, an
+        // expression pairs it, a tag over a compass of clips makes it flat, the
+        // masters say it walks like another, or the graph is run.
+        var routes = inferred.How.Values.GroupBy(v => v).ToDictionary(g => g.Key, g => g.Count());
+        Assert.Equal(37, routes["declared"]);
+        Assert.Equal(50, routes["paired"]);
+        Assert.Equal(18, routes["flat"]);
+        Assert.Equal(6, routes["alike"]);
+        Assert.Equal(13, routes["evaluated"]);
+        Assert.Equal(1, routes["standing"]);
+        Assert.Equal(9, routes["unread"]);
+        Assert.Equal(
+            [("DefaultFemale", 13), ("DefaultFemale", 63), ("DefaultMale", 13), ("DefaultMale", 63),
+             ("FirstPerson", 1), ("FirstPerson", 13), ("FirstPerson", 61), ("FirstPerson", 63), ("HorseProject", 61)],
+            inferred.How.Where(h => h.Value == "unread").Select(h => h.Key).Order());
     }
 
     /// <summary>
@@ -334,29 +325,28 @@ public sealed class SpeedDataRebuildTests
             $"points on new blocks:    {_newHeld}/{_newPoints}\n" +
             string.Join("\n", per.OrderByDescending(x => x)) + "\n\n" + string.Join("\n", _perKey));
 
-        Assert.Equal(86, blocks);
-        Assert.Equal(1634, records);
-        Assert.Equal(18302, points);
+        // The 76 shipped blocks the engine asks for (TheTableHoldsEveryKeyTheGraphCanWrite).
+        Assert.Equal(76, blocks);
+        Assert.Equal(1444, records);
+        Assert.Equal(16930, points);
 
-        // 15305 against the 10145 the pairing alone reached, over 77 blocks against
-        // 51. The rate reads 87% rather than 92% only because RieklingProject is in
-        // the denominator with 1037 points and 138 of them right; on the other 76
-        // blocks it is 13345 of 14551.
-        Assert.Equal(15896, pointsHeld);
-        Assert.Equal(1331, recordsHeld);
-        Assert.Equal(53, blocksHeld);
+        // 87%. The rate is held down by RieklingProject, in the denominator with
+        // 1037 points and 138 of them right.
+        Assert.Equal(14807, pointsHeld);
+        Assert.Equal(1216, recordsHeld);
+        Assert.Equal(48, blocksHeld);
 
         // The spider centurion's arms play at a rate an expression computes from the
         // sampled speed, and the whole block follows from evaluating it.
         Assert.Contains(_perKey, line => line.StartsWith("DwarvenSpiderCenturionProject ") && line.Contains(" 61/61 "));
 
-        Assert.Equal(25, _declared);
-        Assert.Equal(66, _sharedBlocks);
-        Assert.Equal(20, _newBlocks);
-        Assert.Equal(13587, _sharedHeld);
+        Assert.Equal(24, _declared);
+        Assert.Equal(63, _sharedBlocks);
+        Assert.Equal(13, _newBlocks);
+        Assert.Equal(12786, _sharedHeld);
 
-        // On the 25 the graph declares, running it lands in the right state 6 times.
-        // Every one of the 18 differences is a stance -- sneaking, bow drawn,
+        // On the 24 the graph declares, running it lands in the right state 7 times.
+        // Every one of the 17 differences is a stance -- sneaking, bow drawn,
         // blocking, one- and two-handed, magic ready, casting -- and the key's own
         // name says which: iState_NPCSneaking, iState_NPCBowDrawn, iState_NPC1HM and
         // the rest. The movement selectors alone leave the graph in default
@@ -365,7 +355,7 @@ public sealed class SpeedDataRebuildTests
         // searching the player's 301 variables against these declarations. The
         // others need a combination, and nothing here sets any of them yet.
         Assert.Equal(7, _evaluatorAgreed);
-        Assert.Equal(18, _evaluatorDiffered);
+        Assert.Equal(17, _evaluatorDiffered);
         Assert.Equal(0, _evaluatorMissed);
     }
 
@@ -379,6 +369,7 @@ public sealed class SpeedDataRebuildTests
     /// plain here: headings multiplied rather than accumulated, so 12 of every 19
     /// records could not be found by heading at all, and records that stopped at the
     /// ladder's top rung, so faster requests came back unchanged (77.1% before).
+    /// Blocks the engine never asks for are not written and not scored.
     /// </remarks>
     [MastersFact]
     public void TheWrittenFileReadsBackAsTheGameReadsIt()
@@ -387,11 +378,14 @@ public sealed class SpeedDataRebuildTests
         SpeedDataFile written = SpeedDataFile.Parse(Infer(cache, Masters.Read()).File.Write());
         SpeedDataFile shipped = cache.SpeedData!;
 
-        int points = 0, held = 0, records = 0, recordsHeld = 0;
+        int points = 0, held = 0, records = 0, recordsHeld = 0, unasked = 0;
         foreach (string name in shipped.ProjectNames)
             foreach (SpeedEntry entry in shipped.Block(name)!.Entries.Where(e => e.Records.Count > 0))
             {
-                SpeedEntry mine = Assert.Single(written.Block(name)!.Entries, e => e.Key == entry.Key);
+                // A block the engine never asks for -- a project with no sampler, a key
+                // no graph writes -- is not in the file, and is not scored.
+                SpeedEntry? mine = written.Block(name)?.Entries.FirstOrDefault(e => e.Key == entry.Key);
+                if (mine is null) { unasked++; continue; }
                 foreach (SpeedRecord record in entry.Records)
                 {
                     SpeedRecord ours = Assert.Single(mine.Records, r => r.Direction == record.Direction);
@@ -408,9 +402,18 @@ public sealed class SpeedDataRebuildTests
                 }
             }
 
-        Assert.Equal(18302, points);
-        Assert.Equal(15034, held);
-        Assert.Equal(894, recordsHeld);
+        File.WriteAllText(Path.Combine(Path.GetTempPath(), "rebuild-readback.txt"),
+            $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n");
+
+        // 79.5% of the shipped points on the 76 blocks, read through the game's own
+        // lookup. Three choices made for the engine cost against the shipped file and
+        // are kept: no sampler offset (13,622 with it), every heading swept from zero
+        // where the shipped sweeps settle in from 0.5 (13,550 starting there), and a
+        // tolerance of 0.5 (13,288 at the game's 2).
+        Assert.Equal(10, unasked);
+        Assert.Equal(16930, points);
+        Assert.Equal(13451, held);
+        Assert.Equal(479, recordsHeld);
     }
 
     /// <summary>The inferred table writes back as a well-formed file.</summary>

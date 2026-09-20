@@ -20,10 +20,13 @@ namespace HKSK.Speed;
 /// does not open plugins.
 /// </para>
 /// <para>
-/// Two numbers in it were measured against the shipped file rather than derived:
-/// <see cref="SpeedLadder.SamplerOffset"/>, the sampler reading its curve 0.0404 early,
-/// and the 324.5 the game's own sweeps stop at. Everything else is read out of the
-/// assets. How the result compares is in <c>docs/speed-data.md</c> §9.
+/// It is written for the engine that reads it rather than to reproduce the shipped
+/// file: a block for every state the graph can put <c>iState</c> at, since that is the
+/// key the sampler asks for (<see cref="StateKeys"/>); the blend law at the goal speed
+/// itself, with no offset, since the query applies none; a sweep from zero, since below
+/// its first point a record is read from the origin; and past every speed the movement
+/// type asks for, since above its last point the request passes through unchanged.
+/// Where that differs from the shipped table, <c>docs/speed-data.md</c> §8 says why.
 /// </para>
 /// </remarks>
 public static class SpeedDataGenerator
@@ -31,47 +34,52 @@ public static class SpeedDataGenerator
     /// <summary>Builds the whole table.</summary>
     /// <param name="cache">The game's animation cache, with the meshes folder its behaviours live in.</param>
     /// <param name="movements">Every movement type the masters define, by name.</param>
-    /// <param name="raceRoles">
-    /// The roles races give each movement type -- <c>walk</c>, <c>run</c>, <c>swim</c>,
-    /// <c>fly</c>, <c>sneak</c>, <c>sprint</c> -- by the type's name. A type a race wears
-    /// only off the walk was never swept.
-    /// </param>
     /// <param name="tolerance">
-    /// How far a dropped point may sit from the line that replaces it. The game's files
-    /// use <see cref="SpeedRecord.RetentionTolerance"/>; smaller keeps more of the curve
-    /// in a larger file.
+    /// How far a dropped point may sit from the line the game draws between its
+    /// neighbours. The game's own files were thinned at
+    /// <see cref="SpeedRecord.RetentionTolerance"/>; the default here keeps four times
+    /// as much of the curve, in a file a few times the size.
     /// </param>
     public static SpeedDataFile Generate(
         SkyrimCache cache,
         IReadOnlyDictionary<string, MovementType> movements,
-        IReadOnlyDictionary<string, IReadOnlySet<string>> raceRoles,
-        float tolerance = SpeedRecord.RetentionTolerance)
+        float tolerance = DefaultTolerance)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(movements);
-        ArgumentNullException.ThrowIfNull(raceRoles);
         if (!(tolerance > 0f)) throw new ArgumentOutOfRangeException(nameof(tolerance));
 
-        return Infer(cache, movements, raceRoles, tolerance).File;
+        return Infer(cache, movements, tolerance).File;
     }
+
+    /// <summary>
+    /// How far a dropped point may sit from the line that replaces it, in units per
+    /// second: a quarter of the game's own 2, which is coarse against the half-unit grid
+    /// the sweep runs on.
+    /// </summary>
+    public const float DefaultTolerance = 0.5f;
+
+    /// <summary>
+    /// How far past the fastest speed a movement type asks for the sweep runs. Above a
+    /// record's last point the query hands the request back unchanged, so a request the
+    /// sweep does not reach is answered as if there were no table; <c>SpeedMult</c>
+    /// scales what the game asks for, and a doubled speed is the ordinary reach of it.
+    /// The response is flat there, so the extra costs a record one point.
+    /// </summary>
+    public const float SweepBeyond = 2f;
 
     /// <summary>The 19 headings every shipped block carries, at 0.05 apart.</summary>
     // Accumulated, not multiplied: the game's headings are 0.05f added nineteen times,
     // and 0.05f * i differs from that in 12 of the 19 (SpeedRecord.StandardDirections).
     internal static IEnumerable<float> Headings() => SpeedRecord.StandardDirections();
 
-    internal sealed record Inferred(SpeedDataFile File, int Projects, int Blocks, int Unbuildable);
+    internal sealed record Inferred(
+        SpeedDataFile File, int Projects, int Blocks, int Unbuildable,
+        IReadOnlyDictionary<(string Project, int Key), string> How);
 
     /// <summary>
     /// Builds a speed table from the graphs alone.
     /// </summary>
-    /// <remarks>
-    /// A project gets a block for every <c>iState_&lt;MOVT&gt;</c> constant its root
-    /// graph declares whose movement type the masters carry and whose key the graph
-    /// can pair with a locomotion state. The goal speeds are a grid over the arm's
-    /// own range, because the rule by which the sampler kept about a dozen of some
-    /// 650 swept positions is not known.
-    /// </remarks>
     /// <summary>The events that put a creature into locomotion.</summary>
     internal static readonly Events Moving = Events.Of("moveStart", "moveForward");
 
@@ -94,18 +102,19 @@ public static class SpeedDataGenerator
     /// compass was assembled by hand and an arm chosen by index.
     /// </para>
     /// <para>
-    /// The goal-speed grid is still a grid over the ladder's own range: the rule by
-    /// which the sampler kept about a dozen of some 650 swept positions is not
-    /// known, and nothing here has changed that.
+    /// A project is in the table when it carries a <c>BSSpeedSamplerModifier</c>, the
+    /// one reader the game has, and gets a block for every value its graph can put
+    /// <c>iState</c> at (<see cref="StateKeys"/>), whether or not the value names a
+    /// movement type: the sampler asks for the key either way.
     /// </para>
     /// </remarks>
     internal static Inferred Infer(
         SkyrimCache cache, IReadOnlyDictionary<string, MovementType> movements,
-        IReadOnlyDictionary<string, IReadOnlySet<string>> raceRoles,
-        float tolerance = SpeedRecord.RetentionTolerance)
+        float tolerance = DefaultTolerance)
     {
         var file = new SpeedDataFile();
         int projects = 0, blocks = 0, unbuildable = 0;
+        var how = new Dictionary<(string, int), string>();
 
         foreach (CacheProject project in cache.OpenAll())
         {
@@ -114,18 +123,20 @@ public static class SpeedDataGenerator
             string? path = cache.FindProjectFile(project.Name);
             if (path is null) continue;
 
+            if (BehaviorRoot.Of(path) is not { } root) continue;
+
+            ProjectWalk walk = ProjectWalk.Of(path);
+
+            // The sampler is the only thing that reads the table. A project without
+            // one -- the eight flyers and hoverers -- is left out, and the game
+            // answers a request for it as it answers any absent project: unchanged.
+            if (Ladders.ParameterOf(walk) is not { } parameter) continue;
+
             projects++;
             file.Projects.Add(SpeedDataFile.ListingFor(project.Name));
 
             var block = new SpeedProjectBlock();
             file.Blocks.Add(block);
-
-            if (BehaviorRoot.Of(path) is not { } root) continue;
-
-            ProjectWalk walk = ProjectWalk.Of(path);
-            // No sampler means no sampled speed to read; the blends that move such
-            // a creature read Speed directly.
-            string parameter = Ladders.ParameterOf(walk) ?? "Speed";
 
             // The project is read once and evaluated many times -- one run per state
             // per heading -- so the walk and the character properties are hoisted.
@@ -146,42 +157,49 @@ public static class SpeedDataGenerator
                 .Where(st => st.Arms.Count > 0)
                 .ToList();
 
-            foreach ((string constant, int key) in constants.OrderBy(c => c.Value))
+            foreach ((int key, IReadOnlySet<StateKeys.By> writtenBy) in StateKeys.Writable(walk, root))
             {
-                string movement = constant["iState_".Length..];
-                if (!movements.TryGetValue(movement, out MovementType type)) continue;
-
-                // A movement type a race wears only to swim, fly, sprint or run was
-                // never swept: every one of the five such is without a block, and
-                // every one a race walks in has one (BlockSelectionTests).
-                if (raceRoles.TryGetValue(movement, out IReadOnlySet<string>? roles) &&
-                    !roles.Contains("walk")) continue;
+                // The movement type, where the key names one: it bounds the sweep and
+                // helps pair an undeclared key. A key that names none -- the player's
+                // mounted states, declared in the horse's file -- is asked for all
+                // the same.
+                MovementType? type = StateConstants.MovementTypeOf(constants, key) is { } movement
+                                     && movements.TryGetValue(movement, out MovementType found) ? found : null;
 
                 // What the graph declares, first: a BSiStateTaggingGenerator tags the
                 // subtree it guards and a BSIStateManagerModifier declares a table of
                 // (machine, state) pairs, and ProjectWalk.KeyOf reads both. Only where
                 // the graph declares nothing does the heuristic, then the evaluator,
                 // get a turn.
+                string route = "declared";
                 var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
 
-                arms ??= FlatAt(walk, properties, actor, key);
+                if (arms is null && FlatAt(walk, properties, actor, key) is { } flat) { arms = flat; route = "flat"; }
 
                 if (arms is null)
                 {
-                    (LocomotionState? paired, Pairing.By _) = Pairing.For(
-                        walk, built, key, type, constants.Count, expressions, constants, placed);
+                    (LocomotionState? paired, Pairing.By _) = type is { } known
+                        ? Pairing.For(walk, built, key, known, constants.Count, expressions, constants, placed)
+                        : (null, default);
 
-                    arms = paired is { } chosen
-                        ? built.First(b => b.State.Equals(chosen)).Arms
-                        : LikeAnother(built, constants, movements, type)
-                          ?? StateAt(graph, walk, properties, actor, built, parameter, key);
+                    if (paired is { } chosen) { arms = built.First(b => b.State.Equals(chosen)).Arms; route = "paired"; }
+                    else if (LikeAnother(built, constants, movements, type) is { } alike) { arms = alike; route = "alike"; }
+                    // A tag or a manager row says exactly which subtree holds the key.
+                    // When nothing under it reads the sampler and no other reading
+                    // applies -- the player's mounted states, whose blends run on the
+                    // horse's speed -- the honest block is none: running the graph with
+                    // iState pinned would hand the key another state's curve, since
+                    // nothing in any graph selects on iState.
+                    else if (writtenBy.All(by => by is StateKeys.By.Tag or StateKeys.By.Manager)) { how[(project.Name, key)] = "unread"; continue; }
+                    else if (StateAt(graph, walk, properties, actor, built, parameter, key) is { } run) { arms = run; route = "evaluated"; }
                 }
 
                 // Nothing in this graph reads a speed into a blend, so the creature
                 // has no curve: whatever it plays, it plays at one speed.
-                if (built.Count == 0) arms ??= Standing(walk, properties, actor);
+                if (built.Count == 0 && arms is null && Standing(walk, properties, actor) is { } standing) { arms = standing; route = "standing"; }
 
-                if (arms is null) { unbuildable++; continue; }
+                if (arms is null) { unbuildable++; how[(project.Name, key)] = "unbuildable"; continue; }
+                how[(project.Name, key)] = route;
 
                 // A creature that cannot move by root motion has a curve, and it is
                 // zero. The grid it is written on is degenerate because the ladder
@@ -202,33 +220,35 @@ public static class SpeedDataGenerator
 
                 // Where the sweep stops. Above a record's last point the game does not
                 // clamp -- it hands the request back unchanged (SpeedRecord.Sample) --
-                // so stopping at the ladder's top rung makes every faster request pass
-                // through as if there were no table: read the way the game reads it,
-                // that costs the file 5% of the shipped points. The record has to reach
-                // the fastest speed its movement type asks for, and the 324.5 the game's
-                // own sweeps stop at on 74 of the 86 entries -- the one number besides
-                // the sampler offset taken from the shipped file, for that reason.
-                float fastest = new[] { type.ForwardWalk, type.ForwardRun, type.BackWalk, type.BackRun,
-                                        type.LeftWalk, type.LeftRun, type.RightWalk, type.RightRun }.Max();
-                float end = MathF.Max(MathF.Max(top, fastest), 324.5f);
+                // so the record has to reach every speed the game can ask for: the fastest
+                // the movement type names, scaled by SweepBeyond for SpeedMult, and the
+                // whole ladder, whose top rung may lie far above that -- the humanoids'
+                // is the run at ten times speed, 3,510. Beyond the top rung the curve is
+                // flat, so reaching past it costs one point.
+                float fastest = type is { } t
+                    ? new[] { t.ForwardWalk, t.ForwardRun, t.BackWalk, t.BackRun, t.LeftWalk, t.LeftRun, t.RightWalk, t.RightRun }.Max()
+                    : 0f;
+                float end = MathF.Max(top, SweepBeyond * fastest);
 
                 foreach (float heading in Headings())
                 {
-                    // Swept on the file's own half-unit grid and thinned the way the
-                    // file was (SpeedRecord.Retain), rather than at even spacing. Only
-                    // the first heading keeps the sweep's first sample; every later one
-                    // loses at least that one to the change of heading.
+                    // Swept on the file's own half-unit grid from zero: below a record's
+                    // first point the query interpolates from the origin, so the first
+                    // point has to be the response at zero itself. The curve is the blend
+                    // law at the goal speed and nothing else -- the query applies no
+                    // offset (docs/speed-data.md §4.2); the 0.0404 the shipped sweeps
+                    // read early is the tool's, and SpeedLadder.Tabulate keeps it for
+                    // reading that file.
                     List<SpeedPoint> sweep = [];
-                    for (float x = heading == 0f ? 0f : 0.5f; x <= end; x += 0.5f)
-                        sweep.Add(new SpeedPoint(
-                            x, share * SpeedSampler.Sample(arms, heading, x - SpeedLadder.SamplerOffset)));
+                    for (float x = 0f; x <= end; x += 0.5f)
+                        sweep.Add(new SpeedPoint(x, share * SpeedSampler.Sample(arms, heading, x)));
 
                     entry.Records.Add(new SpeedRecord { Direction = heading, Points = SpeedRecord.Retain(sweep, tolerance) });
                 }
             }
         }
 
-        return new Inferred(file, projects, blocks, unbuildable);
+        return new Inferred(file, projects, blocks, unbuildable, how);
     }
 
     /// <summary>

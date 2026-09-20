@@ -219,7 +219,11 @@ inserted alphabetically, and instead declares 0 in its own root graph.
 
 #### Why iState is declared but never synced
 
-The runtime value comes from game code. In every graph declaring `iState` the sole
+The value is the graph's own, and the game reads it rather than writing it (§4.5): the
+graph puts `iState` at a value by its initial value, a `BSiStateTaggingGenerator`, a
+`BSIStateManagerModifier` row or an expression, and the engine reads it back to choose
+the movement type of the `iState_` constant at that value. `StateKeys.Writable` lists
+the values a graph can reach that way. In every graph declaring `iState` the sole
 binding is `BSSpeedSamplerModifier.state`, and no state machine syncs to it:
 
     file                     iState vars   machines syncing to it
@@ -499,6 +503,57 @@ Every path to the table's file names and every path to the database is construct
 destruction, loading or the query. **The game reads this table and has no code that
 writes one**: the sampler that recorded it was a tool, and it is not in the executable,
 so neither the chaurus flyer's zero nor the 0.0404 can be read out of it.
+
+### 4.5 The graph names the movement type, and the game reads the answer back
+
+Three more things the executable settles, each found by the string-table recipe
+(`docs/reverse-engineering.md` §3.10) and read out rather than inferred.
+
+**The engine never writes `iState`; it reads it and looks the value up by name.** At
+graph load, `0x140bc5890` (called from `0x140bc2970`, from `0x140bb0800`) walks the
+graph's variable-name table and, for every name longer than the global `"iState_"`
+(`0x1431c6810`) that starts with it, keeps the rest of the name against the variable's
+initial value -- the suffix, the state id. Whenever the movement type may have changed,
+`0x14069ba40` asks the holder for its graph, reads `iState` (`0x140bb3b20`, through the
+global `"iState"` at `0x1431c67a0`), turns the value into that suffix, looks the suffix up
+(`0x14038c710`, a hash lookup) and, when a movement type of that name exists, applies it
+(`0x14069b860`). Its callers are the actor's update (`0x140687a80`) and the state
+changes that go through `0x14069b6b0` and `0x1406a2690`; the animation event `MTState`,
+which seven graphs raise (the humanoids, the dragon, the vampire lord, the werewolf), is
+handled by `MTStateHandler` (`0x1407ba940`), which only marks the actor's process
+(`0x140713080`) so that the next update looks again.
+
+So the direction is the one `bAnimationDriven` has: **the graph tells the game which
+movement type it is in.** The race's six base movement defaults are what the actor has
+when the graph names nothing. The sampler keys the table on the same value, which makes
+the block set exact: a key is live when the graph can put `iState` there, and not when
+a constant merely declares it. That is what `StateKeys.Writable` computes and §8 builds
+from, and it explains most of what looked like arbitrary sweeping in §9 -- the dog
+declares 30 and 31 and writes only 30, the sabre cat 80 and 81 and writes only 80, the
+vampire brute three and writes one. It also says that two shipped blocks can never be
+asked for: the spriggan's key 1 and the lurker's key 1 are declared and no writer in
+either graph assigns them.
+
+**The join is the movement type's `MNAM` name field, not its editor id.** The suffix
+kept at load is matched against a name table, and the masters' `MNAM` is that name:
+101 of the 103 suffixes the root graphs declare are an `MNAM` exactly, case-insensitive.
+The two that are not name nothing the game can apply -- `iState_CombatSpider_MT` has no
+record, and `iState_CowSiwmDefault` misspells `CowSwimDefault` -- and the five naming
+disagreements in §3.1 are between the suffix and the *editor id*, which the engine never
+reads. Resolve by `MNAM` and there is nothing to disagree.
+
+**The game keeps the sampler's answer per actor.** `SpeedSampled` and
+`HorseSpeedSampled` are slots `+0x520` and `+0x528` of the engine's variable-name table,
+and `0x1402187a0` (from the graph manager's setup, `0x140213580`, `0x140214900`,
+`0x140214bd0`) registers each as a
+`BSTAnimationGraphDataChannel<Actor, float, ActorCopyGraphVariableChannel>`: a channel
+that, when polled (`0x14021a3c0`), asks the holder for the graph variable (vtable
+`+0x80`, the float getter beside the bool getter `bAnimationDriven` uses) and stores it in
+the channel at `+0x18`. `Speed`, `Direction` and `TurnDelta` (`+0x508`, `+0x518`,
+`+0x510`) are the other direction, actor to graph. So the table's *y* is read by the game
+as well as by the ladder: the actor carries a copy of what the animation was sampled to
+deliver. What reads that copy was not traced; it is enough to say that a wrong *y* is
+wrong twice.
 
 ## 5. The graph side
 
@@ -1701,11 +1756,58 @@ it from the animations it describes and can violate I9.
 
 ## 8. Generating a table
 
+`HKSK.Speed.SpeedDataGenerator` writes one, and `tools/speedgen` runs it. It is
+written for the engine that reads it (§4), not to reproduce the shipped file, and
+where the two disagree the shipped file is the one with the tool's habits in it:
+
+    for each project with a BSSpeedSamplerModifier:          /* the one reader, §5.1 */
+        for each value s the graph can put iState at:         /* StateKeys, §4.5 */
+            arms = the compass the graph plays at s            /* §5.3, §6 */
+            for (d = 0.0f; d < 0.95f; d += 0.05f):             /* 19 headings, I4 */
+                for (x = 0; x <= max(top rung, 2 x fastest MOVT speed); x += 0.5f):
+                    y = closed form of §6 at x, times the pose's root-motion share
+                retain points at 0.5 units
+            emit entry { key = s, records = 19 curves }
+
+- **the projects** are the 41 with a sampler. The eight without one ship a table nothing
+  reads, and the game answers a request for an absent project unchanged (§4.2), which
+  is what those eight get either way;
+- **the keys** are the values the graph writes, not the constants it declares. 125
+  blocks; 76 of vanilla's 86, the other ten being the eight unread tables and the two
+  keys no graph can write. Nine writable keys are refused: a tag or a manager row
+  places them in a subtree nothing under which reads the sampler and no other reading
+  applies -- the player's mounted states, whose blends run on the horse's speed -- so
+  a block there is unread, and running the graph with `iState` pinned would only hand
+  them another state's curve, since nothing in any graph selects on `iState`;
+- **the curve** is §6 at the goal speed itself. The query applies no offset; the
+  0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
+  keeps it for reading that file;
+- **the sweep starts at zero** on every heading, because below a record's first point
+  the query interpolates from the origin, so the first point has to be the response
+  at zero. The shipped sweeps start later headings at 0.5 and settle in (§9);
+- **the sweep ends** past everything the game can ask: the ladder's whole range, whose
+  top rung on the humanoids is the run at ten times speed, 3,510, and twice the
+  fastest speed the movement type names, for `SpeedMult`. Above its last point a
+  record hands the request back unchanged, so a sweep that stops short -- the
+  shipped 324.5 on 74 of 86 blocks -- switches the sampler off at speed. Beyond the
+  top rung the curve is flat and the reach costs one point;
+- **retention** is the shipped file's own greedy pass at 0.5 units rather than 2:
+  the game draws straight lines between the points it keeps, and 2 is coarse against
+  a half-unit grid. 62,040 points, 518 KB.
+
+Read back through the game's own lookup, the result holds 13,451 of the 16,930 shipped
+points on the 76 shared blocks (79.5%), and each of the three choices above costs
+against that measure -- the offset 171 points, the start 99, the tolerance a whole
+record here and there -- and is kept because the engine, not the file, is what the
+table is for.
+
+The shipped file's own recipe, for reading it:
+
     for each sampled state s:                      /* from §3.1 */
         for (d = 0.0f; d < 0.95f; d += 0.05f):      /* 19 iterations, I4 */
             for (x = start; x < top(s); x += 0.5f):
-                y = closed form of §6 at x
-            retain points
+                y = closed form of §6 at x - 0.0404
+            retain points at 2 units
         emit entry { key = s, records = 19 curves }
 
 Everything except `top(s)`, `start` and the retention rule follows from this document.
@@ -1796,30 +1898,45 @@ Two hypotheses are tested and dead:
   the giant's combat run stops at 67% of its blend. Meanwhile 30 of 35 default entries
   have ladders running past 325 and were never raised.
 
-**Which blocks exist.** A project declares `iState_<movement type>` constants for more
-types than its table has blocks, and the draugr proves the choice is not a function of
-the inputs: `DraugrProject` and `DraugrSkeletonProject` root at the same behaviour file,
-declare the same twelve constants and ship six blocks against one
-(`BlockSelectionTests`). So the rebuild writes some blocks the game did not -- 63, of
-which FirstPerson's are 18 and the two draugr projects' 17.
+**Which blocks the sweep chose.** A project declares `iState_<movement type>` constants
+for more types than its table has blocks, and the draugr proves the *sweep's* choice is
+not a function of the inputs: `DraugrProject` and `DraugrSkeletonProject` root at the
+same behaviour file, declare the same twelve constants and ship six blocks against one
+(`BlockSelectionTests`). What *is* a function of the inputs is which blocks the engine
+can ask for (§4.5): the values the graph writes. Measured over the 41 projects with a
+sampler, that rule holds 76 of the 78 shipped keys and refuses the other two as
+unwritable, and it explains as dead most of the declared-and-unswept constants that
+looked arbitrary -- the dog's 31, the wolf's 101, the sabre cat's 81, the spider's and
+the steam centurion's 1 are declared and never written. What remains is 49 keys the
+graph writes and vanilla did not sweep: FirstPerson's stances (it writes the humanoid
+set and ships one block), the draugr skeleton's weapons, the player's attack states,
+the netch's sprint, the sphere's ranged stance, the horker's swim, the horse's sprint,
+fall and swim. The generator writes them (§8).
 
-The masters do settle part of it. A race points at movement types through its six base
-movement defaults, and where a race names a type the answer follows with no exception:
-the **26** constants a race uses as its *walk* default all have a block, and the **4** a
-race uses only to swim, sprint or run -- `BearSwimDefault`, `HorkerSwimDefault`,
-`NetchSprinting`, `SphereRanged` -- have none, nor does the dragon's `DragonFlying`
-outside that count. That reads as the sweep walking each race on the ground. The rebuild
-skips a type a race names only off the walk, which took the unshipped blocks it writes
-from 68 to 63 and cost no shipped block. The other 115 constants no race names -- the
-stances, the player's whole list, the draugr's weapons -- and 52 of them have a block
-and 63 do not, which is where the draugr lives.
+The masters agree with the sweep on one thing and it is no longer used. A race points
+at movement types through its six base movement defaults, and the **26** constants a
+race uses as its *walk* default all have a block while the **4** a race uses only to
+swim, sprint or run -- `BearSwimDefault`, `HorkerSwimDefault`, `NetchSprinting`,
+`SphereRanged` -- have none. That reads as the sweep walking each race on the ground; the
+engine asks for all four when the graph writes them, and the generator no longer skips
+them.
+
+The idle tree was read for the same question and cannot exclude a key. Every writer of
+a key vanilla did not sweep sits in a state entered by an event the idles send or the
+engine sends on its own: the player's attack keys by `attackStart` and its kin, the
+netch's sprint and the horse's by `SprintStart`, the sphere's ranged stance by
+`bowAttackStart`, the horker's swim by `HorkerSwimStart`, the horse's fall by
+`fallStart`; the rest are start states or expressions on variables the engine sets
+(`isSwimming`). What the idle tree adds is confirmation that those states are reached,
+not a reason to leave any out.
 
 **`max(x)` does not bound what the game can request.** 47 of the 86 entries stop below
 their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of
 802.29 — and 37 of those are still rising when the sweep ends. Above the last point the
 query does not clamp — it returns the request untouched (§4.2) — so above its own
 sweep an actor's gait blend is indexed on the raw request, exactly as if the table were
-absent. The sampler simply stops working for that actor at speed.
+absent. The sampler simply stops working for that actor at speed. The generator sweeps
+past the whole ladder and twice the fastest speed the type names instead (§8).
 
 **Bit-exact values are unreachable, by a proof rather than a gap.** The animation cache
 stores root motion at six significant digits and it is stored nowhere else, so the
@@ -2301,7 +2418,9 @@ name match, and it sits in `FamilyGuess` in the test suite under that name. A pr
 that knows the mapping supplies it, and should not have to route around a library that
 thinks it already knows.
 
-Generation (§8) is not implemented: it needs `top(s)`, which is still authored (§9).
+Generation (§8) is `SpeedDataGenerator`, and `tools/speedgen` runs it. It does not
+need `top(s)`: the sweep's bound is what the game can ask for, not what the shipped
+tool chose. `StateKeys.Writable` is the block set, by the engine's own reading (§4.5).
 
 ### hkmeasure
 

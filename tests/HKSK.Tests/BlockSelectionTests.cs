@@ -51,12 +51,13 @@ public sealed class BlockSelectionTests
     /// twelve movement types. The draugr ships six blocks and the skeleton one.
     /// </para>
     /// <para>
-    /// So which movement types get a block is <strong>not a function</strong> of
-    /// the behaviour, the constants or the movement types: here are two projects
-    /// agreeing on every one of those and disagreeing on the answer. It is an
-    /// authoring decision recorded nowhere but in the speed table itself, which
-    /// means a rebuild can reproduce a block it is given but cannot be asked which
-    /// blocks to write.
+    /// So which movement types <em>vanilla swept</em> is <strong>not a function</strong>
+    /// of the behaviour, the constants or the movement types: here are two projects
+    /// agreeing on every one of those and disagreeing on the answer. It is a
+    /// decision of the tool that wrote the table. Which blocks the <em>engine</em>
+    /// can ask for is a function of the graph -- the values it can put
+    /// <c>iState</c> at (<see cref="StateKeys"/>) -- and the generator writes those
+    /// for both draugr projects alike (<c>SpeedDataRebuildTests</c>).
     /// </para>
     /// </remarks>
     [CorpusFact]

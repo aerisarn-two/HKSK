@@ -15,7 +15,7 @@ using HKSK.SpeedGen;
 // never read.
 
 string? meshes = null, data = null, output = null;
-float tolerance = SpeedRecord.RetentionTolerance;
+float tolerance = SpeedDataGenerator.DefaultTolerance;
 bool force = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -69,10 +69,9 @@ cache.SpeedData = null;
 Console.WriteLine($"cache      {meshes}");
 
 var movements = MasterData.MovementTypes(data);
-var roles = MasterData.RaceRoles(data);
-Console.WriteLine($"masters    {data}  ({movements.Count} movement types, {roles.Count} worn by races)");
+Console.WriteLine($"masters    {data}  ({movements.Count} movement types)");
 
-SpeedDataFile file = SpeedDataGenerator.Generate(cache, movements, roles, tolerance);
+SpeedDataFile file = SpeedDataGenerator.Generate(cache, movements, tolerance);
 
 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 file.Save(output);
@@ -92,7 +91,7 @@ static int Usage()
     Console.Error.WriteLine("  <meshes>      extracted meshes folder (animationdatasinglefile.txt, behaviours)");
     Console.Error.WriteLine("  <data>        the game's Data folder (Skyrim.esm and the DLC masters)");
     Console.Error.WriteLine("  -o <output>   file or folder to write; default ./speeddatasinglefile.txt");
-    Console.Error.WriteLine($"  --tolerance   how far a dropped point may sit from its line; default {SpeedRecord.RetentionTolerance.ToString(CultureInfo.InvariantCulture)}, the game's own");
+    Console.Error.WriteLine($"  --tolerance   how far a dropped point may sit from its line; default {SpeedDataGenerator.DefaultTolerance.ToString(CultureInfo.InvariantCulture)}; the game's own files used 2");
     Console.Error.WriteLine("  --force       allow overwriting the shipped table in <meshes>");
     return 2;
 }
