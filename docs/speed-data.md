@@ -347,8 +347,12 @@ otherwise reads the graph at rest and an attack's own clip has raised `attackSto
 by then. The reading counts only when the writer comes out active. Then the
 sampler-fed ladder live beside the state is the key's — the attacks take the
 weapon locomotion under them, the perk stances the bow and block locomotion — and
-where none is live the pose is read flat. Driven that way, all 24 blocks the graph
-declares show their own ladder, and 23 more are placed.
+where none is live the pose is read flat. One rule of the choice matters: a return
+event such as `pairedStop` or `PairEnd` enters the resting state of many machines
+and so is shared by many levels, and is taken only when nothing else enters the
+state, or it beats `HorseEnterInstant` and `MountedSwimStart` and the rider's fall
+and the horse's swim never land. Driven that way, all 24 blocks the graph declares
+show their own ladder, and every other placed key, 27, lands too.
 
 Six writable keys get no block: the rider's mounted states and the first-person
 camera carry no root motion, and the horse's sprint clip has no motion block. An

@@ -124,13 +124,13 @@ public sealed class SpeedDataRebuildTests
         // expression pairs it, the graph driven into a tagged state shows the ladder
         // live beside it (the attacks over the weapon locomotion, the perk states
         // over the bow and block locomotion) or, with none live, the flat pose it
-        // plays (the sprints, the bleedout, the power attacks), a tag
+        // plays (the sprints, the bleedout, the power attacks, the falls), a tag
         // over a compass of clips makes it flat, or the graph is run.
         var routes = inferred.How.Values.GroupBy(v => v).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(37, routes["declared"]);
         Assert.Equal(50, routes["paired"]);
-        Assert.Equal(23, routes["tagged"]);
-        Assert.Equal(4, routes["flat"]);
+        Assert.Equal(27, routes["tagged"]);
+        Assert.False(routes.ContainsKey("flat"));
         Assert.False(routes.ContainsKey("alike"));
         Assert.Equal(13, routes["evaluated"]);
         Assert.Equal(1, routes["standing"]);

@@ -511,7 +511,15 @@ public static class SpeedDataGenerator
         foreach ((bool needed, List<string> here, var conditions, string file) in levels)
         {
             if (!needed || here.Count == 0) continue;
-            string best = here
+
+            // A return -- pairedStop, PairEnd, MountedSwimStop -- enters the resting
+            // state of many machines and so is shared by many levels, which is the
+            // opposite of what sharing is meant to find. It is taken only when
+            // nothing else enters the state.
+            List<string> entering = here.Where(e => !Returns.IsMatch(e)).ToList();
+            if (entering.Count == 0) entering = here;
+
+            string best = entering
                 .OrderByDescending(e => levels.Count(l => l.Events.Contains(e)))
                 .ThenBy(e => e.Length)
                 .First();
@@ -529,6 +537,8 @@ public static class SpeedDataGenerator
         // the weapon selection's own type -- says the last word.
         return (chosen, [.. asked.Distinct(), .. pins]);
     }
+
+    private static readonly Regex Returns = new(@"(Stop|End|Exit|Out)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex Conjunct = new(@"^\(?\s*(?<name>[A-Za-z_]\w*)\s*(?<op>==|>=|>)\s*(?<value>-?\d+)\s*\)?$", RegexOptions.Compiled);
 

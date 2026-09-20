@@ -40,8 +40,8 @@ purpose: driven into their state, nothing sampler-fed is live beside them and th
 pose carries no root motion -- the rider's mounted states, the first-person camera
 -- or the cache lacks the clip's motion, the horse's sprint; an absent block is the
 game's own answer, the request unchanged. For the other tagged keys -- the attacks,
-the perk stances, the sprints -- the graph is driven into the state and the ladder
-live beside it, or the flat pose it plays, is read.
+the perk stances, the sprints, the falls -- the graph is driven into the state and
+the ladder live beside it, or the flat pose it plays, is read.
 
 Against the shipped file (`SpeedDataRebuildTests`):
 
