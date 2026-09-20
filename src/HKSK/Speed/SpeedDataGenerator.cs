@@ -465,11 +465,22 @@ public static class SpeedDataGenerator
                     && variables.NameOf(step.File, machine.m_syncVariableIndex) is { } sync)
                 { pins.Add((step.File, sync, state.m_stateId)); picked = true; }
 
-                // A bound start state is pinned as well, and the event still raised:
-                // the pin may not take when the variable is a boolean.
+                // A bound start state is a chooser. Where it can choose the state --
+                // no event enters it, or the id is a flag's 0 or 1: the bleedout's
+                // first- or third-person branch, the weapon selection, the block state
+                // on iWantBlock -- it is pinned to the state. Where an event enters a
+                // state it cannot name, the chooser is pinned to the machine's own
+                // start and the event does the entering: pinned to AttackState,
+                // iWantBlock started 1HM_Behavior inside it and the locomotion events
+                // walked it out again, and left alone it starts the machine blocking.
                 int bound = Bindings.VariableFor(machine, "startStateId");
                 if (bound >= 0 && variables.NameOf(step.File, bound) is { } start)
-                    pins.Add((step.File, start, state.m_stateId));
+                {
+                    if (here.Count == 0 || state.m_stateId <= 1)
+                    { pins.Add((step.File, start, state.m_stateId)); picked = true; }
+                    else
+                        pins.Add((step.File, start, machine.m_startStateId));
+                }
 
                 levels.Add((!picked && machine.m_startStateId != state.m_stateId, here));
             }

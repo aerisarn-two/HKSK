@@ -1797,11 +1797,17 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   which agrees with vanilla's flat blocks 1 and 5; the perk states land, and the bow
   and block locomotion live beside them is what vanilla ships for keys 16 and 17,
   which the masters' walks-alike reading also gave; the magic-casting state lands on
-  its own ladder. The attack states still do not land: after the run the transition
-  from `1HM_Ready_State` into `AttackState` holds and is the one `Transitions.Next`
-  would take, yet the run settles in the ready state, so the order in which the
-  visit applies the pins and settles the machine is the next thing to read. Until
-  then the player's attack keys read flat from the attack subtree;
+  its own ladder; the power attacks land and have no ladder beside them, so they
+  stay flat. The ordinary attack states still do not land. A bound chooser is now
+  pinned to the state where it can name it and to the machine's own start where an
+  event has to do the entering -- pinned to `AttackState`, `iWantBlock` started
+  `1HM_Behavior` inside it and the locomotion events walked it out; left alone, it
+  starts the machine blocking -- and still, with `iWantBlock` at 0 and `attackStart`
+  raised, the run settles in `BlockState`, although after the run
+  `Transitions.Next` from the ready state and from the block state both give
+  `AttackState`. Something in the visit differs from the settled tables, and it has
+  not been found. Until it is, the player's attack keys read flat from the attack
+  subtree;
 - **the curve** is §6 at the goal speed itself. The query applies no offset; the
   0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
   keeps it for reading that file;
