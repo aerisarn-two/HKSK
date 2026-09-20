@@ -879,15 +879,12 @@ hover exactly as the witchlight's one does. The 5 not derived: the storm atronac
 raises `bAnimationDriven` and the engine therefore moves it by its clip, whatever the file says;
 the player's `bashStart`, which vanilla flags in one set of thirteen (§3.4); and the werewolf's two
 side attacks, zero-travel swipes on a walking creature about which no asset says anything.
-For anyone who wants vanilla's values rather than the engine's, `setgen --flags-from <shipped
-file>` takes the flag, and nothing else, from a shipped file:
-
-    attacks flagged as moving              1,180 of 3,819
-    attacks the shipped file answered      3,305; the other 514 nobody shipped
-    flagged events reproduced              38 of 38, and no event flagged that vanilla does not
-
-The 38 become 1,180 entries because a rebuilt project states an attack once per set that can
-make it, where the shipped file states the same 38 across its own 124.
+Nothing is copied from the shipped file. A port of vanilla's flags was written and removed: it
+reproduced the 38 (as 1,180 entries, since a rebuilt project states an attack once per set that
+can make it) but had to fall back to the event name where the sets differ, which flagged the
+player's `bashStart` in 57 sets and its magic-hand `attackStart` in 31, and it carried vanilla's
+one contradiction of its own engine. The derived flag is the engine's condition, and where it
+differs from vanilla it is the shipped file that is wrong (§6).
 
 ### 5.8 Traps
 
@@ -923,8 +920,7 @@ the riekling (12), the sphere centurion (9) and the dwarven centurion (7):
 - **the attacks that differ** (§5.6): 15.1% of the event-to-clips entries.
 - **the moving-attack flag** (§4.6) is derived from the engine's condition -- 33 of vanilla's 38,
   eight more where vanilla left the same case clear, one fewer where vanilla contradicts its own
-  engine -- and `setgen --flags-from` copies vanilla's values instead, which is the only way to
-  reproduce all 38.
+  engine. Nothing reproduces all 38, by choice.
   What it means is read, and §4.6's creatures agree with the name. What decides it is not in
   the assets, and the reason is **coverage**: of the 45 projects that carry attacks at all,
   **6 use the flag** — the player's two, the werewolf, the netch, the witchlight and the
@@ -1096,7 +1092,7 @@ the graph says the character is sprinting over that state:
   not this clip's. **The first three are decidable and are derived** (§5.7), under one guard the
   engine imposes: an attack inside a branch that raises `bAnimationDriven` is moved by its clip,
   so it is never flagged, which takes the storm atronach's `attackPowerStart_StandingAttack` back
-  out. Only the fourth is not decidable, and it is what `--flags-from` is for. The second was found by asking why the sprint
+  out. Only the fourth is not decidable, and it is left clear. The second was found by asking why the sprint
   attacks have no blend: sprinting has one direction, so there is nothing to interpolate --
   the graph states the condition in a variable instead, `IsSprinting` where the player and
   the werewolf read it and `iSyncSprintState` near the clip where the netch does.
@@ -1310,8 +1306,9 @@ the graph says the character is sprinting over that state:
   rule can give is a predicate, because the flag is not a function of the assets: the same
   bear that charges and bites carries 0, and the werewolf contradicts itself outright --
   `AttackStartDualSprinting` is flagged and `AttackStartLeftSprinting` is not, with the same
-  shape and sibling clips. Six projects were tuned and the rest were left. `setgen
-  --flags-from` copies it rather than deriving it, and an attack outside those six gets what
+  shape and sibling clips. Six projects were tuned and the rest were left. That is why the
+  generator derives it from the engine's condition and copies nothing: a copied flag would
+  carry the tuning and the omissions alike, and an attack outside those six would get what
   the whole of vanilla outside those six gets, which is 0.
 
 In the executable:

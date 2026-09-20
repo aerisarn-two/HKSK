@@ -2,7 +2,7 @@
 
 Writes `animationsetdatasinglefile.txt` from the game's other assets:
 
-    setgen <meshes> <data> [-o <output>] [--slack <factor>] [--flags-from <file>] [--force]
+    setgen <meshes> <data> [-o <output>] [--slack <factor>] [--force]
 
 - `<meshes>` — the extracted `meshes` folder: `animationdatasinglefile.txt` and the
   actors' behaviour and character files.
@@ -12,19 +12,17 @@ Writes `animationsetdatasinglefile.txt` from the game's other assets:
 - `--slack` — how much larger than one weapon's files a set may grow to cover several.
   The default, 1.5, keeps the player's sets to a few thousand; 1 splits a set wherever two
   weapons load different files.
-- `--flags-from` — a shipped `animationsetdatasinglefile.txt` to take the moving-attack
-  flag from. Without this the flag is derived from the engine's own condition
-  (`docs/animation-set-data.md` §4.6, §6): the 41 attacks whose travel is the actor's --
-  interpolated by a speed-parametric blend, made while the graph says the character is
-  sprinting, chosen by the idle tree only on the move, or made by a hovering creature -- are
-  flagged unless the branch raises `bAnimationDriven`. That is 33 of vanilla's 38, with 8 more
-  and 5 fewer, one of the five on purpose; this option reproduces vanilla's 38 instead.
 - `--force` — allow writing over the shipped file inside `<meshes>`, which is otherwise
   refused.
 
-Apart from `--flags-from`, a shipped `animationsetdatasinglefile.txt` is never read: the
-cache drops the one in `<meshes>` before anything is generated. The algorithm is `HKSK.SetData.SetDataGenerator`; this tool
-only opens the masters, which the library deliberately does not.
+A shipped `animationsetdatasinglefile.txt` is never read: the cache drops the one in
+`<meshes>` before anything is generated. That includes the moving-attack flag on each attack,
+which is derived from the engine's own condition (`docs/animation-set-data.md` §4.6, §6): the
+attack's travel is the actor's -- a speed-parametric blend, a sprinting state, an idle chosen
+only on the move, a hovering creature -- and its branch does not raise `bAnimationDriven`.
+That is 33 of vanilla's 38, with 8 more and 5 fewer, one of the five on purpose. The
+algorithm is `HKSK.SetData.SetDataGenerator`; this tool only opens the masters, which the
+library deliberately does not.
 
 ## What it builds
 

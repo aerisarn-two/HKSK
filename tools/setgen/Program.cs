@@ -7,16 +7,16 @@ using HKSK.SetGen;
 
 // setgen: writes animationsetdatasinglefile.txt from the game's other assets.
 //
-//   setgen <meshes> <data> [-o <output>] [--slack <factor>] [--flags-from <file>] [--force]
+//   setgen <meshes> <data> [-o <output>] [--slack <factor>] [--force]
 //
 // <meshes> is the extracted meshes folder -- animationdatasinglefile.txt and the actors'
 // behaviour and character files. <data> is the game's Data folder, for the five masters.
 // A shipped animationsetdatasinglefile.txt in <meshes> is emptied before anything is built.
 //
-// The sets themselves are built from the other assets alone. --flags-from is the one thing
-// a shipped file is read for: the moving-attack flag, which nothing derives (§4.6, §6).
+// Nothing is read from a shipped animationsetdatasinglefile.txt: the sets, and the
+// moving-attack flag on their attacks, are built from the other assets alone (§4.6, §6).
 
-string? meshes = null, data = null, output = null, flagsFrom = null;
+string? meshes = null, data = null, output = null;
 bool force = false;
 double slack = SetDataGenerator.DefaultSlack;
 
@@ -30,9 +30,6 @@ for (int i = 0; i < args.Length; i++)
         case "--slack" when i + 1 < args.Length:
             if (!double.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out slack) || !(slack >= 1))
                 return Fail($"--slack wants a number of at least 1, not '{args[i]}'");
-            break;
-        case "--flags-from" when i + 1 < args.Length:
-            flagsFrom = Path.GetFullPath(args[++i]);
             break;
         case "--force":
             force = true;
@@ -78,14 +75,6 @@ Console.WriteLine($"masters    {data}  ({events.Idle.Count} idle events, {events
 
 AnimationSetDataFile file = SetDataGenerator.Generate(cache, events, slack);
 
-if (flagsFrom is not null)
-{
-    MovingAttackReport report = MovingAttackFlags.CopyOnto(file, AnimationSetDataFile.Load(flagsFrom));
-    Console.WriteLine($"flags      {flagsFrom}");
-    Console.WriteLine($"           {report.Flagged} attacks flagged as moving, {report.Answered} answered, " +
-                      $"{report.Unanswered} not in the shipped file, {report.Lost} shipped flags with nowhere to go");
-}
-
 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 file.Save(output);
 
@@ -100,12 +89,11 @@ return 0;
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: setgen <meshes> <data> [-o <output>] [--slack <factor>] [--flags-from <file>] [--force]");
+    Console.Error.WriteLine("usage: setgen <meshes> <data> [-o <output>] [--slack <factor>] [--force]");
     Console.Error.WriteLine("  <meshes>      extracted meshes folder (animationdatasinglefile.txt, behaviours)");
     Console.Error.WriteLine("  <data>        the game's Data folder (Skyrim.esm and the DLC masters)");
     Console.Error.WriteLine("  -o <output>   file or folder to write; default ./animationsetdatasinglefile.txt");
     Console.Error.WriteLine($"  --slack       how far a set covering several weapons may outgrow one; default {SetDataGenerator.DefaultSlack.ToString(CultureInfo.InvariantCulture)}");
-    Console.Error.WriteLine("  --flags-from <file>  take the moving-attack flag from a shipped file; nothing else is read from it");
     Console.Error.WriteLine("  --force       allow overwriting the shipped file in <meshes>");
     return 2;
 }

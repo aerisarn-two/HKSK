@@ -128,8 +128,8 @@ public sealed class AttackData
     /// chooses on the move; or a creature the controller carries always, which is what a graph
     /// with no speed blend and no travel under its direction blends shows. Never inside a branch
     /// that raises <c>bAnimationDriven</c>, since the engine then moves the actor by the clip.
-    /// That covers 33 of vanilla's 38, differs from it once on purpose, and
-    /// <c>setgen --flags-from</c> copies vanilla's values instead.
+    /// That covers 33 of vanilla's 38 and differs from it once on purpose; nothing copies
+    /// the shipped values.
     /// It was called "mirrored" until the executable was read; it has nothing to do with
     /// mirroring. <c>docs/animation-set-data.md</c> §4.6 and §6.
     /// </para>
