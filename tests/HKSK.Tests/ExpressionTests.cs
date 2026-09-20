@@ -17,6 +17,9 @@ public sealed class ExpressionTests
     [InlineData("weaponDraw if (iCombatStance == 1)", null, "weaponDraw")]
     [InlineData("BeginCastVoice if bWantCastVoice && bVoiceReady", null, "BeginCastVoice")]
     [InlineData("SoundPlay.WPNBowZoomIn if (iWantBlock)", null, "SoundPlay.WPNBowZoomIn")]
+    [InlineData("iRightHandType > 0", null, null)]
+    [InlineData("(iLeftHandType != 5) && (iLeftHandType != 0)", null, null)]
+    [InlineData("bWantCastLeft == 0", null, null)]
     public void TheTwoFormsAreRecognised(string text, string? target, string? sent)
     {
         Expression parsed = Assert.IsType<Expression>(Expression.Parse(text));
@@ -39,6 +42,11 @@ public sealed class ExpressionTests
         Assert.Equal(3.5f, Value("out = clamp(10, 1, 3.5)", variables));
         Assert.Equal(4f, Value("out = max(a, b)", variables));
         Assert.Equal(1f, Value("out = a % 2", variables));
+
+        // A bare condition, as a transition carries it: its value, nothing written.
+        Assert.Equal(1f, Value("a > 2 && b == 4", variables));
+        Assert.Equal(0f, Value("(a != 3) || !flag", variables));
+        Assert.Equal(3f, variables.Real(variables.IndexOf("a")));
 
         // cond is Bethesda's, and only the branch taken has to resolve.
         Assert.Equal(3f, Value("out = cond(flag, a, missingVariable)", variables));

@@ -39,7 +39,7 @@ creature that never chooses by weapon. The method is §5.
 From the 49 actor projects, about 25 seconds:
 
     projects   49
-    sets       2241  (57495 animations listed, 3819 attacks)
+    sets       2243  (56652 animations listed, 3979 attacks)
 
 Against the shipped file (`SetDataRebuildTests`):
 

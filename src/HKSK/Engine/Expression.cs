@@ -186,7 +186,7 @@ public sealed class Expression
             int save = _at;
             string? name = ReadName();
 
-            if (name is not null && Take("="))
+            if (name is not null && Peek("==") is false && Take("="))
             {
                 Node value = ParseOr();
                 SkipSpace();
@@ -207,7 +207,15 @@ public sealed class Expression
                     : null;
             }
 
-            return null;
+            // The third form: a bare condition, as hkbExpressionCondition carries it
+            // on a transition -- "iRightHandType > 0", "(iLeftHandType != 5) && ...".
+            // It writes nothing and sends nothing; its value is whether it holds.
+            _at = save;
+            Node bare = ParseOr();
+            SkipSpace();
+            return _at == text.Length
+                ? new Expression(bare, new ExpressionEffect(null, null), text)
+                : null;
         }
 
         private Node ParseOr() => ParseLeft(ParseAnd, "||");
@@ -288,6 +296,17 @@ public sealed class Expression
         {
             while (_at < text.Length && char.IsWhiteSpace(text[_at])) _at++;
         }
+
+        private bool Peek(string token)
+
+        {
+
+            SkipSpace();
+
+            return string.CompareOrdinal(text, _at, token, 0, token.Length) == 0;
+
+        }
+
 
         private bool Take(string token)
         {

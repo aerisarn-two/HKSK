@@ -50,9 +50,11 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
         Assert.Equal(49, _built.Made.Projects.Count);
         Assert.Equal(_built.Shipped.Projects.Select(p => p.Name).Order(), _built.Made.Projects.Select(p => p.Name).Order());
 
-        Assert.Equal(2241, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
-        Assert.Equal(57495, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
-        Assert.Equal(3819, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Attacks.Attacks.Count)));
+        // 2,243 since transition conditions on the hand types are evaluated rather than
+        // taken as holding (Expression parses a bare condition); 2,241 before.
+        Assert.Equal(2243, _built.Made.Projects.Sum(p => p.Sets.Sets.Count));
+        Assert.Equal(56652, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Checksums.Entries.Count / 3)));
+        Assert.Equal(3979, _built.Made.Projects.Sum(p => p.Sets.Sets.Sum(s => s.Attacks.Attacks.Count)));
     }
 
     [MastersFact]

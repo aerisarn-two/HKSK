@@ -382,9 +382,11 @@ public sealed class SpeedDataRebuildTests
         SpeedDataFile shipped = cache.SpeedData!;
 
         int points = 0, held = 0, records = 0, recordsHeld = 0, unasked = 0;
+        List<string> perBlock = [];
         foreach (string name in shipped.ProjectNames)
             foreach (SpeedEntry entry in shipped.Block(name)!.Entries.Where(e => e.Records.Count > 0))
             {
+                int blockPoints = 0, blockHeld = 0;
                 // A block the engine never asks for -- a project with no sampler, a key
                 // no graph writes -- is not in the file, and is not scored.
                 SpeedEntry? mine = written.Block(name)?.Entries.FirstOrDefault(e => e.Key == entry.Key);
@@ -399,14 +401,16 @@ public sealed class SpeedDataRebuildTests
                         points++;
                         float y = ours.Sample(point.X);
                         bool ok = point.Y <= 0f ? MathF.Abs(y) <= 1f : Math.Abs(y - point.Y) / point.Y <= Tolerance;
-                        if (ok) held++; else whole = false;
+                        if (ok) { held++; blockHeld++; } else whole = false;
+                        blockPoints++;
                     }
                     if (whole) recordsHeld++;
                 }
+                perBlock.Add($"{name} {entry.Key} {blockHeld}/{blockPoints}");
             }
 
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "rebuild-readback.txt"),
-            $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n");
+            $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n\n" + string.Join("\n", perBlock));
 
         // 79.5% of the shipped points on the 76 blocks, read through the game's own
         // lookup. Three choices made for the engine cost against the shipped file and

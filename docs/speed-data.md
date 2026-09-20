@@ -1802,7 +1802,14 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   stay flat. A bound chooser is pinned to the state where it can name it and to the
   machine's own start where an event has to do the entering -- pinned to
   `AttackState`, `iWantBlock` started `1HM_Behavior` inside it and the locomotion
-  events walked it out; left alone, it starts the machine blocking.
+  events walked it out; left alone, it starts the machine blocking. And the chosen
+  transition's own condition is read for what it asks -- `iRightHandType == 7` into
+  the bow attack, `bWantCastLeft == 0` into the melee one -- and each `name == k`,
+  `name >= k` or `name > k` conjunct is pinned before the chain's own choosers. That
+  needed the expression parser to accept a bare condition at all: until it did,
+  every `hkbExpressionCondition` on a transition counted as holding, 878 of the
+  game's 879 parse now (the last is malformed), and evaluating them moved the
+  set-data sweep by two sets.
 
   The ordinary attacks needed one more thing, and it is the nature of the state.
   The evaluator reads a graph **at rest**: it runs passes until the selection stops

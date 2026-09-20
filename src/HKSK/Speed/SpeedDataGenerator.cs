@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Numerics;
 using HKSK.Behavior;
 using HKSK.Cache;
@@ -376,10 +377,6 @@ public static class SpeedDataGenerator
                     variables.Set("TurnDelta", 0f);
                     variables.Set("TurnDeltaDamped", 0f);
                     variables.Set("Speed", 100f);
-                    // A readied one-hander, since the transitions into the attack
-                    // states ask for a weapon in the right hand; a chain that runs
-                    // through the weapon selection pins its own type over this.
-                    variables.Set("iRightHandType", 1);
                 }
 
                 // A machine chooses its state by a variable: say it. A boolean cannot
@@ -432,7 +429,7 @@ public static class SpeedDataGenerator
     internal static (IReadOnlyList<string> Events, IReadOnlyList<(string File, string Variable, int State)> Pins) WayInto(
         ProjectWalk walk, IHavokObject node, Dictionary<string, IList<string>> eventNames)
     {
-        var levels = new List<(bool Needed, List<string> Events)>();
+        var levels = new List<(bool Needed, List<string> Events, List<(string Event, string Condition)> Conditions, string File)>();
         var pins = new List<(string, string, int)>();
         ProjectVariables? variables = null;
 
@@ -444,21 +441,25 @@ public static class SpeedDataGenerator
                 && eventNames.TryGetValue(step.File, out IList<string>? names))
             {
                 var here = new List<string>();
-                void Add(int id)
+                var conditions = new List<(string, string)>();
+                void Add(hkbStateMachineTransitionInfo transition)
                 {
+                    int id = transition.m_eventId;
                     if (id < 0 || id >= names.Count) return;
                     string name = names[id];
                     if (name.StartsWith("selfTrans", StringComparison.Ordinal)) return;
                     if (name.StartsWith("streamingQuery", StringComparison.Ordinal)) return;
                     if (!here.Contains(name)) here.Add(name);
+                    if (transition.m_condition is hkbExpressionCondition { m_expression: { } text })
+                        conditions.Add((name, text));
                 }
 
                 foreach (hkbStateMachineTransitionInfo transition in machine.m_wildcardTransitions?.m_transitions ?? [])
-                    if (transition.m_toStateId == state.m_stateId) Add(transition.m_eventId);
+                    if (transition.m_toStateId == state.m_stateId) Add(transition);
 
                 foreach (hkbStateMachineStateInfo other in machine.m_states ?? [])
                     foreach (hkbStateMachineTransitionInfo transition in other.m_transitions?.m_transitions ?? [])
-                        if (transition.m_toStateId == state.m_stateId) Add(transition.m_eventId);
+                        if (transition.m_toStateId == state.m_stateId) Add(transition);
 
                 variables ??= new ProjectVariables(walk.Steps);
                 bool picked = false;
@@ -484,7 +485,7 @@ public static class SpeedDataGenerator
                         pins.Add((step.File, start, machine.m_startStateId));
                 }
 
-                levels.Add((!picked && machine.m_startStateId != state.m_stateId, here));
+                levels.Add((!picked && machine.m_startStateId != state.m_stateId, here, conditions, step.File));
             }
 
             if (step.Parent is hkbManualSelectorGenerator selector && step.Member == "generators")
@@ -498,7 +499,8 @@ public static class SpeedDataGenerator
         }
 
         var chosen = new List<string>();
-        foreach ((bool needed, List<string> here) in levels)
+        var asked = new List<(string, string, int)>();
+        foreach ((bool needed, List<string> here, var conditions, string file) in levels)
         {
             if (!needed || here.Count == 0) continue;
             string best = here
@@ -506,9 +508,31 @@ public static class SpeedDataGenerator
                 .ThenBy(e => e.Length)
                 .First();
             if (!chosen.Contains(best)) chosen.Add(best);
+
+            // The transition asks for a situation -- a bow in the right hand, no
+            // spell readied -- and the situation is set up for it: each conjunct of
+            // the form `name == k`, `name >= k` or `name > k` pins the name.
+            foreach ((string _, string condition) in conditions.Where(c => c.Event == best))
+                foreach ((string name, int value) in Asked(condition))
+                    asked.Add((file, name, value));
         }
 
-        return (chosen, pins);
+        // What a transition asks for comes first, so that a chooser on the chain --
+        // the weapon selection's own type -- says the last word.
+        return (chosen, [.. asked.Distinct(), .. pins]);
+    }
+
+    private static readonly Regex Conjunct = new(@"^\(?\s*(?<name>[A-Za-z_]\w*)\s*(?<op>==|>=|>)\s*(?<value>-?\d+)\s*\)?$", RegexOptions.Compiled);
+
+    // The values a condition's conjuncts ask of named variables.
+    private static IEnumerable<(string Name, int Value)> Asked(string condition)
+    {
+        foreach (string part in condition.Split("&&"))
+        {
+            Match match = Conjunct.Match(part.Trim());
+            if (!match.Success || !int.TryParse(match.Groups["value"].Value, out int value)) continue;
+            yield return (match.Groups["name"].Value, match.Groups["op"].Value == ">" ? value + 1 : value);
+        }
     }
 
     private static Dictionary<string, IList<string>> EventNamesByFile(ProjectWalk walk)

@@ -833,7 +833,7 @@ are left open: the draugr's `bashStart` lists every weapon's bash.
 
 ### 5.7 What comes out
 
-    projects 49     sets 2,241     animations listed 57,495     attacks 3,819     2.4 MB
+    projects 49     sets 2,243     animations listed 56,652     attacks 3,979     2.3 MB
 
 (shipped: 990 sets, 20,807 animations, 737 attacks, 0.8 MB)
 
