@@ -1,2607 +1,396 @@
 # speeddatasinglefile.txt — the speed sampler database
 
-    Status:   format CONFIRMED (byte-exact round trip)
-              semantics CONFIRMED
-              curve closed-form; exact at rungs, <1% between (§6.1)
-              bit-exact impossible: cache rounds its inputs (§6.1)
-              one input still authored: the sweep bound (§9)
-    Source:   Skyrim SE, meshes/speeddatasinglefile.txt, 162527 bytes
-    Consumer: BSSpeedSamplerModifier via BSSpeedSamplerDBManager
-    Gate:     bUseSpeedSampler:Animation, compiled default 1 (ON)
-    Reader:   HKSK.Cache.SpeedDataFile  -- read, write, and query
-    Model:    HKSK.Tests.SpeedLadder    -- the response curve of §6
-              HKSK.Tests.SpeedSampler   -- the graph side of the join
+What the file is for, what the engine does with it, how every part of it is
+recovered from the other assets, and how to author the movement-type records the
+engine pairs it with. The measurements behind each statement, and the dead ends,
+are in `docs/speed-data-research.md`; this document states the results.
 
-Third file of the animation cache, after `animationdatasinglefile.txt` and
-`animationsetdatasinglefile.txt`. Named `.txt`; binary after byte 1943.
+Section numbers are stable: code comments and the other documents cite them.
 
-## 0. What the file is for
+## 0. Purpose
 
-A creature's movement speed is written down twice, in two places that are supposed
-to agree.
+A creature's speed is written down twice.
 
-**The RACE `MOVT` record** says how fast the game may ask the creature to move —
-eight numbers, a walk and a run for each of forward, back, left and right.
+The **movement type** (`MOVT`, in the masters) says how fast the game may ask the
+creature to move: a walk and a run speed for each of forward, back, left and right.
+The AI and the player's controller request speeds on that scale, and the character
+controller moves the actor's capsule at the request.
 
-**The animations** say how fast it actually moves. A clip's root motion carries a
-travel distance and a duration, and `PlaybackSpeed` scales the duration, so the
-delivered speed is `travel / (duration / PlaybackSpeed)`.
+The **animations** say how fast the creature actually moves. A locomotion clip
+carries root motion, a travel over a duration, and the behaviour graph blends such
+clips on a *speed ladder*: a parametric blend whose arms sit at the movement type's
+speeds and whose parameter is the requested speed.
 
-These are meant to be the same number. `MOVT` is authored *from* the animations,
-and the locomotion blender's children are placed at the `MOVT` values (§5.4). When
-an animator gets it right, asking for 247.37 moves the creature at 247.37.
+When the two agree, the feet and the capsule travel together. They drift: an
+animator retimes a clip and nobody revisits the record; a blend between two clips
+of different duration is not linear in speed. The chicken's run is recorded as
+251.94 and the clip delivers 403.
 
-They drift. Someone reads a speed off a clip, then changes `PlaybackSpeed` for
-looks and does not revisit the record. The chicken's movement type says its run is
-251.94; the clip delivers 403.10, because it plays at 1.6.
-
-**This file is the measured difference.** For every locomotion state, every
-heading, and every speed the game might request, it records what the creature will
-actually do.
-
-    x   the speed requested, in MOVT units
-    y   the speed delivered, in the same units
-
-Both axes are the same axis. **For a correctly authored creature the table is the
-identity and the sampler does nothing.** Its deviation from `y = x` is the
-authoring error, and matches it numerically:
-
-    creature          MOVT vs clip drift     table deviation from y = x
-    Bear                     0.0%                      1.2%
-    Goat                     0.0%                      0.0%
-    HighlandCow              0.2%                      0.1%
-    Hare                    29.7%                     21.3%
-    Dog                     32.4%                     32.0%
-    Chicken                 60.0%                     52.0%
-
-One part is not authoring error and does not go away. The blend is
-time-synchronised, so it returns a **duration-weighted** average of two clips'
-speeds rather than a plain one, and the curve bends away from a straight line by
-
-    (s_a - s_b)(D_a - D_b) / (2(D_a + D_b))
-
-which is zero only when the two clips have the same duration. So even a perfectly
-authored creature needs the table between its gaits (§6).
-
-Without the file the modifier passes the request through unchanged, the gait blend
-is indexed by the requested speed instead of the achievable one, and the feet slide.
+**This file is the measured relation between the two.** For every locomotion
+state, every heading and every requested speed it records the speed the animation
+will deliver. The engine reads it every frame through `BSSpeedSamplerModifier`,
+feeds the answer back into the graph as the ladder's parameter, and keeps a copy on
+the actor. For a correctly authored creature the table is the identity; its
+departure from `y = x` is the animator's error, plus one term that is not an error
+at all (§6).
 
 ## 1. On-disk format
 
-Little-endian. The dirlist is CRLF ASCII; everything after it is 32-bit words.
+Little-endian. The dirlist is CRLF text; everything after it is 32-bit words.
 
     file    := dirlist block[count]                  /* blocks in dirlist order */
+    dirlist := "<count>\r\n"  count x "<Project>Data\<Project>.spd\r\n"
 
-    dirlist := "<count>\r\n"
-               count x "<Project>Data\<Project>.spd\r\n"
+    struct block  { u32 version /* 1 */; u32 n_entries; entry entries[n_entries]; }
+    struct entry  { u32 key; u32 n_records /* 19, or 0 if malformed */; record records[n_records]; }
+    struct record { f32 direction; u32 n_points; struct { f32 x; f32 y; } points[n_points]; }
 
-    struct block {                                   /* one per project */
-            u32     version;                         /* == 1 */
-            u32     n_entries;
-            entry   entries[n_entries];
-    };
-
-    struct entry {                                   /* one per locomotion state */
-            u32     key;                             /* state id, see §3.1 */
-            u32     n_records;                       /* == 19, or 0 if malformed */
-            record  records[n_records];
-    };
-
-    struct record {                                  /* one per heading */
-            f32     direction;                       /* 0.00 .. 0.90, see §3.2 */
-            u32     n_points;
-            struct { f32 x; f32 y; } points[n_points];
-    };
-
-`sizeof(record) = 8 + 8 * n_points`. No padding, no alignment beyond 4. The block
-count is the dirlist count; blocks follow the dirlist in its order, with no index
-and no length prefix, so a reader must walk them in sequence.
-
-    dirlist                1943 bytes
-    binary               160584 bytes  (40146 words)
-    total                162527 bytes
-
-    projects (= blocks)      49
-    entries                  88
-    records                1634        /* 86 valid entries x 19 */
-    points                18302
-
-Read-then-write reproduces the file **byte for byte**.
-
-A reader must tolerate `n_records == 0` (§10).
+No padding. Blocks follow the dirlist in its order with no index or length prefix,
+so a reader walks them in sequence. The shipped file: 49 blocks, 88 entries, 1,634
+records, 18,302 points, 162,527 bytes. `HKSK.Cache.SpeedDataFile` reads and writes
+it byte-exact.
 
 ## 2. Invariants
 
-Measured over the whole file. A reader may assert these; a writer must hold them.
+    I1  version == 1
+    I3  n_records == 19 on every well-formed entry
+    I4  direction[i] is the float ACCUMULATION of +0.05f, i = 0..18  (bit-exact;
+        0.05f * i differs from it from i = 7 and the game's lookup then misses)
+    I5  the last direction is 0.90; 0.95 never appears
+    I6  x is a multiple of 0.5
+    I7  x is non-decreasing within a record
+    I8  the 19 records of an entry share one max(x)
 
-    #    invariant                                                   observed
-    I1   version == 1                                               49/49 blocks
-    I2   n_entries in {1,2,3,4,6,14}                                 49/49
-    I3   n_records == 19                                             86/88 entries
-    I4   direction[i] is the float accumulation of +0.05f, in order  86/86
-    I5   the direction sequence ends at 0.90; 0.95 never present     86/86
-    I6   x mod 0.5 == 0                                              18302/18302
-    I7   x non-decreasing within a record                            1634/1634
-    I8   all 19 records of an entry share one exact max(x)           86/86
-    I9   max(y) <= max over the project's clips of delivered speed   46/46 projects
+Not invariant: `y` need not be monotonic and may exceed `x`; the records of an entry
+need not share a minimum `x`; a record's last point is often written twice and that
+is not a plateau marker. A reader must tolerate `n_records == 0` (§10).
 
-**I4 is exact and a reader must reproduce it exactly.** The stored values are
-bit-identical to accumulation and bit-different from `0.05f * i`, diverging from
-i = 7:
-
-    i     stored        0.05f * i     accumulated
-    7     0.350000024   0.349999994   0.350000024
-    18    0.900000155   0.900000036   0.900000155
-
-**I5** means a heading in [0.95, 1.0) has no record of its own. It resolves against
-**record 0**, not 0.90: the query's search runs off the end and wraps (§4.2).
-
-**I9** needs the playback factor. Against raw root-motion speed the bound fails on
-4 of 46 projects; against `speed x PlaybackSpeed` it holds on all 46.
-
-Not invariant, and not to be assumed:
-
-- `y` is not monotonic in `x`, and **`y` may exceed `x`** — on 24 of the 86
-  populated entries `max y` exceeds every `MOVT` translation speed in its own row.
-- The 19 records of an entry do not share a minimum `x` (21 distinct minima).
-- A repeated final point is **not** a saturation marker. 1162 of 1634 records end
-  with the last point written twice at the same x. With the duplicate removed, 1068
-  records are still rising where the sweep ends. Testing `y[-1] == y[-2]` detects
-  the duplicate, not a plateau.
-
-## 3. What the fields mean
+## 3. Fields
 
 ### 3.1 key — the locomotion state
 
-`m_state` reads the graph variable `iState`, and **the graph declares the values it
-can take.** Each sampled state has an `iState_<MOVT>` variable whose initial value
-is the state id and whose name suffix names a `MOVT` record:
+The graph variable `iState`. The graph declares the values it can take as
+`iState_<name>` integer variables in the project's **root** behaviour graph, one per
+movement type, each initialised to the state id:
 
-    variable                 initial value   movement type
-    iState_DeerDefault                  20   Deer_Default_MT
-    iState_DeerDefaultRun               21   Deer_DefaultRun_MT
-    iState_NPCBowDrawn                   3   NPC_BowDrawn_MT
+    iState_DeerDefault = 20      iState_DeerDefaultRun = 21      iState_NPCBowDrawn = 3
 
-Read them from `hkbBehaviorGraphData.m_stringData.m_variableNames`, paired **by
-index** with `m_variableInitialValues.m_wordVariableValues`.
+Read them from `hkbBehaviorGraphData.m_stringData.m_variableNames` paired by index
+with `m_variableInitialValues.m_wordVariableValues`, and from the root graph only:
+shared templates such as `quadrupedbehavior.hkx` carry the union for every creature
+that references them and disagree with two of them.
 
-**Scope to the project's root behaviour graph.** Keys against declarations, all 49
-projects, the Falmer's two corrupt keys excluded:
+The `<name>` is the movement type's **`MNAM` name field**, not its editor id. That is
+what the engine matches (§4.5); 101 of the 103 names the root graphs declare are an
+`MNAM` exactly, and the two that are not resolve to nothing in the game as well.
 
-    scope                     keys == declared   keys subset   violations
-    root behaviour graph                    24            25            0
-    full reference closure                  21            28            0
+**The graph writes `iState`; the engine reads it.** Four things write it, and a key
+is live in the engine exactly when one of them can reach it (`StateKeys.Writable`):
 
-Both are violation-free, so a key is always a declared state id, but the root graph
-is the tighter statement and is the rule. It matters: `quadrupedbehavior.hkx` is a
-shared template holding the union of all quadruped constants, reachable from eleven
-projects, and it disagrees with two of them — `iState_DeerDefault` is 10 there and
-20 in `deerbehavior.hkx`; `iState_HorkerSwimDefault` is 50 there and 51 in
-`horkerbehavior.hkx`. The cache follows the root graph. The template's constants are
-inert.
+| writer | what it says |
+| --- | --- |
+| the variable's initial value | the state the creature rests in |
+| `BSiStateTaggingGenerator.m_iStateToSetAs` | the subtree it guards carries this key |
+| a `BSIStateManagerModifier` row | (machine, state) → key |
+| an expression, `iState = <constant>`, `cond(...)`, or `<constant> + <var>` | a computed key |
 
-Within a root graph a state id is unique: 0 of 86 entries map to more than one
-movement type.
-
-#### Reaching the root graph
-
-The project file is `hkbProjectData`, not a character:
-
-    <Project>.hkx   hkbProjectStringData.m_characterFilenames   ->
-    character       hkbCharacterStringData.m_behaviorFilename   ->  ROOT GRAPH
-                    hkbBehaviorReferenceGenerator.m_behaviorName -> sub-graphs
-
-Resolve each path against the project file's own directory, case-insensitively.
-`m_behaviorFilenames` holds the root only; every other graph is reached through
-`hkbBehaviorReferenceGenerator`.
-
-Two traps, each of which silently empties the result:
-
-- HKX2 models Havok members as **auto-properties**. Reflecting over `GetFields()`
-  descends into nothing; use the properties.
-- The character file and its graphs are **siblings**, not nested
-  (`characters/defaultmale.hkx` beside `behaviors/0_master.hkx`), so matching graphs
-  by path prefix under the character's directory finds none for the seven projects
-  shaped that way.
-
-#### The numbering
-
-Eleven quadrupeds share one template and take a slot of ten each, in alphabetical
-order:
-
-    0 Bear    10 Cow    20 Deer    30 Dog    40 Goat    50 Horker
-    60 Horse  70 Mammoth  80 SabreCat  90 Skeever  100 Wolf
-
-`key = 10 x alphabetical index`, exact for all eleven, with the offset inside a slot
-distinguishing gaits (deer 20 walk/trot, 21 run; horse 60/61/62/63). `BoarProject`
-shows the scheme was frozen before Dragonborn: the boar would take slot 10 if
-inserted alphabetically, and instead declares 0 in its own root graph.
-
-#### Why iState is declared but never synced
-
-The value is the graph's own, and the game reads it rather than writing it (§4.5): the
-graph puts `iState` at a value by its initial value, a `BSiStateTaggingGenerator`, a
-`BSIStateManagerModifier` row or an expression, and the engine reads it back to choose
-the movement type of the `iState_` constant at that value. `StateKeys.Writable` lists
-the values a graph can reach that way. In every graph declaring `iState` the sole
-binding is `BSSpeedSamplerModifier.state`, and no state machine syncs to it:
-
-    file                     iState vars   machines syncing to it
-    0_master.hkx                      94                        0
-    giantbehavior.hkx                 37                        0
-    quadrupedbehavior.hkx             45                        0
-    draugrbehavior.hkx                33                        0
-    ... 16 graphs checked, none
-
-`hkbStateMachine.m_syncVariableIndex` exists and is used for `iSyncDefaultState`,
-`iSyncSprintState`, `currentDefaultState`, `iIsInSneak` and `iCrossbowState`.
-`iState` is not among them.
-
-So matching key sets against *state machine* ids finds nothing, and should not be
-attempted — but note that a different node, `BSiStateTaggingGenerator`, does carry the
-association, and §5.3 uses it:
-
-    DefaultMale     keys [0..10,15,16,17]   0 of 5 machines match
-    DraugrProject   keys [0,3,4,5,6,7]      0 exact
-    GiantProject    keys [0,1,2]            1 exact -- BleedOutBehavior, whose
-                                            states are BleedOut_Start/Idle/Getup
-
-The *set* of values it can take is nonetheless enumerated, once per movement type,
-as those variable initial values. The key set is recoverable.
-
-#### Resolving the name to a MOVT record
-
-104 distinct declarations are reachable from the 49 projects; 103 name a record that
-exists, and all 86 populated entries resolve.
-
-Five naming disagreements must be handled:
-
-    DLC prefix on the record, never on the variable
-        iState_NetchDefault      -> DLC2Netch_Default_MT
-    word order reversed
-        iState_DefaultChaurus_MT -> ChaurusDefault_MT
-    Swim/SwimDefault on the variable is Swimming on the record
-        iState_BearSwimDefault   -> Bear_Swimming_MT
-    one variable abbreviated
-        iState_ChaFlyerDefault   -> ChaurusFlyer_Default_MT
-    one record misspelt in the shipped data
-        iState_CowSiwmDefault    -> CowSwimDefault_MT
-
-Do not substitute a token-set or camelCase matcher. Consecutive capitals
-(`NPCDefault`) do not split, so it scores worse than plain normalisation:
-
-    token-set / camelCase split                  75 / 104
-    normalised names only                        93 / 104
-    normalised + the five rules above           103 / 104
-
-The resolution is injective apart from the shipped typo pair, and the dangerous
-near-neighbours separate correctly — `NPC_Bow_MT` 370, `NPC_BowDrawn_MT` 135,
-`NPC_BowDrawn_QuickShot_MT` 370, `NPC_Blocking_MT` 81.
-
-**`iState_CombatSpider_MT` is a dangling reference.** Both spider root graphs declare
-it at state 1 and no such record exists. It is never a key, so it costs nothing; a
-resolver must tolerate a declaration the ESM does not back.
-
-Not every declared state is sampled: 25 of the 49 projects hold fewer entries than
-they declare states.
+A constant that is declared and never written is dead: the dog declares 30 and 31
+and writes only 30. Two shipped blocks are dead that way, the spriggan's and the
+lurker's key 1.
 
 ### 3.2 direction — the heading
 
-The graph's `Direction` variable, range [0,1]. A compass:
-
-    0.00 ahead      0.25 right      0.50 behind      0.75 left
-
-Fixed by the player's four cardinal records against the eight directional blenders
-(§5.2), each matching its own blender's top child exactly:
-
-    record       max y     blender                 weight    clip
-    0.00        155.21     Bow_ForwardBlend        155.21  155.21
-    0.25        131.06     Bow_RightBlend          130.04  131.06
-    0.50        113.94     Bow_BackwardBlend       113.93  113.94
-    0.75        134.43     Bow_LeftBlend           134.43  134.43
-
-The 19 records sample at 0.05 while the eight blenders sit at 0.125 spacing, so only
-records 0, 5, 10 and 15 read a single blender and the rest are mixtures of two
-adjacent ones. That is why the direction profile is not monotonic: 0.20 gives 126.27
-and 0.25 gives 131.06, because 0.20 is a forward/right mixture and 0.25 is pure right.
-
-Curves are near mirror-symmetric about 0.5. Over the 688 pairs (0.10,0.90) …
-(0.45,0.55): 127 bit-identical, 499 within 2%, 62 differ — **91.0% mirrored**.
-
-**The residual is not noise and must not be symmetrised away.** `MOVT` is symmetric
-left/right (`LeftRun == RightRun` on 54 of 63 testable entries) but the animations are
-not: `Bow_LeftBlend` tops at 134.43 against `Bow_RightBlend`'s 130.04, a 3.4%
-difference in the animators' own clips, and the table reproduces it. Six entries carry
-a left/right gap above 1% despite symmetric `MOVT`, the riekling by 18%.
+The graph's `Direction` variable, a fraction of a turn: 0 ahead, 0.25 right, 0.5
+behind, 0.75 left. The 19 records sample every 0.05; the graph's compass blends sit
+every 0.125, so 15 of 19 records are a blend of two adjacent arms.
 
 ### 3.3 x and y — one axis
 
-The query signature (§4.2) passes `(i32 state, f32 direction, f32 goalSpeed)` and
-returns one float. The first two select entry and record; `goalSpeed` indexes within
-the record.
-
-Both x and y are game units/s on the `MOVT` scale, and they are the same axis (§0).
-x is what the game asks for; y is what the creature does.
-
-`x` is not a time, not an index, and not a sample number. 57.6% of stored x values
-are half-integers, the spacing is irregular (354 distinct gap sizes, 1 to 1768 grid
-steps), and the range differs per entry from 189.5 to 999.5.
+`x` is the requested speed, `y` the delivered speed, both in game units per second on
+the movement type's scale. `x` is not a time or an index.
 
 ## 4. The engine side
 
-Strings in `SkyrimSE.exe`:
+Read out of `SkyrimSE.exe` (unwrapped for reading, §11). Addresses are RVAs.
 
-    bUseSpeedSampler:Animation        INI gate, [Animation] section
-    Meshes/SpeedDataSingleFile.txt    merged form, as shipped
-    MESHES/SPEEDDATA/                 split per-project form; not shipped
-    BSSpeedSamplerDBManager           singleton, BSTSingletonSDM w/ static buffer
-    BSISpeedSamplerDB                 abstract interface over the above
-    BSSpeedSamplerModifier            hkbModifier subclass, the caller
-    goalSpeed
+### 4.1 The gate
 
-`BSSpeedSamplerModifier` occurs in 42 compiled graphs / 30 distinct graph names. Its
-parameters, from `bcbehavior.hkb`, the one authoring file that shipped:
+`bUseSpeedSampler:Animation` defaults **on** in the compiled settings; no shipped INI
+names it. The data is live for every actor whose graph carries the modifier.
 
-    m_enable      bool            = true
-    m_state       hkFloatVariable -> iState
-    m_direction   hkFloatVariable -> Direction      range [0, 1]
-    m_goalSpeed   hkFloatVariable -> Speed          range [0, 384] (this graph)
-    m_speedOut    hkFloatVariable -> out
+### 4.2 The query
 
-Variable ranges survive only in `.hkb`: `m_wordMinVariableValues` and
-`m_wordMaxVariableValues` are empty in all 8 compiled graphs inspected, while
-`m_variableInitialValues` is fully populated.
+`BSSpeedSamplerModifier::Update` (`0xb9f000`) reads its four bound members and calls
+the database singleton's second virtual, `Query(context, state, direction,
+goalSpeed) -> float` (`0xbc0e30`), storing the result in `speedOut`. Nothing is
+computed at runtime:
 
-### 4.1 The INI gate defaults ON
+1. **state** → the entry whose key matches exactly; no match returns `goalSpeed`;
+2. **direction** → exact match, else the **first record above** the request; past the
+   last record it **wraps to record 0**. Records are never blended;
+3. **goalSpeed** → the first point at or above the request. **Below the first point
+   the curve is interpolated from the origin (0, 0). Above the last point the request
+   is returned unchanged**, which is the same as having no table;
+4. a linear interpolation between the two bracketing points.
 
-No shipped INI names the setting; `Skyrim_Default.ini` and the four quality presets
-have no `[Animation]` section, so the compiled default applies.
+No offset is applied to `goalSpeed` anywhere. In memory a point is `{y, x}`; the
+loader swaps the on-disk order.
 
-Each INI setting is a 32-byte record; the value precedes the name pointer:
+With no database the call is skipped and `speedOut = goalSpeed`.
 
-    offset  field
-    +0      vtable          0x141775178 for all bool settings
-    +8      value           <- default
-    +16     const char*     name
-    +24     pad             0xEFBEADDE
+### 4.3 The load path
 
-`bUseSpeedSampler` value = **1**. The offset reads correctly across all 21
-`b*:Animation` settings sharing that vtable: debug and dead-platform ones are 0
-(`bDrawAnimPoseInVDB`, `bDisplayMarkWarning`, `bUseSPUGenerate`, `bEnableHavokHit`,
-`bAlwaysDriveRagdoll`, `bInitiallyLoadAllClips`), functional ones are 1 (`bFootIK`,
-`bAnimInterpEnable`, `bHumanoidFootIKEnable`, `bMultiThreadBoneUpdate`).
+The merged file `Meshes/SpeedDataSingleFile.txt` is read ungated inside the
+manager's constructor. A per-project `MESHES/SPEEDDATA/<Project>.SPD` is read
+lazily behind the gate; the game ships none, and a mod may add one creature that way.
 
-**This data is live for every actor whose graph carries the modifier.**
+### 4.4 Nothing writes a table
 
-### 4.2 Query path
+Every reference to the path literals, the manager, the query singleton and both
+virtual tables is construction, destruction, loading or the query. The sampler that
+recorded the shipped file was an external tool, and its habits (§6.2, §8) are not
+the engine's.
 
-`BSSpeedSamplerModifier::Update`, RVA 0xb9f000. `rbx` = the modifier:
+### 4.5 The graph names the movement type, and the engine reads the answer back
 
-    140b9f047  mov   0x1431bd160,%rcx    ; DB singleton pointer
-    140b9f04e  movss 0x58(%rbx),%xmm0    ; goalSpeed
-    140b9f053  test  %rcx,%rcx
-    140b9f056  je    0x140b9f070         ; no DB -> skip, xmm0 unchanged
-    140b9f058  mov   (%rcx),%rax         ; vtable
-    140b9f05b  mov   %rdi,%rdx           ; arg2  context
-    140b9f05e  movss 0x54(%rbx),%xmm3    ; arg4  direction
-    140b9f063  mov   0x50(%rbx),%r8d     ; arg3  state (int)
-    140b9f067  movss %xmm0,0x20(%rsp)    ; arg5  goalSpeed
-    140b9f06d  call  *0x8(%rax)          ; -> xmm0
-    140b9f070  movss %xmm0,0x5c(%rbx)    ; speedOut = xmm0
-
-    +0x50  i32  state          float Query(this,
-    +0x54  f32  direction                  void  *context,
-    +0x58  f32  goalSpeed                  i32    state,      /* -> entry.key   */
-    +0x5c  f32  speedOut                   f32    direction,  /* -> record      */
-                                           f32    goalSpeed); /* -> record.x    */
-                                           /* returns record.y */
-
-`state` is the only integer; `direction` and `goalSpeed` both move through `movss`.
-
-**At runtime nothing is computed.** The query is at RVA 0xbc0e30, slot 1 of the DB
-manager's vftable, and it is three binary searches and a lerp:
-
-    1  state     -> the entry whose key matches EXACTLY. No match, return goalSpeed.
-    2  direction -> exact match, else the FIRST RECORD ABOVE the request; past
-                    the last it WRAPS TO RECORD 0. Records are never blended.
-    3  goalSpeed -> the first point at or above the request.
-                    Below the first point, interpolate from the ORIGIN (0,0).
-                    Past the last point, return goalSpeed UNCHANGED.
-
-    4  lerp      -> t = (x_hi - goal)/(x_hi - x_lo); y = (1-t)*y_hi + t*y_lo,
-                    skipped when |x_hi - x_lo| <= FLT_EPSILON.
-
-Three of those are not what a reader would assume, and all three were read out of the
-binary rather than guessed:
-
-- **The heading is a ceiling, not the nearest record.** A request of 0.03 reads the
-  0.05 curve, not the 0.00 one.
-- **The compass wraps.** A heading in [0.95, 1.0) reads **record 0**, the forward
-  curve — not the 0.90 one. An earlier revision of this document said otherwise.
-- **Above the last point the query passes the request through**; it does not clamp to
-  the last y. That is the same behaviour as having no database, so an actor asked for
-  more than its sweep covers is indexed on the raw request (§9).
-
-**No offset is applied to `goalSpeed` anywhere.** It is loaded at `0x58(%rbx)`, passed
-to the query untouched, and used directly in the subtraction — no `addss`, `subss` or
-`mulss` between. Earlier revisions hunted an offset here on the strength of a residual
-that turned out to be §6.1's duration law; nothing is applied to `goalSpeed` in any
-case.
-
-One layout note: in memory a point is `{ float y; float x; }`, the query searching `+4`
-and returning `+0`. On disk it is the other way round — the field at `+0` is the sorted
-one in 1634 of 1634 records, and a binary search key must be sorted — so the loader
-swaps them.
-
-**With no database the call is skipped and `speedOut = goalSpeed`.** That is an
-identity pass-through, not a fallback computation.
-
-### 4.3 Load path
-
-Two loaders, and the INI gate sits on only one.
-
-The merged file is read by an **ungated** function that opens the global
-`BSFixedString` for `Meshes/SpeedDataSingleFile.txt` (0x1431c67f8) at RVA 0xbc08af,
-then parses a line with radix 10 into a `u16` — the dirlist count.
-
-The gated function is RVA 0xbc0c20:
-
-    140bc0c48  xor   %dil,%dil
-    140bc0c4b  cmp   %dil,0x1461a86(%rip)  ; bUseSpeedSampler
-    140bc0c52  je    0x140bc0e09           ; off -> return false, do nothing
-    ...
-    140bc0c71  call  0x140bc1480           ; probe an existing entry
-    140bc0c7a  jne   0x140bc0dd7           ; hit -> done
-    140bc0cb3  mov   $0x104,%edx           ; else format MAX_PATH:
-    140bc0cc0  call  0x14018a900           ;   "%s%s%s/%s%s"
-
-So the gate controls a **lazy per-project `.SPD` load**, not the merged file. The
-three path fragments are interned as globals:
-
-    0x1431c67e0  "MESHES/SPEEDDATA/"
-    0x1431c67f0  ".SPD"
-    0x1431c67f8  "Meshes/SpeedDataSingleFile.txt"
-
-`MESHES/SPEEDDATA/<...>.SPD` is a supported per-project path the game ships nothing
-for. A tool adding one creature can write a single `.SPD` rather than rewriting the
-merged file.
-
-### 4.4 Nothing in the executable records a table
-
-The tool that wrote the shipped file is not in `SkyrimSE.exe`, as far as the parts of the
-binary that the SteamStub wrapper leaves readable can say. RTTI and virtual tables live
-in `.rdata`, which is not encrypted, so the class layout reads from the retail file:
-
-    BSSpeedSamplerDBManager   vftable 0x141988548   2 slots   [0] 0x140bc1420  [1] Query 0x140bc0e30
-    BSISpeedSamplerDB         vftable 0x141988530   2 slots   [0] 0x140bc13f0  [1] pure
-    BSSpeedSamplerModifier    vftable 0x141985188  25 slots   the same count as
-                              BSIsActiveModifier and BSModifyOnceModifier
-
-The database has a destructor and the query and nothing else -- no method that adds a
-sample, flushes or saves -- and the modifier adds no virtual of its own to the 25 every
-Havok modifier here has. Its `Update` (§4.2) reads. The strings agree: every one naming
-the sampler or the table is on the reading side, the two load paths and the INI gate,
-with no format string or command beside them.
-
-A non-virtual writer is excluded too, by every code reference in an unwrapped `.text`
-(Steamless, as §11; 7,232,505 instructions, grepped for RIP-relative targets):
-
-    target                                   references
-    "MESHES/SPEEDDATA/", ".SPD",              3 static initialisers pairing each literal with
-    "Meshes/SpeedDataSingleFile.txt"            its BSFixedString global, and 3 exit destructors
-    the three globals                        0x140bc0c83, 0x140bc0ca5  the gated .SPD loader
-                                             0x140bc08af               the merged-file loader,
-                                                                       inside the constructor
-    the manager's storage 0x14315c9d0        4 engine startup and shutdown, 5 its own
-                                             constructor and destructors, and 0x140bb0e2b,
-                                             the one caller of the gated loader
-    the query's singleton 0x1431bd160        written at startup and shutdown, read once:
-                                             BSSpeedSamplerModifier::Update
-    both vftables                            constructor, destructor, deleting destructors
-
-Every path to the table's file names and every path to the database is construction,
-destruction, loading or the query. **The game reads this table and has no code that
-writes one**: the sampler that recorded it was a tool, and it is not in the executable,
-so neither the chaurus flyer's zero nor the 0.0404 can be read out of it.
-
-### 4.5 The graph names the movement type, and the game reads the answer back
-
-Three more things the executable settles, each found by the string-table recipe
-(`docs/reverse-engineering.md` §3.10) and read out rather than inferred.
-
-**The engine never writes `iState`; it reads it and looks the value up by name.** At
-graph load, `0x140bc5890` (called from `0x140bc2970`, from `0x140bb0800`) walks the
-graph's variable-name table and, for every name longer than the global `"iState_"`
-(`0x1431c6810`) that starts with it, keeps the rest of the name against the variable's
-initial value -- the suffix, the state id. Whenever the movement type may have changed,
-`0x14069ba40` asks the holder for its graph, reads `iState` (`0x140bb3b20`, through the
-global `"iState"` at `0x1431c67a0`), turns the value into that suffix, looks the suffix up
-(`0x14038c710`, a hash lookup) and, when a movement type of that name exists, applies it
-(`0x14069b860`). Its callers are the actor's update (`0x140687a80`) and the state
-changes that go through `0x14069b6b0` and `0x1406a2690`; the animation event `MTState`,
-which seven graphs raise (the humanoids, the dragon, the vampire lord, the werewolf), is
-handled by `MTStateHandler` (`0x1407ba940`), which only marks the actor's process
-(`0x140713080`) so that the next update looks again.
+At graph load, `0x140bc5890` scans the graph's variable names for the `iState_`
+prefix and keeps each suffix against the variable's initial value. Whenever the
+movement type may have changed, `0x14069ba40` reads `iState` from the graph
+(`0x140bb3b20`), turns the value into that suffix, looks it up by name
+(`0x14038c710`) and, when a movement type of that name exists, applies it to the
+actor (`0x14069b860`). The `MTState` animation event, raised by seven graphs, only
+marks the actor's process so that the next update looks again.
 
 So the direction is the one `bAnimationDriven` has: **the graph tells the game which
-movement type it is in.** The race's six base movement defaults are what the actor has
-when the graph names nothing. The sampler keys the table on the same value, which makes
-the block set exact: a key is live when the graph can put `iState` there, and not when
-a constant merely declares it. That is what `StateKeys.Writable` computes and §8 builds
-from, and it explains most of what looked like arbitrary sweeping in §9 -- the dog
-declares 30 and 31 and writes only 30, the sabre cat 80 and 81 and writes only 80, the
-vampire brute three and writes one. It also says that two shipped blocks can never be
-asked for: the spriggan's key 1 and the lurker's key 1 are declared and no writer in
-either graph assigns them.
+movement type it is in.** The race's six base movement defaults (walk, run, swim,
+fly, sneak, sprint) are what the actor has when the graph names nothing.
 
-**The join is the movement type's `MNAM` name field, not its editor id.** The suffix
-kept at load is matched against a name table, and the masters' `MNAM` is that name:
-101 of the 103 suffixes the root graphs declare are an `MNAM` exactly, case-insensitive.
-The two that are not name nothing the game can apply -- `iState_CombatSpider_MT` has no
-record, and `iState_CowSiwmDefault` misspells `CowSwimDefault` -- and the five naming
-disagreements in §3.1 are between the suffix and the *editor id*, which the engine never
-reads. Resolve by `MNAM` and there is nothing to disagree.
-
-**The game keeps the sampler's answer per actor.** `SpeedSampled` and
-`HorseSpeedSampled` are slots `+0x520` and `+0x528` of the engine's variable-name table,
-and `0x1402187a0` (from the graph manager's setup, `0x140213580`, `0x140214900`,
-`0x140214bd0`) registers each as a
-`BSTAnimationGraphDataChannel<Actor, float, ActorCopyGraphVariableChannel>`: a channel
-that, when polled (`0x14021a3c0`), asks the holder for the graph variable (vtable
-`+0x80`, the float getter beside the bool getter `bAnimationDriven` uses) and stores it in
-the channel at `+0x18`. `Speed`, `Direction` and `TurnDelta` (`+0x508`, `+0x518`,
-`+0x510`) are the other direction, actor to graph. So the table's *y* is read by the game
-as well as by the ladder: the actor carries a copy of what the animation was sampled to
-deliver. What reads that copy was not traced; it is enough to say that a wrong *y* is
-wrong twice.
+The engine also keeps the sampler's answer per actor. `SpeedSampled` and
+`HorseSpeedSampled` are registered as
+`BSTAnimationGraphDataChannel<Actor, float, ActorCopyGraphVariableChannel>`, a
+channel polled each frame that reads the graph variable into the actor's side. So a
+wrong `y` is wrong twice: as the ladder's parameter and as what the actor believes
+it delivers. `Speed`, `Direction` and `TurnDelta` go the other way, actor to graph.
 
 ## 5. The graph side
 
-### 5.1 Where the answer goes
-
-    member       variable
-    state    <-  iState              engine-written, graph-declared (§3.1)
-    direction<-  Direction
-    goalSpeed<-  Speed
-    speedOut ->  SpeedSampled  |  SampledSpeed  |  HorseSpeedSampled
-
-This independently confirms §3: the record tag is `Direction`, the point x is
-`Speed`, and the point y is what lands in the output variable.
-
-**The output variable has three names.** Filtering on one loses a quarter of the
-consumers. Blenders whose `blendParameter` binds to each:
-
-    SpeedSampled          764
-    SampledSpeed          266
-    HorseSpeedSampled       7
-    ------------------------
-                         1037   across 38 of the 49 projects
-
-Match on `/(speedsampled|sampledspeed)/i`. `SpeedDamped` (184), `TurnDeltaDamped`
-(152), `TurnDelta` (102) and `staggerMagnitude` (132) are other blend axes and are
-not sampler outputs.
-
-Eleven projects bind no blender to any of the three: both atronachs, chaurus flyer,
-netch, dragon, dragon priest, dwarven spider, ice wraith, slaughterfish, wisp,
-witchlight. For the storm atronach, wisp and witchlight that is consistent — their
-tables are all zero, because there is no locomotion blend to report on.
-
-#### The sampler is the join, and eight projects do not have one
-
-Reading the variable names off the sampler rather than matching them by regex turns
-the paragraph above into a sharper statement. The node binds four variables —
-`state`, `direction` and `goalSpeed` in, `speedOut` out — and **`speedOut` is what
-the ladders read**. So the node identifies its own ladders, with no guessing from
-node names, and the variable's index differing between a project's graphs stops
-mattering: a quadruped's ladders live in a shared `QuadrupedBehavior.hkx` where the
-same name has a different index, so the match has to be by name.
-
-`goalSpeed` is `Speed` in all 41. `speedOut` is `SpeedSampled`, `SampledSpeed` or
-`HorseSpeedSampled`, and two projects do not read it:
-
-    SlaughterfishProject   ladders read Speed         (the sampler's own input)
-    NetchProject           ladders read SpeedDamped
-
-**Eight of the 49 projects have no `BSSpeedSamplerModifier` at all**, established by
-reading all 654 behaviour files in the game rather than by walking projects — 42
-contain the node and they serve the other 41. Since the node is the only reader of a
-speed table, those eight cannot consult theirs however it is filled in:
-
-    flat zero, nothing to read       AtronachStormProject, ChaurusFlyer,
-                                     WispProject, WitchlightProject
-    a real curve nothing reads       AtronachFlame, DragonProject,
-                                     Dragon_Priest, IceWraithProject
-
-The second group is stale data: their blends are driven straight from `Speed`, and
-`AtronachFlame` still carries a 183-value curve and an unused `SpeedSampled`
-variable, which is what a graph rewired after its table was generated looks like.
-The correlation holds in the other direction with no exceptions: **no project that
-has a sampler has a flat table.**
-
-`DwarvenSpiderCenturionProject` is a third case — it has a sampler, but its compass
-children are clip generators, so it has no speed axis for the table to describe.
-
-### 5.2 Blender topology
-
-Two topologies, and which one an actor uses decides what its 19 records mean.
-
-**Bipeds: eight cardinal blenders, one scalar.** A full compass of
-`hkbBlenderGenerator` — Forward, ForwardRight, Right, BackRight, Back, BackLeft,
-Left, ForwardLeft — and **every one binds `blendParameter` to the same sampler
-output**. They are not parameterised by direction; they *are* the direction, and the
-graph activates the one matching the heading. The giant's default state:
-
-    ForwardBlend       <- SpeedSampled   5, 61.84, 123.69
-    ForwardRightBlend  <- SpeedSampled   5, 62.67
-    RightBlend         <- SpeedSampled   5, 64.92
-    BackRightBlend     <- SpeedSampled   5, 47.07
-    BackBlend          <- SpeedSampled   5, 54.43
-    BackLeftBlend      <- SpeedSampled   5, 49.53
-    LeftBlend          <- SpeedSampled   5, 66.14
-    ForwardLeftBlend   <- SpeedSampled   5, 62.67
-    TurnLBlend         <- TurnDelta      45, 90      /* separate axis */
-
-**This is why the table has a direction axis.** One scalar feeds all eight ladders
-and the ladders have different tops — for the player's bow, forward 155.21, left
-134.43, right 130.04, backward 113.94. A heading-independent scalar would index
-`Bow_LeftBlend` against numbers its children were never placed on.
-
-#### The compass itself is one blender above them
-
-The eight are children of a single `hkbBlenderGenerator` named `*_DirectionalBlend`,
-and their child weights are positions on the `Direction` axis:
-
-    MT_DirectionalBlend    flags=0x31   syncMaster=-1   cyclic[0.000, 1.000]
-        child[0] w=0.000   ForwardBlend            child[4] w=0.500   BackwardsBlend
-        child[1] w=0.125   ForwardRightBlend       child[5] w=0.625   BackwardsLeftBlend
-        child[2] w=0.250   RightBlend              child[6] w=0.750   LeftBlend
-        child[3] w=0.375   BackwardsRightBlend     child[7] w=0.875   ForwardLeftBlend
-
-`flags=0x31` is `FLAG_SYNC | FLAG_PARAMETRIC_BLEND | FLAG_IS_PARAMETRIC_BLEND_CYCLIC`.
-The enum is read from `HavokAssembly.DLL`'s own metadata, not guessed:
-
-    FLAG_SYNC                                      1
-    FLAG_SMOOTH_GENERATOR_WEIGHTS                  4
-    FLAG_DONT_DEACTIVATE_CHILDREN_WITH_ZERO_WEIGHTS 8
-    FLAG_PARAMETRIC_BLEND                         16
-    FLAG_IS_PARAMETRIC_BLEND_CYCLIC               32
-    FLAG_FORCE_DENSE_POSE                         64
-
-`cyclic[0,1]` is what makes the compass wrap: a heading of 0.9 blends child[7] at
-0.875 with child[0] at 0.000 ≡ 1.000. It carries **no variable binding at all** — the
-engine writes `m_blendParameter` directly — which is why searching the graph for a
-blender bound to `Direction` finds nothing.
-
-So the nesting is: direction outside, speed inside. Evaluate each of the two bracketing
-compass children at x, then mix those two results by the heading — as a sync blend
-again, vector travel over duration (§6). The clip vectors are an exact compass: for the
-Falmer's bow family the bearings are 0, 45, 90, 135, 180, -135, -90 and -45 degrees.
-
-The wrapper above it is a `BSCyclicBlendTransitionGenerator`, and above that the state
-node of §5.3.
-
-**Quadrupeds: one gait blender, turning instead of strafing.** A single speed blender
-whose children are turn blenders. No compass family, so its side and back records
-come from the gait blender combined with the turn axis — a structure §6 does not model.
-
-The turn family is a genuinely separate axis, driven by `TurnDeltaDamped`, with
-weights in degrees and left/centre/right children:
-
-    gait    speed position      turn authority
-    walk         169.8               +/- 90
-    trot         371.4               +/- 135
-    run          833.0               +/- 270
-
-Turn authority grows with gait. The sampler supplies the speed axis and nothing else.
-
-**Every speed blender is a parametric blend, and none of them is cyclic.** Across all
-1037 sampler-bound blenders the value is 17 (1022) or 16 (15) — that is
-`FLAG_PARAMETRIC_BLEND` alone, or with `FLAG_SYNC`. `FLAG_IS_PARAMETRIC_BLEND_CYCLIC`
-(32) is never set on them, which is the difference from the compass above: a ladder has
-ends, a compass wraps. The same pattern appears on the turn blenders.
-
-This says the model in §6 is the right shape by construction and not only by fit: a
-parametric blend is *defined* as interpolating between the children bracketing
-`m_blendParameter`, and `FLAG_SYNC` is what ties their durations together. Earlier
-revisions of this document read the flag word against a wrong enum, concluded that
-`FLAG_PARAMETRIC_BLEND` was never set, and therefore rested the whole model on the fit.
-That reading was wrong in both directions.
-
-### 5.3 Which blender serves a state
-
-A state owns a whole compass, and the selector states are labelled by weapon or
-stance family. Extracted by walking each project's root-graph closure and recording,
-per `hkbStateMachineStateInfo`, the sampler-bound blenders beneath it — 4753 such
-states across the 49 projects:
-
-    1hm_locomotion.hkx  Melee_Direction_Behavior
-        id 0-4, 10, 11  ->  1HM_*          id 7      ->  Bow_*
-        id 5, 6         ->  2HM_*          id 8, 9   ->  Magic_*
-                                           id 12     ->  CrossBow_*
-    magicbehavior.hkx   MagicCastLocomotion_Behavior  id 0 -> MagicCast_*
-    bow_direction_behavior.hkx  Bow_DirectionType_Behavior id 0 -> Bow_* (8)
-    giantbehavior.hkx   StandingToLocomotionBehavior  id 1 -> ForwardBlend … (8)
-                        CombatLocomotionBehavior      id 0 -> Combat*_WALK (8)
-                        CombatLocomotionBehavior      id 1 -> Combat*_RUN  (8)
-
-**The machine ids are not `iState` values.** `Melee_Direction_Behavior` runs 0-12
-while the player's key set is 0-10 and 15-17, and `id 7 -> Bow_*` sits against
-`iState 8 = NPC_Bow_MT`. So a state machine's ids are the wrong thing to match against.
-
-#### BSiStateTaggingGenerator is the join
-
-The graph does say which subtree belongs to which `iState`, in a node type that is not
-a state machine at all. Climbing out of the Falmer's walk compass:
-
-    ForwardBlend
-        hkbBlenderGenerator<MT_DirectionalBlend>              .m_children
-        BSCyclicBlendTransitionGenerator<1HM_DirectionalBlendCyclic_Walk>
-        BSiStateTaggingGenerator<Walk_iStateGen>              .m_pDefaultGenerator
-
-`BSiStateTaggingGenerator` is a Bethesda node whose whole purpose is to tag its subtree
-with a state id. **An earlier revision of this document said that nothing in the shipped
-data joins `iState` to the graph, and that the family match below is a convention rather
-than a reference. That was wrong**, and it was wrong because the search looked at
-`hkbStateMachine.m_syncVariableIndex` and at nothing else. The reference exists; reading
-it is the correct way to find a state's subtree, and the name match below is the fallback
-for when you have not.
-
-So the fallback join is by name — take the family token out of the state's
-`iState_<MOVT>` name and match it to the blender prefix:
-
-    NPC_BowDrawn, NPC_Bow  -> Bow_        NPC_Sneaking -> Sneak_
-    NPC_MagicCasting       -> MagicCast_  NPC_1HM      -> 1HM_
-    NPC_Magic              -> Magic_      NPC_2HM      -> 2HM_
-    NPC_Blocking           -> 1HM_        NPC_Default  -> MT_
-
-then pick within the family by the record's compass direction. **This is a convention,
-and it fails where a name carries no family token** — `NPC_Bleedout_MT` and
-`NPC_Drunk_MT` cannot be placed this way. Prefer `BSiStateTaggingGenerator`, which is a
-reference rather than a guess and does not have that failure mode.
-
-### 5.4 MOVT, root motion and PlaybackSpeed
-
-Two quantities meet at every blend rung.
-
-    POSITION   the child's m_weight -- where on the blend axis this child is fully
-               active. Authored. For a cardinal blender it is the movement type's
-               own value for that direction.
-
-    CONTENT    what the clip under that child delivers:
-                     travel / (duration / PlaybackSpeed)
-               Measured, from the animation cache.
-
-They are meant to be equal. `PlaybackSpeed` is the knob that makes them so: one
-animation is reused at several rates, and each rate is a rung.
-
-    GiantProject  CombatForwardBlend_WALK      movement type GiantCombatWalk_MT
-    one clip, combatwalkforward, travel 164.13, natural duration 2.0 s
-
-      position     from MOVT        pb        content
-          5.00            --    0.0606           4.98
-         82.46   ForwardWalk         1          82.07
-        247.37   ForwardRun          3         246.20
-
-Where they drift, the drift is exactly the playback factor:
-
-    ChickenProject  position 251.94 = ForwardRun; runforward is 251.94 at pb 1;
-                    pb is 1.6                   ->  content 403.10  = 251.94 x 1.6
-    DogProject      position  74.54 = ForwardWalk; walkforward is 74.54 at pb 1;
-                    pb is 1.4                   ->  content 104.36 =  74.54 x 1.4
-
-Measured across every blender in the game, one test per child against the best clip
-beneath it:
-
-    blender kind   children   position == content   within 2%   combined
-    speed                75             27 (36%)     19 (25%)     61.3%
-    turn                 98              0            0            0.0%
-
-The turn row is definitional — those weights are angles. The speed deviations fall
-into three authored classes, none random:
-
-    1  floor constant    the slowest rung is pinned at exactly 5.000 while its clip
-                         delivers 0.486 to 3.854
-    2  playback omitted  the case above -- chicken 251.938 at 1.6, bear 59.820 at 1.5
-    3  MOVT value used   position is the MOVT ForwardRun and matches no clip product
-                         -- hare 244.444, boar 638.070
-
-Where they disagree the position is authored and the content is measured, and **the
-table always records the content**: the chicken's `max y` is 403.10, not 251.94.
-
-#### Which positions come from MOVT
-
-For the four cardinal blenders, exact to the stored decimals:
-
-    blender                        positions            MOVT
-    CombatForwardBlend_WALK    [5, 82.46, 247.37]   ForwardWalk 82.46  ForwardRun 247.37
-    CombatRightBlend_WALK      [5, 103.86, 311.59]  RightWalk  103.86  RightRun   311.59
-    CombatBackBlend_WALK       [5, 63.50, 190.50]   BackWalk    63.50  BackRun    190.50
-    CombatLeftBlend_WALK       [5, 93.70, 281.09]   LeftWalk    93.70  LeftRun    281.09
-
-Pattern `[floor, <dir>Walk, <dir>Run]`, floor a literal 5.0. A default state is the
-same with `Walk == Run`. A combat-run state drops the floor and extrapolates one rung
-above `Run`: `[<dir>Walk, <dir>Run, k x <dir>Run]`, k of 1.5 forward and 2.0 sideways.
-
-**This is the only way the eight MOVT numbers enter the graph.** The blender does not
-read `MOVT` at runtime; the values were baked in as positions at authoring time, which
-is what puts x on the `MOVT` scale.
-
-Two limits. The four **diagonals** are not from `MOVT` — `ForwardRight` and
-`ForwardLeft` share `[5, 82.07, 328.27]`, `BackRight` and `BackLeft` share
-`[5, 63.50, 317.49]`, because `MOVT` has only four directions. And **intermediate gait
-positions are never in `MOVT`**: across twelve forward ladders `ForwardWalk` is the
-second rung in 12 of 12 and `ForwardRun` the top in 7 of 12, but trot and fast-trot
-account for 19 of 38 non-floor rungs and appear nowhere in the record. `MOVT` alone
-will not reconstruct a ladder.
-
-RACE `SpeedOverrides` may override a movement type per race, but only 10 of 161 races
-carry any, with 17 distinct values, and they are almost all byte-identical copies of
-the record they override. Reading the record is correct.
-
-### 5.5 Visiting the graph
-
-Everything in section 5 is a question about *where a node sits*, and until now the
-answer came from searching a packfile flatly and then guessing at the rest from
-names. That is backwards, and it has a concrete cost.
-
-**A behaviour graph is not a file.** `hkbBehaviorReferenceGenerator` names its target
-as a *string* and leaves the pointer `SERIALIZE_IGNORED`, so nothing in the packfile
-links the two -- the engine resolves the name at load, and so must anything that reads
-the graph. 123 of these joins hold the corpus together across 13 projects, and 93 of
-them are the player's and the first-person rig's:
-
-    DefaultMale / DefaultFemale   17 files   32 references   depth 53
-    FirstPerson                   15 files   29 references   depth 51
-    Bear, Dog, Wolf, Deer, Cow     4 files    3 references each
-
-The other 36 projects are a single file, which is why the island view survived as long
-as it did -- and why the projects it fails on are the ones whose rebuild is worst.
-
-`HKSK.Behavior` walks the whole thing from the character's root generator, crossing
-references as the engine does. Two things about it are worth stating.
-
-**The edges are found by reflection, not by a list of node types.** A blender reaches
-its children through one wrapper struct, a state machine through another, and at least
-three more node types hold a bare generator under three different property names
-(`m_generator`, `m_pDefaultGenerator`, `m_pBlenderGenerator`). Hand-listing them is how
-a walk silently loses a subtree: it does not fail, it returns less, and nothing says
-which type was forgotten. Reading the edges off the generated classes instead is
-exhaustive by construction.
-
-**And it is shown to be, not assumed.** Every `hkbNode` in every packfile of all 49
-projects is looked for in the walk:
-
-    hkbNode in the packfiles                      28476
-    reached from the character's root             28351
-    not reached, and an hkbBehaviorGraph            125      <- one per file
-    not reached, anything else                        0
-
-The 125 are the per-file graph wrappers, which the walk starts *below*. Nothing else in
-the shipped game is unreachable, and `TheOnlyNodesTheWalkDoesNotReachAreTheGraphWrappers`
-keeps it that way.
-
-#### What ancestry buys
-
-A node's path is the thing the name heuristics of section 8 were standing in for:
-
-    MT_DirectionalBlend      Falmer_Master_Behavior / FalmerRoot / RootBehavior /
-                             Falmer_Base_State / MT_State / MT_State_Behavior /
-                             MT_DirectionalState / 1HM_Locomotion_Behavior /
-                             1HM_DirectionalState_Walk / TAG iState=2
-
-    1HM_DirectionalBlend_Run ... same to 1HM_Locomotion_Behavior /
-                             1HM_DirectionalState_Run / TAG iState=3
-
-Read straight off the chain: which key the blend serves, and that the walk and run
-blends are **two states of one machine**. Section 9 spent a great deal of effort trying
-to recover the second fact from name tokens and from movement-type speeds, and neither
-survived measurement -- the structure was in the graph the whole time.
-
-`BehaviorWalk.KeyOf` reads the key by the two routes the graph offers.
-`BSiStateTaggingGenerator` sets `iState` above a subtree and is read from the ancestors;
-`BSIStateManagerModifier` sets it from a table of (state machine, state id) pairs, and
-**that one is unreadable without ancestry** -- a flat search cannot say which machine a
-blend sits under, which is why it could not be measured before. Over the 142 direction
-blends:
-
-    keyed by BSiStateTaggingGenerator              61
-    keyed by BSIStateManagerModifier               10
-    keyed by either                                71      <- the two never overlap
-
-Against the name heuristic, where both answer, over the 291 states:
-
-    the graph places a compass under the key        32
-    the name heuristic agrees                       25
-    the name heuristic answers nothing               7
-    the two contradict each other                    0
-
-The seven are the player's and the first-person rig's sneak and ready-weapon states and
-the sphere centurion's ranged one -- all previously counted among the 608 records with
-no compass to rebuild from. So the structural route does not overturn section 8; it
-corroborates it where it spoke and reaches further where it did not.
-
-It reaches half the compasses and no more, and the half it misses is not a gap in the
-walk but a graph that genuinely never sets `iState` over those subtrees. What decides
-those is still open.
-
-## 6. Computing the curve
-
-**y has a closed form accurate to about 0.003%. That is enough to author and to use a
-table; it is not enough to reproduce Bethesda's floats bit-for-bit.** §6.1 says why.
+### 5.1 The sampler
+
+    BSSpeedSamplerModifier
+        state      <- iState
+        direction  <- Direction
+        goalSpeed  <- Speed
+        speedOut   -> SpeedSampled | SampledSpeed | HorseSpeedSampled
+
+The output variable is what the ladders read: 1,037 parametric blends over 38
+projects bind `blendParameter` to it. Match the name off the sampler, not by regex,
+and resolve variable indices **per file**: each packfile has its own table.
+
+41 of the 49 actor projects carry the modifier. The 8 that do not — the flame and
+storm atronachs, the chaurus flyer, the dragon, the dragon priest, the ice wraith,
+the wisp, the witchlight — cannot consult a table however it is filled, and the
+game ships one for each anyway. Two more (netch, slaughterfish) run their ladders
+on `SpeedDamped` and raw `Speed`; their sampler still writes, and the actor's copy
+still reads.
+
+### 5.2 Ladders and compasses
+
+A locomotion state is a **compass** — a blend over the eight headings, children at
+0.125 apart, each arm a **ladder** — a synchronised parametric blend whose children
+sit at the movement type's speeds (the bottom rung is the walk clip stretched to a
+near-standstill, a rigging convention). `SpeedSampler.FromProject` walks a project
+to its ladders; `SpeedLadder.FromBlender` reads a ladder's rungs and resolves each
+child's clip through the animation cache for its travel and duration.
+
+### 5.3 Which compass serves a key
+
+Where a tag or a manager row writes the key, the compass is the one under it.
+Where an expression writes it, the compass is under the subtree the expression sits
+in (`StateExpressions.GovernedBy`). Where the key is the initial value, it is the
+compass the graph plays at rest. Where none of that decides — the perk stances, the
+attack states, the layered cases — the graph is **driven into the state** (§8) and
+whichever sampler-fed ladder is live beside it is the key's.
+
+## 6. The curve
 
 The blend is time-synchronised: Havok interpolates the children's root-motion
-**translation** and their **duration** as two independent linear ramps, and the
-delivered speed is the magnitude of the first over the second. Order the children by
-weight into rungs
-
-    rung i  =  (w_i, V_i, dur_i)     V_i a Vector3    dur_i = clip duration / PlaybackSpeed
-
-then for x between rungs a and b
-
-    u     = (x - w_a) / (w_b - w_a)
-    V(x)  = V_a + u*(V_b - V_a)                       /* vector */
-    d(x)  = dur_a + u*(dur_b - dur_a)
-    y(x)  = |V(x)| / d(x)
-
-clamped to `|V|/dur` of the first rung below `w_0` and the last above `w_n`.
-
-**The travel is a vector and must stay one.** `ClipMovement.Translations` holds
-`Vector3` keys and the displacement is the last of them. Collapsing it to a magnitude
-before interpolating is wrong wherever a blend mixes two headings, because
-`|lerp(V_a, V_b)| < lerp(|V_a|, |V_b|)` for any two vectors that are not parallel.
-The compass children sit 45° apart (§5.2), so the error is `cos(22.5°) = 0.9239` at
-the midpoint — a flat 8% overestimate. Measured on the Falmer, treating travel as a
-scalar puts the 15 mixed-heading records at a 6.0% median error with **none** inside
-1%; as a vector, 0.28% median with 112 of 129 inside 1%.
-
-A quotient of two linear functions is a Mobius transform, so each segment is a
-hyperbolic arc, not a chord — which is why the curves look like acceleration ramps,
-and why every chord-based model came in short and never over. The hare's ladder shows
-the size of it; its slowest rung plays `walkforward` at 0.058, stretching 0.833 s to
-14.368 s:
-
-    rung   weight   |travel|    dur     speed        /* forward only, so V is collinear */
-       1     5.00    52.26   14.368      3.64
-       2    89.18    52.26    0.833     62.71
-       3   244.44   100.19    0.3125   320.62
-
-    x        observed     this form   linear chord
-    63.5        10.52         10.53          44.69
-    79.0        21.10         21.15          55.56
-    85.0        34.56         34.70          59.77
-    88.0        50.75         51.06          61.88
-
-`SpeedLadder` implements this. `SpeedLadder.FromBlender` reads the rungs out
-of an `hkbBlenderGenerator` and resolves each child's clip through the cache;
-`Evaluate(x)` is the form above. The three properties that were each wrong at some point
-during this investigation — travel blending as a vector, duration blending separately,
-and the curve clamping at both ends — are pinned by tests that are exact by
-construction, plus one that reads `SphereCenturion`'s ladder out of the game and checks
-it against the shipped table.
-
-**This is the part of the file that is not authoring error** (§0), and it has two
-sources of very different character.
-
-Measured over the 40 adjacent rung pairs of thirteen forward ladders:
-
-    duration ratio ~ 1 (equal durations)    5 pairs   median |deviation|  0.000%
-    duration ratio != 1                    35 pairs   median |deviation| 17.6%
-
-Curvature comes from duration mismatch and from nothing else — equal durations give an
-exactly straight segment. Since 26 of the 40 pairs are the *same clip* on both sides,
-the mismatch is usually just a `PlaybackSpeed` ratio.
-
-**The dominant term is the floor rung, and it is a rigging convention rather than a
-fact about locomotion.** Every ladder's bottom step reuses the walk clip at a rate near
-0.05, stretching it 7x to 71x, which bends that first segment enormously:
-
-    Chicken   walkforward -> walkforward   ratio 71.43   -94.6%
-    Deer      walkforward -> walkforward   ratio 34.48   -89.0%
-    Bear      walkforward -> walkforward   ratio 25.00   -85.2%
-    Skeever   walkforward -> walkforward   ratio  7.25   -57.4%
-
-That is how a near-standstill is faked, not how an animal accelerates.
-
-**Between real gaits the curvature is mild** — steps of 1.2x to 3x give a few percent:
-bear trot pairs at -0.3% and -1.7%, dog trot pairs at -4.5% and -4.0%. Small, but not
-zero, and it is genuine blending behaviour.
-
-### 6.2 The daedra's halving, explained
-
-Every point of `HMDaedra`'s table is exactly half what its ladder delivers, and
-duration, playback speed, the sync flag, the cyclic wrap, the compass geometry and
-the skeleton scale were each eliminated in turn. Running the graph shows why:
-
-    hkbBlenderGenerator 'Locomotion_Tentacle_Blend'          x1
-      BSCyclicBlendTransitionGenerator 'MT_Direction_...'    x0.5   <- the ladder
-      hkbClipGenerator 'MT Idle.HKX01'                       x0.5   <- no travel
-
-**The locomotion subtree is mixed half and half with a stationary idle.** The
-ladder alone delivers 5, 64 and 128 at its three rungs; the shipped record reads
-2.5 and tops at 64. The table is not wrong and neither is the curve model -- the
-creature really does travel at half the ladder's speed, because half of what it is
-doing is standing still.
-
-Scaling by that share turns HMDaedra from 0 of 77 curves to **65 of 77**. It is
-not applied, because there is no general way yet to say which of a pose's clips
-contribute to root motion: scaling by the ladder's own weight costs 3000 points
-elsewhere, and scaling by the travelling fraction of all live clips costs 1800 --
-the humanoids layer upper and lower body, so a live clip that does not travel is
-normal for them. Both were measured and reverted. What is settled is the cause.
-
-### 6.2b A ladder has a range, and creatures disagree at both ends
-
-A speed ladder covers its lowest rung to its highest, and outside that the blend
-clamps: on its own it says a creature runs at 214 when asked for 50 and walks at
-176 when asked for 300. Real creatures change gait instead, and the graph says
-which gait -- the two states sit in one machine with transitions between them. So
-this should be derivable, and **it is not, in either direction.**
-
-**Above the top.** `FalmerProject` key 2 is declared as
-`1HM_DirectionalState_Walk`, whose ladder stops at 175.8, and above that the
-shipped table keeps climbing to 397 -- which is `1HM_DirectionalState_Run`, the
-state the walk transitions to. Reading both holds 226 of its 275 points against
-the walk alone's 134. But `BearProject` is built identically --
-`ForwardWalkState` to 285.2 and `ForwardRunState` from 447.1, one machine,
-transitions between -- and at a goal speed of 324.5 its table reads **285.23**,
-the walk clamped. `GiantProject` the same: `LocomotionState` stops at 123.7,
-`CombatDirectionalState_RUN` reaches 622.5, and the table reads 123.1 at 324.5.
-
-**Below the floor.** `BenthicLurkerProject` key 1 is the run state, whose forward
-ladder starts at 213.8, and below that every shipped value is the walk ladder's
-exactly -- the same numbers key 0 carries, to four figures, meeting the run in a
-step rather than a blend: 203.55 at x = 215 and 217.65 at 215.5. `DeerProject` key
-21 is built the same way, floor 416.5, and its one point below that reads 391.5,
-which is the run clamped.
-
-So the falmer and the lurker cross and the bear, the giant and the deer clamp.
-Nothing found separates them: all five pin their gait through a variable, all five
-have transitions between the two states, and in all five the other ladder's range
-covers the gap. The transitions say nothing either -- they fire on events with
-`FLAG_DISABLE_CONDITION` and empty expressions, so the game raises them and the
-behaviour data never names a speed.
-
-Both halves were implemented and measured. Together they are +150 points and -22
-whole records; the top half alone is +66 on the falmer, -41 on the bear and -5 on
-the giant, which is +20 points for -24 records. Neither is in the tree. Separating
-the cases needs something not yet found, and a threshold fitted to the goal speeds
-the file happens to carry would be fitting to the file being derived.
-
-### 6.2c A reversed clip, and the riekling's own data
-
-`hkbClipGenerator.m_playbackSpeed` can be **negative**, which plays the animation
-backwards: the clip takes the same time and the root travels the other way. 31
-clips in the shipped game do it and their names say what it is for -- `Unequip`
-is `Equip` reversed, `Chair_CrossedVar1ToBaseVar1` is `Chair_BaseVar1ToCrossedVar1`
-reversed -- and six of them are locomotion rungs. All six are the riekling's,
-whose right strafe is its left one reversed (`MT WalkR` plays `MT_WalkL.HKX` at
--1). Reading the rate as authored dropped them, so `Blend_MT_Right` came out with
-no rungs at all: a quarter of the compass simply missing.
-
-**The riekling is still the largest block of error, and the error is in the file.**
-It holds 138 of its 1037 points, but not evenly. Its two cardinal records are
-exact -- forward and backward carry twelve points each and **every one of the 24
-holds**, reproducing the shipped numbers through the ordinary ladder. The other
-seventeen records are a different kind of data: they carry up to **121 points**
-where twelve did for forward, **eleven of them fall** somewhere instead of rising,
-and the values wander -- the sideways record reads 381.13 at a goal speed of 257
-and 312.57 at 324.5.
-
-A record answers "how fast when asked for x", so it cannot fall as x rises: a
-ladder clamps at its ends and interpolates between them, and both are monotone.
-Across the whole shipped file that holds for **1,616 of 1,634 records**, and
-eleven of the eighteen exceptions are this one block.
-
-**And the damage has a side.** The riekling is the only project whose locomotion
-rungs are clips played backwards, and every one of them is in `Blend_MT_Right`.
-Split its seventeen non-cardinal records by which way round they go:
-
-| | records | points | held | falling |
-| --- | --- | --- | --- | --- |
-| cardinal (0.00, 0.50), no reversed clip | 2 | 24 | **24** | 0 |
-| the half mixing `Blend_MT_Right` (0.05-0.45) | 9 | 546 | **17** | **7** |
-| the half that does not (0.55-0.90) | 7 | 467 | 97 | 4 |
-
-and the falls grow steadily across the bad half -- 2.7, 15.1, 68.6, 105.9, 120.3,
-132.2, 181.5 -- while the good half's worst is 20.
-
-**The sign explains the fall.** If a sampler took that minus as a negative
-*speed* rather than as a reversed direction, a heading between forward and right
-would mix a positive contribution with a negative one and the answer would drop
-away as the reversed arm took more of the weight. Blending the arms as signed
-speeds instead of as travel vectors does exactly that -- **six falling records
-where reading them correctly gives none** -- and it is the only mechanism found
-that makes a speed curve fall at all. The correct reading cannot: it mixes travel
-as a vector and takes a length at the end, and a flipped vector is still a
-positive speed.
-
-**It is still not what Bethesda wrote.** The signed blend holds 82 of the 1037
-points against the correct reading's 138, its six falls are not the file's eleven,
-and on the sideways record it is further out than ever -- the file climbs 20.5,
-23.2, 25.1, 46.9 over the first four goal speeds while the signed blend sits at
-about -3. Nor does anything else tried help: travel left un-negated, the duration
-taken as `D/ps` and so signed, the arm zeroed outright, and the other two compasses
-(99 points each for the spear and the crossbow) all score at or below 138.
-
-**And the values are its own compass's, at the wrong headings.** Asking each
-shipped point whether *any* heading of the riekling's compass produces it, rather
-than the heading its record names, answers yes for **813 of its 1037 points**
-where the record's own heading answers for 138. A spare parameter and a 2% window
-fit a lot by chance, so the same question was asked of four other creatures'
-shipped values against the riekling's compass: 79 of 250, 70 of 192, 152 of 323
-and 28 of 141, which is 20% to 47%. The riekling's own is 78%, clear of all of
-them. A creature that turned to face its travel while the sweep ran would look
-like this.
-
-It is still not a model. No single heading works: answering every record at the
-forward arm holds 76 points and sweeping the answer heading from 0 to 0.1 peaks at
-144, against the 138 the correct reading already gives. So the sign accounts for
-the shape, the wandering heading accounts for the values, and neither is something
-to rebuild from. The riekling's 899 missing points stay recorded.
-`ShippedShapeTests` keeps the measurements.
-
-### 6.2d Which input the shipped table followed
-
-A rung carries two numbers that ought to agree: the weight the author gave it, and
-the speed the clip beneath it travels at. Replacing the second with the first
-everywhere asks which one Bethesda's sampler followed, and over the 6,140 points
-of the keys the graph declares the answer is emphatic -- **the cache holds 5,047
-and the weights 3,864.** `VampireLord` falls from 223 of its 223 points to 7 and
-`BallistaCenturion` from 224 to 14, which is §0's whole claim made visible: the
-table exists because the two numbers differ.
-
-**Two creatures prefer the weights, and both have damaged root motion.**
-`HorseProject` goes from 0 to 213 and `WerewolfBeastProject` from 28 to 67. The
-werewolf is the horse's case again -- its forward clips deliver 0.9 and 197.15
-where the rungs say 5 and 303.04, a constant 5.55 and 1.537 per animation rather
-than per rung, while its sideways arms deliver their weights to four figures and
-four of its arms record no travel at all. So 491 of the points still missing are
-bounded by the cache rather than by the model.
-
-**That is not a licence to mend them.** The two look identifiable from the inputs
-alone: their rung weights are their movement type's own speeds to within a tenth
-of a percent while the cache says something else, and two inputs agreeing against
-the third is a tempting rule. Mending only those rungs does help them, the horse
-by 57 and the werewolf by 8 -- and `VampireLord` falls from 223 to 90. Its rungs
-are authored at its movement type's speeds too, its clips genuinely deliver
-something else, and the shipped table faithfully records the something else. **The
-signature of a damaged cache and the signature of a creature this file was written
-for are the same signature.** The rule is a net loss across the corpus and is not
-in the rebuild; `CacheDamageTests` keeps the refutation.
-
-### 6.2f Having no sampler is not having no ladder
-
-Eight projects carry no `BSSpeedSamplerModifier` anywhere -- `AtronachFlame`,
-`AtronachStorm`, `ChaurusFlyer`, `Dragon_Priest`, `DragonProject`, `IceWraith`,
-`Wisp`, `Witchlight` -- and the game ships a one-key table for every one of them.
-They are the hovering and flying creatures. Because the sampler is what names the
-speed variable, a project without one was skipped entirely, and all eight counted
-as out of reach.
-
-**Two of them have ordinary ladders.** The flame atronach's `ForwardBlend` and the
-dragon priest's `ForwardLocomotionBlend` bind `blendParameter` straight to
-`Speed`, with rungs up to 200 and 300, and their shipped tables top out at exactly
-that. Reading `Speed` where nothing writes a sampled speed recovers both:
-**242 of the atronach's 260 points and 81 of the priest's 99.**
-
-`Speed` is read by things a sampled speed never is -- an interpolator on the storm
-atronach reads and writes it -- so where there is no sampler the search keeps to
-blends binding `blendParameter`, which is what a ladder is.
-
-**The other six do not move on a curve.** Nothing in their graphs reads a speed
-into a blend, so the table is flat -- and flat *at what* is answered by standing
-the graph up at its root and reading what it plays:
-
-| project | shipped | rests on | built |
-| --- | --- | --- | ---: |
-| `DragonProject` | 381.18 to 384 | `CLIP_Ground_Locomotion_Forward` -> `MTForwardGround`, 384.001 u/s | **51/51** |
-| `AtronachStorm` | 0 at 38 of 38 points | four clips, none travelling | **38/38** |
-| `Wisp` | 0 at 38 of 38 points | `initialize`, 0 u/s | **38/38** |
-| `Witchlight` | 0 at 38 of 38 points | `WalkF`, 0 u/s | **38/38** |
-| `IceWraith` | 230.52 to 319.67 | `CombatLocomotionBlend`, four arms at 319.667 u/s | **42/42** |
-| `ChaurusFlyer` | 0 (largest 1.8e-20 of 46) | `RunF` at 370 u/s, **a third of the weight** | built at 123.3, **0/28** |
-
-Three things had to be right for those four to land, and each is a rule the file
-paid for:
-
-- **A reading delivers its share of the pose's root motion.** A clip's speed is read
-  from its own travel, so a clip at a third of the weight is not what the creature
-  does at face value. This was first a refusal -- a reading had to carry
-  `Motion >= 0.999` -- which dropped the chaurus flyer and
-  `DwarvenSpiderCenturionProject`, both scoring 0. It is now a scale, because Havok
-  has measured what such a reading delivers: root motion mixes over weight times
-  `worldFromModelWeight` and renormalises (`tools/hkmeasure`, `WFM=`), and per-bone
-  weights -- all three of the flyer's layered children carry them -- do not enter it
-  at all (`BONES=`). Scaled, both blocks are built and no other block moves.
-- **A compass has four arms or eight.** Three clips cannot cover a heading circle.
-  The dragon's ground locomotion is three, and read as a compass it scores **3 of
-  51** where read flat it scores **51 of 51**. The players' bleedout is four and
-  wants the compass: **39 of 49** against 8 of 49 read flat.
-- **A zero curve is a curve, but only where there is no locomotion to reach.** The
-  storm atronach, wisp and witchlight own nothing that travels but staggers,
-  recoils and a power attack -- 150.21/39.00/44.50/23.49 for the atronach,
-  59.59/176.98/247.10/179.36 for the witchlight -- no two agreeing. The ice wraith
-  rests on the same kind of non-travelling clip and is not one of them: it owns
-  `RunF`, `RunB` and `RunL` at **319.667**, its shipped forward speed to the digit.
-  Three clips at one speed is a heading set, and it says the creature moves
-  whatever the graph was doing when it was asked.
-
-The ice wraith took one more rule, and it is a rule about time rather than about
-speed. `IceWraithRootBehavior` starts in `Initialize` and its **only** exit is
-event 32, `InitializeStop` -- which the `Initialize` clip itself raises, with
-`m_relativeToEndOfClip` **false** at `m_localTime` **0**. The engine already raised
-end-of-clip triggers, on the argument that a clip which has been playing has
-reached its end; the start case is the same argument from the other side, since a
-clip that is active was entered at all. Raising both frees the graph into
-`CombatLocomotionBlend`, four arms of `RunF`/`RunR`/`RunB`/`RunL` on a cyclic
-parametric blend, every one of them recorded at 319.667 u/s -- which is 319.67
-forward and 263.6/230.52 off-axis. **42 of 42**, and no other block moved.
-`StartTriggerTests` holds it.
-
-**The spider centurion's arms play at a rate the graph computes.** Its compass is
-four clips, and each binds `playbackSpeed` to a variable an expression writes:
-
-    speedMultForward  = (max(5, SpeedSampled)) / speedForward
-    speedMultBackward = (max(5, SpeedSampled)) / speedBackward    (and Left, Right)
-
-so an arm is not a fixed speed but a ladder in the goal speed, delivering its clip's
-own speed scaled by the multiplier -- the shipped forward record reads 2.5 at 0, 12.5
-at 25 and 162.6 at 324.5, that times the half share its layering leaves it. Reading
-each arm as that ladder -- `SpeedSampled` set to each half-unit goal speed, the
-expression evaluated by the engine's own expression language, the clip played at the
-result -- builds the block at **61 of 61**, and no other block moves. That takes the
-rebuild to **all 86 shipped blocks**.
-
-The data carries a fingerprint of the rule, which rules out reading the block any
-other way -- off the turning clips' root motion, say, or the walk clips at their own
-speed. The declared speeds do not match the clips they divide: `speedForward` is 99.8
-where `Forward_Walk` travels 100.037 u/s, `speedRight` 100.16 where `Right` travels
-99.801. So each cardinal heading should carry its own clip-over-declared ratio, and
-at a goal speed of 324.5 each does, to four decimals:
-
-    heading   clip             clip u/s   declared   predicted   shipped
-    0         Forward_Walk      100.037      99.80     1.00237   1.00231
-    0.25      Right              99.801     100.16     0.99642   0.99635
-    0.5       Backward_Walk     100.037     100.04     0.99997   0.99990
-    0.75      Left               99.801      99.44     1.00363   1.00356
-
-(shipped over half of `max(5, x - 0.0404)`). The half is `Idle_HeadParts`, a
-non-travelling idle layered beside the locomotion, and the turning clips could not
-supply any of it: `TurnLeft` rotates 89 degrees and translates nothing.
-
-Nothing else in the behaviour reaches either stage, checked node by node along the path
-from the root to the four clips. `SpeedSampled` has one writer, the sampler; `speedMult*`
-have one, `SpeedMult_EEM`, which sits on the `Locomotion_MG` wrapping the compass and so
-runs exactly when the compass does; the four `speed*` divisors are written by nothing and
-keep their initial values. The clips have no crop, no enforced duration, no start offset,
-no flags and no triggers, loop, and the cache's copies agree (playback 1, crop 0). Neither
-blend binds anything but the compass parameter, and no child weight or
-`worldFromModelWeight` is bound. The one bound member on the path, the idle's bone weights
-on the character property `HeadPartsBlend`, shapes the pose and not the motion. The
-cyclic transition can be frozen or cross-blended by `CyclicFreeze` and `CyclicCrossBlend`,
-which nothing in the graph raises -- the engine's own events, and the off-axis headings
-reproducing show the blend followed `Direction` while the table was taken. The only oddity
-is an initial value: `speedMultBackward` starts at 0 where its siblings start at 1, which
-matters for no longer than it takes the expression to run once.
-
-The spider is the only creature built this way, and that was checked rather than
-assumed (`BoundRateTests`). Three expressions in the game make a clip's playback
-follow a speed: the spider's four, the twelve quadrupeds' backward walk at
-`clamp(Speed/walkBackRate, 0.01, Speed)` -- a state none of their tables is sampled in,
-all twelve already rebuilt whole or within a point -- and the witchlight's `WalkF` at
-`Speed/runRate`, whose clips travel nothing, so its zero table stays zero at any rate.
-No blend reads a speed through an expression at all: the six whose parameter an
-expression computes from something named for speed are the frost atronach's turns,
-damped at a rate called `SpeedAcc`, and the vampire lord's bat sprint, gated on
-`Speed > 5`.
-
-**`ChaurusFlyer` has a block and its values are not the shipped ones.** It ships
-zero to float noise at every heading. Its graph cannot say zero: everything that
-moves it passes through one `CombatLocomotionBlend` of four clips recorded at 370,
-non-combat locomotion included, and Havok moves that pose at a third of it -- 123.3,
-which is what the block now holds. Everything that might separate it from the ice
-wraith, whose graph it was copied from and which ships a table that moves, was
-measured and does not:
-
-    the race                 DLC1ChaurusHunterRace has the ground chaurus's flags,
-                             walks in ChaFlyerDefault, and Flies is not set
-    the cache                RunF/RunR/RunB/RunL map to the right slots, 370 of travel
-    the axes                 the character's up and forward are every creature's
-    the layering             Blend00's bone weights do not reach root motion (Havok)
-    bAnimationDriven         0 in every project that ships speeds as well
-    playback bindings        none on the flyer's clips; no sampler; no speed expression
-
-What the table records is a creature that did not move while it was sampled, and
-none of the three inputs says why.
-
-### 6.2e Does the compass earn its place
-
-A heading picks an arm and the arms are blended as vectors, which is most of what
-the sampler does. Answering every heading with the forward arm instead asks
-whether that machinery is needed, and over the 5,851 points of the declared keys
-that have a compass the answer is emphatic: **the compass holds 5,047 and the
-forward arm alone 1,089.**
-
-**One block is the other way round, and completely so.**
-`BenthicLurkerProject` key 0 holds 23 of its 253 points through the compass and
-**all 253** through its forward arm. Every record, at every heading, is the
-forward walk ladder to four figures -- its sideways record climbs to 232.09, the
-forward ladder's top rung and well past its own 99.52, so at speed the creature
-turns to face rather than strafing.
-
-Nothing in the inputs asks for that. Its movement type gives it real lateral
-speeds, 99.52 either way, matching the strafe rungs exactly; its graph carries
-eight directional blends like any other creature's; its compass's
-`blendParameter` is stored rather than bound, but so is every other creature's
-(120 of the corpus's 122 compasses); and its own key 1 still prefers the compass,
-78 points against 30, so it is not even a property of the creature.
-
-**`FirstPerson` is the second and last instance**, left out of the count above only
-because its key is reached by running the graph rather than declared. Its block is
-the same shape and more extreme: all nineteen records are one curve, and the
-forward arm of `LocomotionDefault` alone answers **all 209 of its points** where
-its eight-arm compass answers 42. For a camera that is what one would expect --
-the view travels at the character's speed whichever way the body strafes -- but
-the name of a project is not an input, and the third-person player builds its own
-block from the *same* `LocomotionDefault` state in the *same* shared graph and
-holds 226 of 226 points **with** its compass. So the two cases that would have to
-be told apart are told apart by nothing that has been found, and applying either
-would be reading the answer. `CompassNeededTests` keeps both measurements.
-
-### 6.2g Goal speed zero is measured in twenty-fourths
-
-Where a block carries a point at goal speed 0 on every heading -- most carry it on
-one record only -- the forward heading is exact everywhere and the others split
-cleanly by what the ladder reads.
-
-| block | ladder reads | forward at x=0 | other headings at x=0 | everything above |
-| --- | --- | ---: | ---: | ---: |
-| `Dragon_Priest` key 0 | raw `Speed` | 1 | **23/24** (18 of 18) | held |
-| `AtronachFlame` key 1 | raw `Speed` | 1 | **23/24** (18 of 18) | held |
-| `SlaughterfishProject` key 0 | raw `Speed` | 1 | **1/24** (15 of 18; the rest 1/26.20, 1/24.36, 1/24.36) | **22/24** at x=0.5 (18 of 18), held above |
-| `NetchProject` key 0 | `SpeedDamped` | 1 | 1 (13 of 13) | held |
-| `IceWraithProject`, `NPC_Sprinting_MT` | nothing (flat) | 1 | 1 | held |
-
-The ratios are shipped over built. For the priest and the atronach, built is the
-ladder's floor clamp through the compass; the slaughterfish is built flat, at the
-speed its six arms swim. The priest's walk rung delivers 80 and every sideways and backward arm at
-x=0 ships **76.667**, which is 80 x 23/24 to the digit.
-
-Fractions of 24 read as a time average in which a fixed number of steps differ
-from the steady state: the priest walks for 23 of them and stands for one, the fish
-stands for 23 and swims for one. That is a property of how the game drives an
-actor whose `Speed` is written straight from its movement, and not of the graph --
-nothing in either behaviour file names 24, and the previous step's state is not an
-input. With three blocks and three different fractions any rule here would be
-fitted to the file, so none is in the rebuild; these are the 36 points the priest
-and the atronach miss and 36 of the slaughterfish's.
-
-**It does not explain the sampler's 0.04.** The coincidence invites it:
-`SamplerOffset` is 0.0404 and 1/24 is 0.0417, and a lag of k sweep steps inside a
-24-step average turns a linear ladder segment into the same segment shifted by
-k x step / 24 -- a per-block shift, constant across headings, which is the shape
-"The sampler reads the curve 0.04 early" under Verification found. But the step is
-known: §9 reads it off the deer, whose bound of 833 is swept in 1,666 iterations,
-so 0.5. One step of lag predicts 0.0208 and two predict 0.0417, and the eleven
-blocks that pin an offset sharply sit between 0.031 and 0.0400, nine of them
-between 0.0385 and 0.0400 with basins too narrow to hold 0.0417. Neither count of
-steps fits, so the twenty-fourths stay a property of goal speed zero.
-
-### 6.3 The horse: the one creature whose cache is the problem
-
-A ladder child's weight is a position on the speed axis and the clip beneath it
-travels at some speed of its own. §0 says the two are meant to be the same number
-and that this file exists to record where they are not -- and measuring how near
-they are says the agreement is very close indeed: **32 of the 40 projects with a
-ladder sit within 1% at the median, most of them exactly 1.**
-
-`HorseProject` is the extreme outlier at **2.4291**, and three separate things say
-the horse is right and the measurement is wrong.
-
-Its forward ladder's rungs are 5, 125.112, 214, 303.906 and 450. Its **movement
-type** asks for a forward walk of 125.11 and a run of 450 -- the rungs are
-authored at the game's own numbers. Its **shipped table** then reads very nearly
-the identity: 121.46 at a goal speed of 125, 312.57 at 324.5. So the graph, the
-masters and the table all agree the horse travels at about what it is asked for.
-
-The **animation cache** does not. It records `WalkForward` as 182.344 units in 0.6
-seconds, which is 303.9 u/s, and every rung playing that animation is out by the
-same 2.429 while every rung playing `TrotForward` is out by the same 1.5387 -- a
-constant per animation rather than per rung, so it is the recorded motion and not
-the blend. The cache duration agrees with the animation's own, checked against all
-6,674 motion blocks, so it is the displacement that is wrong and not the span.
-
-**The horse's cache is independently known to be damaged.** `RunForward` is
-recorded as travelling zero and `SprintForward` carries no motion block at all, so
-two of its four gaits are already missing before any of this. That is why it holds
-0 of its 289 points and why no correction here would help: only the cache
-disagrees with the shipped table, and the cache is the one input that cannot be
-checked against anything else.
-
-Held by `RungDeliveryTests`.
-
-**The deviation is always below the chord, never above.** A faster rung is a shorter
-clip, so `(s_a - s_b)` and `(D_a - D_b)` always carry opposite signs. That is why every
-chord-based model tested came in short and never over.
-
-That is a property of how the clips were authored, not of the blend. Built deliberately
-the other way — a faster rung given the *longer* clip — the same formula puts the arc
-above the chord, and `hkmeasure` reproduces it: 300 u/s at 1.0s against 125 u/s at 0.8s
-delivers 222.22 at the midpoint where the chord says 212.5. The sign is what the corpus
-supplies; the curve is what the runtime supplies.
-
-### Verification
-
-Over the whole file, on the four cardinal records, selecting the blender by the
-state's family and the record's compass direction, with no fitting:
-
-    records where family + direction leave exactly one candidate    122
-      median relative error < 1%                                    105
-    all deterministically selected records                          173
-      median relative error < 1%                                    114
-      median of the per-record medians                            0.13%
-
-The 122-record figure is the honest one — no selection freedom, so no fitting is
-possible. Against a linear chord the same records score 10-25%.
-
-The misses are blender **identification**, not the form: they concentrate on
-`NPC_Bleedout_MT` and `NPC_Drunk_MT`, which §5.3 cannot place.
-
-#### 6.1 The residual, and what it is not
-
-The closed form is exact at the rungs and at saturation and slightly out between them.
-Two explanations have been offered for that and both are refuted below, so the section
-is kept as a record of what the residual is **not**.
-
-The discriminating case is a segment whose two children have *equal* durations, where
-the duration rule is inert — `d(u)` is that duration whatever the law — so any error
-left must come from somewhere else. `SphereCenturion`'s forward ladder provides one, and its two segments
-sit side by side in a single record:
-
-    w=  5.00   |V|=192   d=38.46154      content   4.992    mt_forward @ 0.026
-    w=192.00   |V|=192   d= 1.00000      content 192.000    mt_forward @ 1
-    w=384.00   |V|=384   d= 1.00000      content 384.000    mt_fastforward @ 1
-
-    segment 1, durations 38.46 -> 1.0        shipped     model    rel err
-        x = 123.0                            12.9459   12.9531     0.0558%
-        x = 173.5                            40.7274   40.7982     0.1739%
-        x = 188.0                           106.1208  106.5887     0.4409%
-        x = 192.0                           190.5433  192.0000     0.7645%
-
-    segment 2, durations 1.0 and 1.0
-        x = 324.5                           324.4792  324.5000     0.0064%
-
-The second segment is a pure identity under the model — equal durations and collinear
-travel give `y = x` — and it lands within 0.0064%, **a factor of 120 better** than the
-first segment reaches. Duration mismatch is what the error tracks.
-
-**Solve for the blend weight rather than for a shift in x and it gets tidier.** Segment 1
-has the same clip at both ends, so `|V|` is constant and the implied weight follows from
-the duration alone; segment 2 has equal durations, so it follows from `|V|` alone:
-
-    segment 1                          segment 2
-      x=123.0   w - u = -2.208e-04       x=324.5   w - u = -1.084e-04
-      x=158.5           -2.200e-04
-      x=181.0           -2.166e-04
-      x=192.0           -2.041e-04
-
-Within a segment `w = u - c` with c constant to about 8%. **The 120-fold difference in
-visible error is sensitivity, not a difference in kind**: the same ~1e-4 error in the
-weight moves y by 0.0064% on a flat segment and by 0.76% near the top of a steep one.
-
-**`c` looked like it was not one number**, because 2.1e-4 and 1.08e-4 came out of the two
-segments of this one record. Both of those are `c` measured in *weight*, and a weight is
-a segment-relative unit: the same shift in x is a different `c` in every segment. Read in
-x instead, the two segments give 0.0400 and 0.0208 — and the second is a two-point
-segment fitted on a duplicate terminal point, which constrains nothing. Held at the first
-segment's value it lands within 0.006%.
-
-That is the mistake this document made twice: it fitted the correction per segment, in
-per-segment units, and then took the spread between segments as proof that no constant
-existed. The spread was the units.
-
-#### The blend law itself is now measured, and it is exactly §6
-
-Everything above infers the law by fitting the model to the shipped file. That is
-backwards: the law can be measured directly, by running the blend. `hkmeasure` (§12)
-drives a real `hkbBlenderGenerator` inside Havok Behavior's own runtime, over two
-synthetic clips whose travel and duration are chosen rather than recovered, and reads
-the root motion back frame by frame.
-
-Two clips, weights 0 and 1, `flags=0x11` (`FLAG_SYNC | FLAG_PARAMETRIC_BLEND`),
-`syncMaster=-1` — the shipped ladder configuration:
-
-    clip a   duration 1.0   travel 100   speed 100
-    clip b   duration 0.8   travel 300   speed 375
-
-        x       delivered     §6 predicted    rel err     u recovered
-      0.00      99.999985      100.000000     1.5e-07     -0.00000007
-      0.25     157.894727      157.894738     6.3e-08      0.24999996
-      0.50     222.222221      222.222223     9.0e-09      0.49999999
-      0.75     294.117607      294.117648     1.4e-07      0.74999987
-      1.00     374.999980      375.000000     5.3e-08      0.99999994
-
-`u` recovered from the delivered speed equals `x` to seven or eight decimals, and the
-error is at float32 epsilon — the precision of the thing being measured. **There is no
-correction term.** `y(x) = |lerp(V_a, V_b, u)| / lerp(d_a, d_b, u)` with `u` the plain
-normalised position between the bracketing rung weights is not an approximation to the
-runtime's behaviour; it is the runtime's behaviour.
-
-The figures are identical for a 10-second and a 1000-second sampling window, so they are
-not a statistical artefact. Getting there required removing one of my own: Havok
-accumulates `worldFromModel`, and at a few hundred units a second a float32 stops
-resolving a 1.7-unit increment within a minute, which manufactured a spurious residual of
-about 1e-4 that looked exactly like a weighting constant. Resetting the character to the
-origin each frame and accumulating the deltas in double makes it vanish.
-
-#### 6.2 The sampler reads the curve 0.04 early
-
-With the law fixed, the shipped file has exactly one degree of freedom left, and it is in
-x. Solve every shipped point back for the x at which the law would have produced it, over
-every record whose ladder can be identified without fitting — 832 points, 38 projects:
-
-    dx      0.038   0.039   0.040   0.041   0.042   other
-    points     19      48      99     125      45     496
-
-The peak is not a fitting artefact; `dx` is measured per point against rungs read from the
-graph. Fitting the general form `x' = a·x + b` over the well-determined creatures gives
-
-    a = 1.000000        b = -0.040445
-
-a pure offset with no scale component. **The sampler stored x and recorded the response at
-`x - 0.0404`.**
-
-**It is one number per block, not one number for the file.** The `other` column above is
-496 of the 832 points, and fitting the offset per block rather than per point says why.
-Within a block it is a single number: sweeping it against each of a block's nineteen
-records separately gives 0.0400 for every heading of `SphereCenturion` and 0.0385 for
-every heading of `BallistaCenturion`, to within the 0.0005 the sweep resolves.
-
-Between blocks it is not, and the **basins** are the evidence rather than the depths. Take
-the span over which a block's error stays within twice its own minimum: `SphereCenturion`
-holds 0.0385 to 0.0415 and `VampireLord` holds 0.0295 to 0.0325 -- equally tight at 0.0030
-wide, and **disjoint**, so no single offset satisfies both. The widths are what counts and
-not the error levels, which differ by an order of magnitude between the two: the vampire
-lord's worst is still better than the centurion's best, and a shallow minimum would be no
-evidence at all.
-
-**Four things it is not.** Not the **grid**: all 18,302 goal speeds in the file are exact
-multiples of 0.5, so there is no fractional step for 0.03 to hide in, and a block's records
-do not even share one grid while the offset fitted to each is the same number. Not
-**stored**: `BSSpeedSamplerModifier` carries `state`, `direction`, `goalSpeed` and
-`speedOut`, and none of them is a shift. Not the **blend law**: the two centurions are both
-synchronised three-rung ladders with the same rung weights and still disagree.
-
-And not **damping**, which was the best guess -- a speed approaching its goal at a constant
-rate is left short by a constant, which is exactly the pure offset with no scale the corpus
-fit found. But `SphereCenturion`, `BallistaCenturion` and `Spriggan` carry no
-`hkbDampingModifier` anywhere and have three different offsets between them, and the
-player's damping is a PID with integral action (`kI = 0.015`), which drives a steady-state
-error to zero rather than leaving one.
-
-**What sets it per block is not known.** Eleven blocks fit sharply enough to pin an offset
-and nine of them land between 0.0385 and 0.0400, so the variation is small; against the
-ladder's own properties the offset correlates with nothing -- first rung duration r = 0.14,
-second rung duration r = 0.23, second rung weight r = 0.10, top weight r = 0.31, duration
-ratio r = 0.04. An apparent monotone relationship with the first rung's duration on four
-hand-picked creatures does not survive the other seven.
-
-So the global 0.0404 is a compromise rather than a law, costing those blocks 0.002% to
-0.004% against their own best. It is kept because fitting one per creature would be fitting
-to the answer, and it remains the only fitted number in the rebuild.
-`SamplerOffsetTests` holds the measurements.
-
-What it does to the file, over all 832 points with no selection of any kind:
-
-                              median error    within 0.05%
-    the law at x                  0.2225%          27%
-    the law at x - 0.0404         0.0245%          59%
-
-and over the creatures whose ladders are unambiguous, 0.0715% to 0.0021%. On
-`SphereCenturion`'s forward record, which carried the largest residual in the file:
-
-        x      shipped     law(x)    err     law(x-0.04)    err
-      123.0   12.945877   12.953101  -0.056%   12.946102   -0.002%
-      158.5   24.872831   24.899417  -0.107%   24.873569   -0.003%
-      173.5   40.727379   40.798219  -0.174%   40.728869   -0.004%
-      185.5   83.110947   83.400699  -0.347%   83.111410   -0.001%
-      190.0  136.316147  137.078416  -0.556%  136.298652   +0.013%
-      192.0  190.543274  192.000000  -0.759%  190.473703   +0.037%
-
-**It is fitted, and it is the only fitted number left.** The admissible inputs to a
-rebuild are the behaviour graph, the movement types and the root motion; this is none of
-them, and was obtained by minimising the error against the file it is meant to predict.
-It is not the same kind of thing as a per-creature threshold read off its own curve — it
-is one global constant, identical for every creature, and it describes the tool Bethesda
-sampled with rather than the data being described — but a rebuild that has to be handed
-it is not deriving the file from its inputs alone, and this document should not pretend
-otherwise.
-
-The `x - 0.0403` of earlier revisions was therefore right about the shape and wrong about
-the footing. It was withdrawn because it could not be found in the executable, the SDK,
-the authoring file or any behaviour graph, and because per-segment fits scattered. The
-scatter was the units, and the search was in the wrong place: this is a property of
-Bethesda's sampler, which is not shipped.
-
-**Where it does not come from**, each excluded by measurement rather than by argument:
-the blender, which reproduces the law exactly at the parameter it is given (§6.1); the
-flags, which are plain `PARAMETRIC_BLEND` (§5.2); `m_minCyclicBlendParameter` and
-`m_maxCyclicBlendParameter`, which are `[0,1]` on every speed blender and inert without
-the cyclic flag; and the sampling grid, which is 0.5 on every record in the file, so the
-offset is not a fraction of a step. It is 12.4% of one.
-
-**This also accounts for the floor-rung region.** `FalmerProject` key 1, whose first
-points §9 listed as unexplained:
-
-        x      shipped     law(x)      law(x-0.04)
-       0.00    5.00106    +0.001%        +0.001%
-      65.50   12.56318    -0.102%        -0.001%
-      85.00   24.52383    -0.198%        -0.001%
-      93.00   40.24257    -0.322%        +0.002%
-      97.00   59.22466    -0.466%        +0.011%
-
-Below the lowest rung the blender holds the floor child flat — measured, with a ladder at
-5 and 100 delivering the floor clip's speed for every parameter from 0 to 5, no partial
-weighting and no ramp from the origin. The engine ramps from the origin when it *reads* a
-table below its first point (§4.2), but that is the query side, and the two were being
-confused.
-
-**What is left is ladder identification, not arithmetic.** The residual that survives the
-offset concentrates in records whose blender §5.3 cannot place — `HighlandCowProject`,
-`Spriggan`, `WerewolfBeastProject` — where the error stays at tenths of a percent whatever
-the offset, and in records that change ladder partway up, like `FalmerProject` key 2,
-which leaves the walk blender at x = 100.5 and is answered by the run blender above it.
-
-**Consequences for a generator.** The closed form is exact at the rungs and at
-saturation — a saturated point evaluates `|V| / d` with no interpolation and matches to
-0.00006% — and it is exact on any segment whose children share a duration. It is up to
-a fraction of a percent out between rungs of differing duration, which is most of them.
-That is accurate enough to author a creature and to predict what one will do, and not
-accurate enough to reproduce the shipped file — which the cache's own rounding rules out
-in any case (below).
-
-#### A curve may cross a gait transition
-
-One `iState` value does not always mean one ladder. `FalmerProject` key 2 is
-`Falmer_1HM_Walk`, and its curve is the **walk** family below that movement type's
-`ForwardWalk` and the **run** family above it:
-
-    x=100.0   shipped  91.66   walk ladder  92.30   0.71%
-    x=100.5   shipped 169.92   <- the crossover, matching neither
-    x=101.0   shipped 179.49   run ladder  179.49   0.00%
-    x=184.5   shipped 181.42   run ladder  181.44   0.01%
-    x=324.5   shipped 298.61   run ladder  298.66   0.02%
-
-The threshold is `ForwardWalk` = 100.44 and the two families are `*Blend` and
-`*Blend_Run`. A generator that evaluates one ladder over the whole sweep saturates at
-175.81 and is 41% low by the top of the range. Which states cross and where is not
-surveyed; this is one measured instance.
-
-#### Verified on
-
-    FalmerProject key 1, all 19 records, 164 points   /* no gait transition */
-      median error                     0.276%
-      within 1%                       144 / 164
-      outliers                         20, all at point index 0-3
-
-    the whole file, four cardinal records per entry, no fitting
-      family + direction leave one candidate           122 records
-        median error < 1%                              105
-
-**Scope and residual.** The 20 outliers are all in the first four points of a curve —
-the steep region at and below the floor rung, where the model clamps to the floor child
-and the shipped data does something slightly different. Both signs occur (15 of 20 have
-the model high), so it is not a settling lag. Unresolved.
-
-Quadruped side and back records have no compass family at all and are not covered:
-171 of the 344 cardinal records could not be assigned a blender, mostly for that
-reason.
-
-## 7. Authoring a creature
-
-### Choosing MOVT
-
-`MOVT`'s eight translation values become the cardinal rung positions, and a rung's
-content is what its clip delivers, so:
-
-    MOVT <dir>Walk = travel_walk / (duration_walk / PlaybackSpeed_walk)
-    MOVT <dir>Run  = travel_run  / (duration_run  / PlaybackSpeed_run)
-
-The shipped game follows this: of **428 rungs** whose position is a `MOVT` Walk or Run
-value, **348 agree with their clip's content to within 1%**, 369 within 5%, median
-ratio 1.000.
-
-    1  pick a walk clip and a run clip for each of forward, back, left, right
-    2  choose each clip's PlaybackSpeed -- the real tuning knob, since one animation
-       reused at several rates is how a gait ladder is built
-    3  compute the delivered speed of each; those eight numbers are the MOVT record
-    4  place the blend rungs at the same eight numbers
-    5  regenerate the table
-    6  verify content / position == 1.000 on every cardinal rung
-
-Step 6 is one division per rung and catches the only failure mode. When the two drift
-the ratio is a recognisable playback rate:
-
-    HorseProject    Horse_Default_MT   ForwardWalk   125.11 vs 303.91   x2.429
-    ChickenProject  Chicken_Default    ForwardRun    251.94 vs 403.10   x1.600
-    BearProject     Bear_Default_MT    ForwardWalk    59.82 vs  89.74   x1.500
-    DogProject      Dog_Default_MT     ForwardWalk    74.54 vs 104.36   x1.400
-    RieklingProject DLC2Riekling       ForwardWalk   167.42 vs 100.46   x0.600
-
-### Why a wrong MOVT still matters
-
-It does not slide the feet — the table records the content, so the gait blend stays
-correctly indexed and the animation matches the motion. What breaks is upstream:
-`MOVT` is what the engine plans movement with, so a dog whose record says 74.54 while
-its clip delivers 104.36 travels 40% faster than pathing, combat spacing and arrival
-timing assume.
-
-Keep position and content equal and the table degenerates towards the identity. That
-is the sign it was authored correctly.
-
-### Changing an existing creature
-
-    input                              controls
-    clip travel and duration           the content: what the actor delivers, in y
-    ClipGeneratorEntry.PlaybackSpeed   scales content; the knob that aligns it to MOVT
-    blend rung m_weight                the position, in x
-    RACE MOVT                          what the game requests, and what the cardinal
-                                       rung positions are set from
-    top(s)                             how far along x the table covers
-
-To make an actor faster, raise the content — add or replace a faster clip, or raise
-its `PlaybackSpeed` — then move the rung positions and the `MOVT` record to match, or
-the table will simply record the new mismatch. Editing `y` in the file desynchronises
-it from the animations it describes and can violate I9.
-
-## 8. Generating a table
-
-`HKSK.Speed.SpeedDataGenerator` writes one, and `tools/speedgen` runs it. It is
-written for the engine that reads it (§4), not to reproduce the shipped file, and
-where the two disagree the shipped file is the one with the tool's habits in it:
-
-    for each project with a BSSpeedSamplerModifier:          /* the one reader, §5.1 */
-        for each value s the graph can put iState at:         /* StateKeys, §4.5 */
-            arms = the compass the graph plays at s            /* §5.3, §6 */
-            for (d = 0.0f; d < 0.95f; d += 0.05f):             /* 19 headings, I4 */
-                for (x = 0; x <= max(top rung, 2 x fastest MOVT speed); x += 0.5f):
-                    y = closed form of §6 at x, times the pose's root-motion share
-                retain points at 0.5 units
-            emit entry { key = s, records = 19 curves }
-
-- **the projects** are the 41 with a sampler. The eight without one ship a table nothing
-  reads, and the game answers a request for an absent project unchanged (§4.2), which
-  is what those eight get either way;
-- **the keys** are the values the graph writes, not the constants it declares. 128
-  blocks; 76 of vanilla's 86, the other ten being the eight unread tables and the two
-  keys no graph can write. Six writable keys are refused. Driven into their state,
-  nothing sampler-fed is live beside them and the pose there carries no root motion
-  -- the rider's mounted sprint and swim on its saddle offset, the first-person
-  sprint and its mounted states, a camera -- or, for the horse's own sprint, a clip
-  whose motion block the cache does not hold (§6.3). Nothing the animation does there
-  can be measured, and an absent block is the game's own answer: the request passes
-  through unchanged, which for a camera carried at the body's speed is exact.
-
-  For such a key the graph is first driven *into* the tagged state
-  (`SpeedDataGenerator.TaggedAt`): one event per state on the way up that is neither
-  its machine's start nor chosen by a sync variable -- the event that also enters the
-  most other states on the way, then the shortest, since raising every transition's
-  event at once sends the player's root through `CartExit` as readily as
-  `attackStart` -- with each sync variable pinned to its state, and the evaluator
-  now following a transition's `toNestedStateId` and descending a
-  `BSOffsetAnimationGenerator`, below which the player's whole third-person tree
-  hangs. A bound `startStateId` is pinned to the state as well -- the bleedout's
-  `i1stPerson`, the weapon selection's `iRightHandType` -- unless the variable is a
-  boolean that cannot hold the id, and a readied one-hander is assumed, since the
-  transitions into the attack states ask for one. The reading counts only when the
-  writer itself comes out active, and then the sampler-fed ladders live beside it are
-  the key's. Measured: the sprint states and the bleedout land and carry no ladder,
-  which agrees with vanilla's flat blocks 1 and 5; the perk states land, and the bow
-  and block locomotion live beside them is what vanilla ships for keys 16 and 17,
-  which the masters' walks-alike reading also gave; the magic-casting state lands on
-  its own ladder; the power attacks land and have no ladder beside them, so they
-  stay flat. A bound chooser is pinned to the state where it can name it and to the
-  machine's own start where an event has to do the entering -- pinned to
-  `AttackState`, `iWantBlock` started `1HM_Behavior` inside it and the locomotion
-  events walked it out; left alone, it starts the machine blocking. And the chosen
-  transition's own condition is read for what it asks -- `iRightHandType == 7` into
-  the bow attack, `bWantCastLeft == 0` into the melee one -- and each `name == k`,
-  `name >= k` or `name > k` conjunct is pinned before the chain's own choosers. That
-  needed the expression parser to accept a bare condition at all: until it did,
-  every `hkbExpressionCondition` on a transition counted as holding, 878 of the
-  game's 879 parse now (the last is malformed), and evaluating them moved the
-  set-data sweep by two sets.
-
-  The ordinary attacks needed one more thing, and it is the nature of the state.
-  The evaluator reads a graph **at rest**: it runs passes until the selection stops
-  moving, and after each pass the clips it landed on have played to their end and
-  raised their end triggers. An attack is not a resting state -- its own clip raises
-  `attackStop`, and on the second pass the machine has left. Watched pass by pass,
-  `1HM_Behavior` sat in `AttackState` on the first and in `BlockState` on the next.
-  So a tagged state is read *as it passes*, with the end triggers held
-  (`ActiveGenerators.Evaluate(..., finishClips: false)`), and the attack states land:
-  the player's keys 12 and 13 take the weapon locomotion live beside the attack,
-  which is the layered reading the flag work found from the other side
-  (`docs/animation-set-data.md` §6). Where the state lands and nothing sampler-fed
-  is live beside it, the pose it plays is read flat -- the sprints, the bleedout,
-  the power attacks -- so the flat reading off a tag's subtree is now only a
-  fallback. Twenty-three keys are placed this way, six remain unread;
-- **the curve** is §6 at the goal speed itself. The query applies no offset; the
-  0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
-  keeps it for reading that file;
-- **the sweep starts at zero** on every heading, because below a record's first point
-  the query interpolates from the origin, so the first point has to be the response
-  at zero. The shipped sweeps start later headings at 0.5 and settle in (§9);
-- **the sweep ends** past everything the game can ask: the ladder's whole range, whose
-  top rung on the humanoids is the run at ten times speed, 3,510, and twice the
-  fastest speed the movement type names, for `SpeedMult`. Above its last point a
-  record hands the request back unchanged, so a sweep that stops short -- the
-  shipped 324.5 on 74 of 86 blocks -- switches the sampler off at speed. Beyond the
-  top rung the curve is flat and the reach costs one point;
-- **retention** is the shipped file's own greedy pass at 0.5 units rather than 2:
-  the game draws straight lines between the points it keeps, and 2 is coarse against
-  a half-unit grid. 62,641 points, 524 KB.
-
-Read back through the game's own lookup, the result holds 13,451 of the 16,930 shipped
-points on the 76 shared blocks (79.5%), and each of the three choices above costs
-against that measure -- the offset 171 points, the start 99, the tolerance a whole
-record here and there -- and is kept because the engine, not the file, is what the
-table is for.
-
-The shipped file's own recipe, for reading it:
-
-    for each sampled state s:                      /* from §3.1 */
-        for (d = 0.0f; d < 0.95f; d += 0.05f):      /* 19 iterations, I4 */
-            for (x = start; x < top(s); x += 0.5f):
-                y = closed form of §6 at x - 0.0404
-            retain points at 2 units
-        emit entry { key = s, records = 19 curves }
-
-Everything except `top(s)`, `start` and the retention rule follows from this document.
-
-**Retention is optional.** A generator that does not need to match the shipped file
-byte for byte can emit every grid point: 1,206,044 points and about 9.7 MB against the
-shipped 18,302 points and 162,527 bytes — 59x, and more accurate, since the consumer
-then interpolates across half-unit steps rather than gaps of up to 1768 of them. Every
-tenth grid point is 6x and still exact to well under one unit.
-
-**Choosing the sweep.** The sweep may start at or below the ladder's bottom rung and
-lose nothing, because the blend clamps there and the response is constant. Starting
-above it discards live response. The file has one of each:
-
-    DeerProject:21   starts at 400, bottom rung 416.50 -> constant below it;
-                     nothing lost
-    GiantProject:2   starts at 150, bottom rung  50.00 -> 50..150 is live and absent;
-                     a request of 50 returns y(150) = 65.87 where 50.00 is correct
-
-So `min(x)` is a claim that the response is flat below it — true for the deer, false
-for the giant.
-
-**The 0.5 grid is quantisation, not resolution.** About 11 of the swept positions
-survive per record — some 650 of them at the default bound — and the consumer
-interpolates between them, so the grid only fixes where a breakpoint may land, to
-within half a unit. The y error that introduces is
-bounded by `0.5 x slope`, about 0.43 units at the median slope of 0.86.
-
-Point counts per record in the shipped file, terminal duplicate included:
-
-    mean 11.2   median 11   min 2   max 121     quartiles 8 / 13, 90th 15
-
-Bimodal: a main mode of 8-14 holds 1052 of 1634 records, and a spike at exactly 2
-points holds 180 — the degenerate curves where y is constant. Per entry: mean 213,
-median 206, range 38 to 1037.
-
-## 9. What is still unknown
-
-**`top(s)`, the sweep upper bound.** Authored, not derived. It is the exclusive bound
-of the generator's loop, so the file exposes it only as `max(x) = top(s) - 0.5`:
-
-    top(s)     190    325    415    425    450    750    833   1000
-    max(x)   189.5  324.5  414.5  424.5  449.5  749.5  832.5  999.5
-    entries      1     74      1      2      1      2      1      4
-
-**`top(s)` is a speed**, in the same game units as everything else on the x axis, and
-two of the eight are demonstrably copied from a movement type: `DeerProject` key 21 is
-833, exactly `Deer_DefaultRun_MT.ForwardRun`, and `GiantProject` key 2 is 415, exactly
-`GiantCombatRun_MT.ForwardRun`.
-
-The deer settles which side is authored. 833 is a speed that exists elsewhere in the
-game data; its loop iteration count, 1666, is not a number anyone would type. So the
-bound is authored as a speed and the count is derived from it. (The other seven counts
-are all divisible by ten, so they would be unremarkable as typed constants — the deer
-is the only entry that discriminates.)
-
-325 is the default on 74 of 86 entries and its origin is unknown. It is a plausible
-place for one: across the 86 resolvable entries it exceeds the `ForwardWalk` of 81 and
-falls below the `ForwardRun` of 52, sitting at the 67th percentile of all walk and run
-values and at 88% of the player's own run. But that is where the number lands, not where
-it came from, and it is applied unchanged to creatures whose speeds span 61.84 to
-802.29.
-
-Pools searched and exhausted, so they are not searched again:
-
-    pool                                                  325    650    the twelve
-    RACE, every numeric leaf to depth 4, 161 records     1 hit      -   -
-    RACE SpeedOverrides (only 10 races carry any)            -      -   -
-    MOVT, all fields, 107 records                            -      -   3/12, mixed
-    GMST, 665 settings                                       -   1 hit  -
-    behaviour-graph float literals                           2      -   4/12 weights
-
-The single 325 in RACE is `DLC2SprigganBurntRace.Starting[0].Value`, a starting actor
-value; the single 650 in GMST is `fIronSightsDOFRange`, a Fallout leftover.
-
-The best remaining lead is that for three entries `max(x) + 0.5` equals the top weight
-of the state's blender exactly — dog and wolf 425, deer 833 — at a 2.7% control. It
-fails on the other nine. **3 of 12 is a lead, not a rule.**
-
-Two hypotheses are tested and dead:
-
-- **`V = MOVT ForwardRun x {1, 1.5, 2}`.** Reached 8 of 12 when scored against the
-  project's whole movement-type pool, but against the movement type each state
-  actually declares it falls to 2 of 12 and the multiplier disappears.
-- **The bound covers the blend.** None of the 8 non-default entries with a resolvable
-  family has `max(x)` equal to its family's top rung, and they fail in both directions
-  at once — the player's bow states sweep 6.4x past a ladder topping at 155.21 while
-  the giant's combat run stops at 67% of its blend. Meanwhile 30 of 35 default entries
-  have ladders running past 325 and were never raised.
-
-**Which blocks the sweep chose.** A project declares `iState_<movement type>` constants
-for more types than its table has blocks, and the draugr proves the *sweep's* choice is
-not a function of the inputs: `DraugrProject` and `DraugrSkeletonProject` root at the
-same behaviour file, declare the same twelve constants and ship six blocks against one
-(`BlockSelectionTests`). What *is* a function of the inputs is which blocks the engine
-can ask for (§4.5): the values the graph writes. Measured over the 41 projects with a
-sampler, that rule holds 76 of the 78 shipped keys and refuses the other two as
-unwritable, and it explains as dead most of the declared-and-unswept constants that
-looked arbitrary -- the dog's 31, the wolf's 101, the sabre cat's 81, the spider's and
-the steam centurion's 1 are declared and never written. What remains is 49 keys the
-graph writes and vanilla did not sweep: FirstPerson's stances (it writes the humanoid
-set and ships one block), the draugr skeleton's weapons, the player's attack states,
-the netch's sprint, the sphere's ranged stance, the horker's swim, the horse's sprint,
-fall and swim. The generator writes them (§8).
-
-The masters agree with the sweep on one thing and it is no longer used. A race points
-at movement types through its six base movement defaults, and the **26** constants a
-race uses as its *walk* default all have a block while the **4** a race uses only to
-swim, sprint or run -- `BearSwimDefault`, `HorkerSwimDefault`, `NetchSprinting`,
-`SphereRanged` -- have none. That reads as the sweep walking each race on the ground; the
-engine asks for all four when the graph writes them, and the generator no longer skips
-them.
-
-The idle tree was read for the same question and cannot exclude a key. Every writer of
-a key vanilla did not sweep sits in a state entered by an event the idles send or the
-engine sends on its own: the player's attack keys by `attackStart` and its kin, the
-netch's sprint and the horse's by `SprintStart`, the sphere's ranged stance by
-`bowAttackStart`, the horker's swim by `HorkerSwimStart`, the horse's fall by
-`fallStart`; the rest are start states or expressions on variables the engine sets
-(`isSwimming`). What the idle tree adds is confirmation that those states are reached,
-not a reason to leave any out.
-
-**`max(x)` does not bound what the game can request.** 47 of the 86 entries stop below
-their own state's `ForwardRun` — the scrib sweeps to 324.5 against a movement type of
-802.29 — and 37 of those are still rising when the sweep ends. Above the last point the
-query does not clamp — it returns the request untouched (§4.2) — so above its own
-sweep an actor's gait blend is indexed on the raw request, exactly as if the table were
-absent. The sampler simply stops working for that actor at speed. The generator sweeps
-past the whole ladder and twice the fastest speed the type names instead (§8).
-
-**Bit-exact values are unreachable, by a proof rather than a gap.** The animation cache
-stores root motion at six significant digits and it is stored nowhere else, so the
-inputs are 2.1e-6 coarse against the 1.2e-7 a float32 needs (§6.1). The curve is
-reproducible; the bytes are not.
-
-**The duration rule for a synchronised blend** (§6.1). Linear interpolation of the
-children's durations is wrong, and it is what the closed form's remaining error is. The
-pose side is documented; the duration side is not, and no rule has been fitted across
-entries yet.
-
-
-**Where the sampler's 0.04 comes from.** Measured and characterised in §6.2 — a pure
-offset in x, no scale, constant across the corpus — but not explained. It is excluded
-from the blender, the flags, the cyclic range and the sampling grid, each by measurement.
-The tool that wrote the file is not shipped, so this may stay a measured constant.
-
-### The point-retention rule, found
-
-A record keeps about 11 of the goal speeds its sweep visits, and which ones is now
-known: **a greedy pass with a vertical tolerance of 2 units.** The line from the last
-kept point is stretched one half-unit sample at a time, and when a sample it would skip
-lies more than 2 units above or below it, the sample before is kept and becomes the new
-start; the last sample is always kept. `SpeedRecord.Retain` implements it and the
-rebuild writes its records through it.
-
-It was found by running candidates over the dense curve §6 produces and comparing the
-goal speeds kept with the shipped ones, on the seven projects whose every curve is
-rebuilt (133 records):
-
-    rule                           tolerance    x sets identical
-    Douglas-Peucker, absolute      0.05 .. 4          0
-    Douglas-Peucker, relative      0.05% .. 2%        0
-    greedy, relative               0.05% .. 2%        0
-    greedy, absolute               1, 4               0
-    greedy, absolute               1.99              58
-    greedy, absolute               2                 91
-    greedy, absolute               2.01              52
-
-A peak that sharp says the tolerance is exactly 2 and the misses are the curve, not the
-rule -- and across every record the rebuild builds, exactness follows the curve's own
-accuracy down:
-
-    worst |model - shipped|     records    x sets identical
-    < 0.001                         225    225   100%   (32 with more than two points)
-    0.001 .. 0.01                    34     30    88%
-    0.01 .. 0.05                    181    116    64%
-    0.05 .. 0.1                     107     53    50%
-    0.1 .. 0.25                     244     37    15%
-    0.25 .. 1                       481     40     8%
-    >= 1                            324      0     0%
-
-The misses near the top are one grid step at the first break, then carried: a
-deviation creeping past 2 half a unit earlier or later is exactly what a curve a few
-hundredths off does. Pinning the model to the shipped points, with the residual spread
-linearly between them, changes none of them, so the error that moves them lies between
-the kept points. `BallistaCenturion`, `SphereCenturion` and `SteamProject` keep exactly
-the rule's points on all 19 records each (`PointRetentionTests`).
-
-Two things about a record's ends are measured and not derived. Its last point is always
-the entry's largest goal speed (1,634 of 1,634), and 1,162 records write it twice: none
-of the 271 whose last segment is exactly flat do, 1,106 of the 1,307 whose last segment
-slopes do. **The rest cannot be derived from a curve.** `SteamProject`'s 19 records all
-keep their last break at 194 and all run exactly flat to the end in the model, and 16 end
-once while 3 -- headings 0.45, 0.50 and 0.90 -- end twice. Records the curve cannot tell
-apart split both ways, so what decides it is in the game's own samples: their last digits,
-which a model reproducing the curve to 0.001 does not carry. And where a record starts is not a property of its curve either. The first record of an
-entry, heading 0, starts where the sweep does -- at 0 on 80 of 86 entries, and the other
-six are the sweeps that start at 150, 324.5 or 400 -- and every later record loses at
-least its first sample: `SteamProject`'s heading 0.25 carries exactly heading 0's curve,
-the same first value and the same second point at (63, 12.599), and starts at 0.5 where
-heading 0 starts at 0. Some lose more -- the troll's headings nearest backward start at 1
-and 1.5 -- which reads as the sampler settling after each change of heading, the same
-first sample §6.2g finds kept and measured in twenty-fourths on the three raw-`Speed`
-ladders. The rebuild starts heading 0 at 0 and the rest at 0.5.
-
-**So a record the rebuild writes is not the shipped record, and cannot be made to be.**
-Given each shipped record's own first and last goal speed, the rule reproduces the kept
-points of every one of the 225 records the model gets within 0.001. Given only what can
-be derived -- heading 0 from 0, the rest from 0.5 -- and the shipped entry's own upper
-bound as well, it reproduces 57 of the 259 within 0.01; with 324.5 in place of the
-entry's bound, 27; with the ladder's own top, which is what the rebuild uses, none. The
-settling that moves a record's start moves every break after it, and the bound is
-authored (above), so taking 324.5 from the file would add a second constant fitted to
-the answer for 27 records. The rebuild keeps the ladder's top.
-
-### How much of the file is actually rebuilt
-
-**A curve fits or it does not.** Averaging the error over the points of one record
-hides a bad end, and averaging over records hides whole records being wrong, so the
-score here is per curve: a curve passes when *every* point of it is within 2%. Counting
-that way, over the 1482 curves belonging to the 41 projects that read the table:
-
-    pass, every point within 2%                     660    44.5%
-    rebuilt and does not hold                       214    14.4%
-    no compass to rebuild from                      608    41.0%
-
-Seven projects have every curve they own inside 2%, and the worst point of the worst
-of those curves is half a percent:
-
-    BallistaCenturion  ChaurusProject  DraugrSkeletonProject  SphereCenturion
-    SteamProject       TrollProject    VampireLord
-
-#### Not every ladder is synchronised
-
-**21 of the 1059 sampler-driven ladders carry `flags = 0x10` — `FLAG_PARAMETRIC_BLEND`
-without `FLAG_SYNC`** — and §6's form does not apply to them. A synchronised blend puts
-its children on one clock, so travel and duration interpolate separately and the speed
-is the first over the second, which is the hyperbola of §6. Without sync the children
-run at their own rates and what blends is the motion they are already producing: a
-straight line between the rungs.
-
-**Measured against Havok, not inferred.** `hkmeasure` with two rungs at 5 and 192, the
-same clip at playback 0.026 and 1:
-
-    flags   x = 100      what it is
-    0x11      9.881      the synchronised form: travel over blended duration
-    0x10     99.996      the velocity lerp: 4.992 + 0.508 x 187.008
-
-and the cyclic flag on a ladder whose rungs are speeds makes it degenerate, which is why
-a compass carries it and a ladder does not.
-
-`ChaurusProject`'s backward ladder is the clean case. Its floor rung sits at 5 and
-delivers 4.94, its next at 95.09 delivers 95.01, and they are the same clip at two
-playback speeds — exactly the shape §6.1 works through for `SphereCenturion`:
-
-    x = 8.5      synchronised      5.129
-                 unsynchronised    8.441
-                 shipped           8.419
-
-The record also has only four points across its whole range, which is the giveaway: a
-hyperbola that steep would have forced the sampler to retain a dozen, as
-`SphereCenturion`'s does. Branching on the flag takes the chaurus from 10 of 19 curves
-to 19 of 19.
-
-Most of the 608 are quadrupeds and single-gait creatures, which turn rather than
-strafe: they have no compass at all, so their side and back records come from a turn
-axis §6 does not model.
-
-**What the 214 failures are**, taken apart rather than averaged:
-
-    one record spanning two gaits      27   BenthicLurker key 1, Falmer key 2
-    a uniform factor of two            19   HMDaedra
-    the floor of the backward arc      35   Giant, AtronachFrost, Hagraven,
-                                            FrostbiteSpider, Spriggan, VampireBrute
-    the rest                          133   Werewolf, Riekling, FirstPerson,
-                                            Slaughterfish, Mudcrab, the player
-
-**None of them is a wrong family.** That is the cheap suspicion and it is measurably
-false: if a curve missed because the wrong compass answered it, some other compass in
-the same graph would fit, and trying all of them would find it. Over the corpus that
-rescues **0 of the 214**. Every one of the four compasses the falmer owns is outside
-tolerance on every one of its key 2 curves; the same holds down the list. An earlier
-revision of this document attributed 85 of the failures to a wrong choice of family.
-That was never measured and it is withdrawn.
-
-So what is left is in the blend or in the inputs, and not in the routing.
-
-#### The movement type names the compass, without reading a name
-
-A ladder's rungs are the speeds the movement type asks for, so a state and the compass
-that answers it can be paired arithmetically. `FalmerDefault` walks forward at 100.44
-and runs at 361.24; exactly one of the falmer's four compasses carries both as rungs:
-
-    FalmerDefault        fwd 100.44/361.24      MagicCast_DirectionalBlend  [5, 100.442, 361.242]
-    FalmerBowDrawn       fwd 100.44/100.44      Bow_DirectionalBlend        [5, 100.442]
-    Falmer1HMWalk        fwd 100.44/175.77      MT_DirectionalBlend         [5, 100.442, 175.774]
-    Falmer1HMRun         fwd 180.62/397.00      1HM_DirectionalBlend_Run    [180.62, 360.913, 397.004]
-
-    GiantDefault         fwd  61.84/61.84       DirectionalBlend            [5, 61.844, 123.688]
-    GiantCombatWalk      fwd  82.46/247.37      CombatDirectionalBlend_WALK [5, 82.458, 247.374]
-    GiantCombatRun       fwd  50.00/415.00      CombatDirectionalBlend_RUN  [50, 415, 622.5]
-
-`MagicCast_DirectionalBlend` shares not one token with `FalmerDefault`, so the name
-heuristic of §8 could never have reached it, and the numbers reach it on all eight
-speeds at once. **This is the strongest evidence that §5.4 is literally true** — and
-that the routing can be derived from the three admissible inputs rather than from the
-graph's prose.
-
-Scored over the corpus, though, it is a corroboration and not yet a replacement. It
-decides 31 of the 89 states and agrees with the names on 25; of the six disagreements,
-four are the player's, where a **horse** movement type happens to share numbers with a
-hand-to-hand compass, and one is a falmer state with no records in the table. Swapping
-it in for the name heuristic changes no curve's verdict, in either direction.
-
-The correspondence it rests on is real but partial. Across the 324 directions whose
-movement type is known, a rung equals the walk speed 157 times (48.5%) and the run speed
-140 times (43.2%). Where it is exact it is exact to the last digit; where it is not, it
-is close but not equal — the player's forward ladder has a rung at 82.4541 against a
-movement type asking for 80.1 — and **that gap is the reason the speed table exists at
-all** (§0). So §5.4 is a placement rule the tool followed, not an identity the engine
-enforces.
-
-#### A record can change gait partway up its own range
-
-A **gait-spanning** record is one curve answered by two compasses. `FalmerProject` key 2
-walks to about 100 and runs above it, and answering the whole thing with one ladder puts
-everything above the switch out by up to 44%:
-
-    x        shipped    MT (walk)    1HM run
-      99.0    77.507      77.489     179.492
-     100.0    91.656      91.623     179.492
-     100.5   169.924     100.473     179.492      <- the sampler caught the transition
-     101.0   179.492     100.759     179.492
-     324.5   298.606     175.810     298.608
-
-Below the switch the walk ladder answers to 0.04% and above it the run ladder answers to
-0.00%. The gait machines transition on the events `runStart` and `walkStart` with no
-condition attached, so the threshold is not *in the graph* — but it does not have to be,
-because **it is a movement-type speed**:
-
-    Falmer1HMWalk    forward walk 100.44   forward run 175.77
-    MT_DirectionalBlend rungs        5     100.442        175.774
-
-The rungs are the movement type's own numbers, which is §5.4 taken literally, and the
-switch is at the walk speed: above it the creature is running. So the *threshold* is an
-input — behaviour, movement type, root motion — and not a fitted constant.
-
-**What is still missing is which compass takes over above it**, and two rules were
-written for that and both measured and dropped:
-
-- *above the walk speed the running family answers.* It costs nineteen curves on the
-  giant alone, because `GiantCombatWalk` asks for 82.46 walking and 247.37 running and
-  those are the second and third rungs of **one** ladder — `CombatDirectionalBlend_WALK`
-  answers its records throughout;
-- *the same, but only where the state's own compass cannot reach the run speed.* That
-  spares the giant, but it also spares the falmer, whose `MT_DirectionalBlend` reaches
-  175.774 — its run speed, exactly. It fires only on the player and the benthic lurker,
-  where it is wrong, and costs seven curves.
-
-The falmer and the giant are therefore **not distinguishable by the three inputs as §6
-models them**: both have a compass whose rungs are their state's walk and run speeds,
-and one spans the switch while the other does not. Answering with a single compass
-throughout scores 660 of 1482; both rules score less, so the rebuild answers with one.
-
-A run against the shipped table confirms that no choice would have done: all four of the
-falmer's compasses are outside 2% on all nineteen of its key 2 curves, so picking one of
-them — however cleverly — was never going to rescue the curve. The two ladders the doc shows above must be blended
-across the transition, not switched between, and §6 has no form for that.
-
-`BenthicLurkerProject` key 1 has the same shape and **its thresholds are not derivable**.
-Its curves change ladder near 122 and again near 215, and its movement type says forward
-walk 122.15 and forward run 305.46 — the first matches, the second does not, and no
-movement type in any master carries a speed within half a unit of 215. An earlier
-revision of this document supplied 115 and 215.75 by reading them off the shipped curve.
-That is not an input and the numbers are withdrawn: the only admissible inputs are the
-behaviour graph, the movement types and the root motion, and a threshold fitted to the
-answer is none of them.
-
-§6 models one ladder per record; the falmer is the shape shown to need two, and what
-takes over where is a movement-type speed when the movement type states one.
-
-#### HMDaedra records exactly half of what its graph says
-
-Every point of all nineteen of its curves is the model divided by two: 2.4992 against a
-floor rung that delivers 4.9984, 12.4891 at x = 25 against 24.998, and a saturation of
-64 against a top rung of 128. Its clips are plain — `MT_Forward` travels 64 units in one
-second and `MT_FastForward` travels 128 — and the rungs sit at 5, 64 and 128, so the
-graph claims the weight and the delivery agree, as everywhere else.
-
-What it is not, each checked rather than assumed:
-
-    the clip duration       the animation file says 1.0, and so does the cache
-    the playback speed      0.0781 and 1, and 64 x 0.0781 is the 4.9984 on the floor
-    the sync flag           its ladders are 0x10 and the unsynchronised form is used
-    the cyclic wrap         measured against Havok; see below
-    the compass geometry    its nine arms blend to 128 at heading 0
-    the skeleton scale      1
-
-So it is one number, applied uniformly, and nothing found so far produces it.
-
-#### The backward arc is wrong at x = 0 and nowhere else
-
-The remaining floor failures are **one point per curve, the one at x = 0, and only in
-the backward arc.** The giant's backward records:
-
-    heading   x=0 shipped   floor rung   every other point
-      0.00        4.976        4.976        1.0000
-      0.30        6.855        4.883        1.0000
-      0.45        6.594        4.900        1.0000
-      0.50        6.851        5.000        1.0000
-      0.70        6.526        4.617        1.0000
-
-Forward is exact at x = 0; backward is 33 to 41% high, and from the second point on
-every curve agrees to four decimal places. Solving the shipped value back through the
-model gives the x it would correspond to:
-
-    heading   0.30  0.35  0.40  0.45  0.50  0.55  0.60  0.65  0.70
-    implied x 21.8  18.0  16.8  18.2  19.7  18.7  17.7  19.1  22.4
-
-So the sampler recorded the backward arc's zero as though it had been asked for about
-twenty units a second. It is not the ladder: forward and backward have the same
-two-rung shape, the same clip at two playback speeds, and no rung is being dropped.
-It is not `fMinSpeed` either, which is 0.1 for the giant and 5 for the frost atronach.
-Havok holds the floor child flat below its lowest rung (§6.1, measured), so this is
-something the sampler did and not something the blend does.
-
-**Which family a state belongs to.** This is the largest remaining error. The tree says
-which blends the sampler drives (§5.1) and which arm answers a heading (§5.2); the
-family is the part it only sometimes says.
-
-**How the graph sees a state at all.** The `iState_<MOVT>` variables are constants —
-their initial value is the key and nothing writes them. The *game* writes `iState`,
-from the actor's current movement type, and the graph compares the two. That comparison
-is visible where it is made: the shared quadruped behaviour carries eight
-`hkbExpressionCondition`s reading `iState != 50` and `iState == 50`, separating the
-horker, whose key is 50, from the other quadrupeds that share the file.
-
-Where a `BSiStateTaggingGenerator` sets `iState` to a key, the compasses beneath it are
-that key's, and nothing needs to be read from a name:
-
-    FalmerProject     1 -> Bow_DirectionalBlend        2 -> MT_DirectionalBlend
-    DefaultFemale     2 -> Sneak_Direction_Blend       6 -> H2H_1HM_Direction_Blend
-                      7 -> 2HM_Direction_Blend         9 -> Magic_Direction_Blend
-
-Eight projects carry tagging generators and three a `BSIStateManagerModifier`, which
-says the same thing a different way — binding each entry's `iStateToSetAs` to an
-`iState_<MOVT>` variable rather than storing the number. The tag reaches *nodes*, not
-names, and that matters: where it leaves more than one the movement type chooses among
-those nodes, and widening back to every compass sharing their name undoes it.
-
-**The file is part of the answer.** Bethesda split a graph along the lines the game
-switches on, so which file a blend lives in is a label the tree does not otherwise
-carry. The player has eighteen, several of them one locomotion family each:
-
-    mt_behavior                       1hm_locomotion
-    bow_direction_behavior            crossbow_direction_behavior
-    magic_readied_direction_behavior  sprintbehavior            horsebehavior
-
-`Bow_Direction_Blend` is defined three times with two different ladder sets under it,
-and the file separates them: the copy in `bow_direction_behavior` is the drawn-bow
-locomotion and answers `NPCBowDrawn` (key 3) and `NPCBowDrawnQuickShot` (key 16) to
-0.012%, while the `1hm_locomotion` copy is the bow merely equipped and answers `NPCBow`
-(key 8) to 0.062%. Taking either for the other is a 43% error.
-
-For the rest, what generalises is the movement type's own name, which §3.1 already
-recovers from the `iState_<MOVT>` variables:
-
-    GiantProject      key 2 = GiantCombatRun     -> CombatDirectionalBlend_RUN
-    DraugrProject     key 5 = DraugrGreatSword   -> 2GS_Direction_Blend
-    SphereCenturion   key 0 = SphereDefault      -> MT_Direction_Blend
-
-Matching on the tokens the two names share, once the creature's own name is removed,
-takes the total to 874 curves with a compass to rebuild from. Two normalisations are
-needed, because the
-two sides were written by different people: a movement type says what the actor is
-doing and a node says what it plays, so they differ by inflection — `NPCSneaking`
-against `Sneak_Direction_Blend`, `NPCMagicCasting` against `MagicCast_Direction_Blend`
-— and **`MT` is the movement type itself**, so an `MT_` blend is the default one.
-`SphereDefault` is answered by `MT_Direction_Blend` and the player's `NPCDefault` by
-the one in `mt_behavior`, to 0.013%.
-
-**Read the states from the root graph, not from every graph.** A sub-graph carries its
-own copy of the `iState_<MOVT>` variables and the copies do not always agree:
-
-    iState_NPCSneaking    0_master = 2   1hm_locomotion, bow_direction_behavior = 0
-    iState_NPCSprinting   0_master = 1   1hm_behavior = 2
-
-Merging them puts one movement type under two keys and makes the state look ambiguous
-when it is not — which is what hid the player's plain locomotion. The character file
-names the graph that counts, in `hkbCharacterStringData.m_behaviorFilename`. Ten projects have every record placed and
-rebuilt to better than a tenth of a percent at the 90th percentile. Where two compasses
-tie, the answer is no compass rather than a guess.
-
-Records that change ladder partway up their range are a second case — `FalmerProject`
-key 2 leaves the walk blender at x=100.5 and is answered by the run blender above it —
-and §6 models one ladder per record.
-
-**Three creatures whose ladders do not describe their tables.** `HorseProject`'s rungs
-sit at 5, 125.112, 214, 303.906 and 450 but deliver 12.1, 303.9, 329.2, 467.6 and 0:
-the weight-to-delivery ratio is constant per clip (2.4291 for both walk rungs, 1.5385
-for both trot rungs) and `RunForward` has no travel in the cache at all, so the cache's
-duration for these clips is not the duration the blend uses. `HMDaedra`'s compass has
-nine arms at 0.05 and 0.95 rather than eight from 0, and one of its ladders is
-non-monotonic — `MT_BackwardRight_Blend` delivers 128 at weight 64 and 64 at weight 128.
-`DwarvenSpiderCenturionProject` has a sampler and a compass whose children are clips,
-so it has no speed axis to describe. None of these is an identification problem.
-
-**Unverified rather than unknown:** quadruped side and back records, which have no
-compass family, the two player states §5.3's name fallback cannot place, and the eight
-non-hovering projects that bind no sampler blender. The 15 intermediate directions were
-here until the travel was treated as a vector (§6); they are now measured.
-
-**One measured anomaly.** `DeerProject` key 21 stores y = 391.50 at x = 400 where the
-blend, clamped below its bottom rung of 416.50, should deliver 416.67. There is nothing
-to interpolate in that region, so there is nothing to be approximately right about.
-
-**Sentinel rungs.** The player's ladders carry a top rung at 3509.88 and the sneak
-family at 1320, each exactly 10x the rung below. Those ladders never saturate, which is
-why "cover the blend" is undefined for them. Unexplained.
+translation and their duration as two independent linear ramps. For rungs
+`(w_i, V_i, d_i)` and `x` between rungs `a` and `b`:
+
+    u = (x - w_a) / (w_b - w_a)
+    y = |V_a + u (V_b - V_a)| / (d_a + u (d_b - d_a))
+
+clamped to the first rung's speed below `w_0` and the last's above `w_n`. Travel is a
+vector: a heading between two arms mixes two directions, and collapsing to a
+magnitude first overestimates by up to 8%. A quotient of two linear ramps is a
+hyperbolic arc, which is why the shipped curves look like acceleration ramps and
+why every chord model came in short. Between clips of equal duration a segment is
+exactly straight; the curvature is the duration mismatch and nothing else. A pose
+that carries only part of its root motion in the ladder — a blend with a standing
+idle — delivers that share of it (the daedra's half).
+
+`SpeedLadder.Evaluate(x)` is this law, and is the runtime's own response to about
+0.003%. Bit-exact reproduction of the shipped floats is unreachable: the cache holds
+root motion at six significant digits.
+
+### 6.1 Two things the shipped file has that the engine does not
+
+**A 0.0404 offset in x** (§6.2). Solving the shipped points back through the law,
+the sampler recorded the response at `x - 0.0404` while storing `x` — a lag of the
+tool that wrote it, constant within a block and slightly different between blocks.
+The query applies none. `SpeedLadder.Tabulate` keeps it for reading the shipped
+file; the generator does not use it.
+
+**A sweep that stops at 324.5** on 74 of 86 entries, below the run speed of 47 of
+them. Above its last point a record hands the request back, so the shipped sampler
+switches off for those creatures at speed.
+
+### 6.3 Damaged data
+
+`HorseProject`'s cache disagrees with its own rungs by a constant per animation,
+its `RunForward` travels zero and its `SprintForward` has no motion block. The
+werewolf is the same case in miniature. No model recovers them from the cache and
+none should try; the cache is the input, and a block built from it is the engine's
+honest reading of it.
+
+## 7. Authoring a creature: the movement type
+
+The engine pairs the table with the movement type through one string, and the two
+records must be authored together.
+
+### 7.1 The record
+
+A `MOVT` record carries an editor id, an **`MNAM` name**, and the speeds:
+
+    ForwardWalk  ForwardRun     the speed along each heading
+    BackWalk     BackRun        walking and running
+    LeftWalk     LeftRun
+    RightWalk    RightRun
+    RotateInPlaceWalk / RotateInPlaceRun / RotateWhileMovingRun   yaw rates
+    the anim-change thresholds and the flags the record type carries
+
+**`MNAM` is the join.** The root behaviour graph declares `iState_<MNAM>` with the
+state id as its initial value, and the engine matches the suffix against `MNAM`
+(§4.5). An editor id is never read. The two shipped mismatches — a misspelt
+`CowSiwmDefault`, a `CombatSpider_MT` no record backs — make those states resolve
+to no movement type in the game.
+
+### 7.2 Where the numbers come from
+
+`MOVT` is authored *from* the animations, and the ladder's arms are placed at its
+values. So for each heading:
+
+- **walk** = the delivered speed of the walk clip on that heading's arm,
+  `|travel| / (duration / playbackSpeed)`, from the cache's root motion;
+- **run** = the delivered speed of the run clip on the same arm.
+
+For a creature with one compass, that is eight numbers read off eight clips, and
+`SpeedLadder.FromBlender` produces them (`SpeedRung.Delivered`). A creature whose
+graph has no lateral clips (the chicken) records 0 for the sides. Rotation rates
+come from the turn clips' root yaw over duration where the graph has them; HKSK
+measures translation and does not yet read them.
+
+Authored this way, the table is the identity along every rung and departs from it
+only between gaits (§6), which is the smallest table a creature can have.
+
+### 7.3 Wiring the record
+
+- one `MOVT` per locomotion state the graph can write `iState` at (§3.1); the
+  `MNAM` must equal the `iState_` suffix, case-insensitive;
+- the race's six base movement defaults name the types the actor has when the
+  graph names none — the walk default at least; a graph that writes its own sprint
+  and swim keys needs no race link for them;
+- a new state needs its `iState_` constant in the **root** graph, with the id
+  unique within it; the humanoids reserve 0–17 and 60–63, the shared quadrupeds
+  ten per species alphabetically (bear 0, cow 10, deer 20, ... wolf 100).
+
+The `Skyrim.esm` records are read here through Mutagen (`tools/speedgen/MasterData`),
+and writing one is the same API in the other direction.
+
+## 8. Generating the table
+
+`HKSK.Speed.SpeedDataGenerator` writes it, `tools/speedgen` runs it. It is written
+for the engine that reads it, not to reproduce the shipped file:
+
+    for each project with a BSSpeedSamplerModifier:                 /* §5.1 */
+        for each value s the graph can put iState at:                /* §3.1 */
+            arms = the compass the graph plays at s                  /* §5.3 */
+            for d in the 19 headings:
+                for (x = 0; x <= max(top rung, 2 x fastest MOVT speed); x += 0.5):
+                    y = §6 at x, times the pose's root-motion share
+                thin at 0.5 units                                    /* the game's own greedy pass */
+            emit { key = s, 19 records }
+
+- **the keys** are the values the graph writes, not the constants it declares:
+  128 blocks over the 41 projects; 76 of vanilla's 86, the other ten being the 8
+  unread tables and the 2 keys no graph writes; 52 vanilla never swept
+  (`FirstPerson`'s stances, the draugr skeleton's weapons, the attack states, the
+  netch's sprint, the sphere's ranged stance, the horker's swim, the horse's
+  sprint, fall and swim);
+- **the curve** is §6 at the goal speed, no offset;
+- **the sweep starts at zero** on every heading, because below the first point the
+  query reads from the origin, and **ends past everything the game can ask** — the
+  whole ladder (the humanoids' top rung is the run at ten times speed, 3,510) and
+  twice the fastest speed the type names, for `SpeedMult`; beyond the top rung the
+  curve is flat and costs one point;
+- **thinning** is the shipped file's own greedy pass, at 0.5 units rather than its 2.
+
+**Driving the graph into a state** (`WayInto`, `TaggedAt`) is how a key with no
+ladder of its own gets its curve: from the writing node up through its states, one
+entry event per level — the one that also enters the most other states on the way,
+then the shortest, since raising every transition's event at once sends the player's
+root through `CartExit` — each chooser on the way pinned to its state (a sync
+variable, a bound `startStateId` where it can name the state, a manual selector's
+index), what the chosen transition's condition asks pinned too (`iRightHandType ==
+7` into the bow attack), and the clips' end triggers **held**, because the evaluator
+otherwise reads the graph at rest and an attack's own clip has raised `attackStop`
+by then. The reading counts only when the writer comes out active. Then the
+sampler-fed ladder live beside the state is the key's — the attacks take the
+weapon locomotion under them, the perk stances the bow and block locomotion — and
+where none is live the pose is read flat. Driven that way, all 24 blocks the graph
+declares show their own ladder, and 23 more are placed.
+
+Six writable keys get no block: the rider's mounted states and the first-person
+camera carry no root motion, and the horse's sprint clip has no motion block. An
+absent block is the game's own answer there, the request unchanged.
+
+Read back through the game's lookup, the result holds 13,451 of the 16,930 shipped
+points on the shared blocks. Each engine-side choice costs against that measure —
+the offset 171 points, the zero start 99 — and is kept, because the engine is the
+measure. 62,641 points, 524 KB, about seven seconds.
+
+## 9. Open
+
+- **Bit-exact floats**: unreachable from six-digit root motion.
+- **The per-block offset** (§6.1): the tool's, not explained, not needed.
+- **The riekling's lateral records** and the **horse**: the shipped file's own
+  anomalies and damaged cache respectively (`docs/speed-data-research.md`).
+- **Rotation rates** for `MOVT` authoring (§7.2): the turn clips are in the cache,
+  the reader is not written.
+- **The chaurus flyer's zero table**: nothing reads it, so nothing depends on it.
 
 ## 10. Known corruption
 
-`FalmerProjectData` declares 4 entries, 2 malformed. In file order:
+`FalmerProjectData` declares 4 entries, 2 malformed: key `0x80000000` and key
+`0x626E7572` — the ASCII `runb`, the head of a clip name written into a `u32` —
+both with `n_records == 0`. A reader must tolerate them; a writer must not
+reproduce them.
 
-    key            hex           bytes (LE)   n_records
-    -2147483648    0x80000000                         0     /* INT_MIN */
-    1              0x00000001                        19
-    2              0x00000002                        19
-    1651406194     0x626E7572    "runb"               0
+## 11. Method
 
-Both malformed keys carry `n_records == 0`, so they occupy 8 bytes and describe
-nothing; no lookup will request state `0x80000000`.
+The engine side was read from the retail executable unwrapped with Steamless for
+reading only, by the recipes in `docs/reverse-engineering.md`: from a path literal to
+its loader, from a class name to its virtual table, from a variable name to its slot
+in the engine's string table and the code that takes it. The unwrapped binary is not
+redistributable and is not in this repository; `tools/exe-re` holds the helpers.
 
-`0x626E7572` is not a number. Its bytes as stored are the ASCII `runb` — the head of a
-clip name, and `runbackward`, `runbackwardleft` and `runbackwardright` are all in the
-Falmer's own cache. The exporter wrote the start of a string into a `u32` key field.
+## 12. Tooling
 
-**A reader MUST tolerate `n_records == 0`.** A writer SHOULD NOT reproduce these.
-
-## 11. Method note
-
-§4.2 and §4.3 required unwrapping the SteamStub Variant 3.1 (x64) wrapper on the retail
-executable, which encrypts `.text`. Unwrapped with Steamless v3.1.0.5, for reading only;
-verified by `.text` entropy falling from 8.000 to 6.354 bits/byte and by references to
-the setting object appearing (6, against 0 while packed).
-
-The unwrapped binary is not redistributable and is not in this repository. Every address
-quoted is an RVA, re-derivable from a local copy. The method, including the Wine
-workaround Steamless needs, is `docs/reverse-engineering.md`, and `tools/exe-re` holds the
-helpers.
-
-## 12. Consequences for tooling
-
-The gate defaults ON, so this data is live. A mod that adds a creature, alters a race's
-movement speeds, or renumbers a shared graph's species keys leaves this file stale, and
-nothing currently reads or writes it.
-
-A project absent from the table is not an error and will not be reported as one: the
-modifier passes `goalSpeed` through unchanged (§4.2). The failure mode is a wrong gait
-mix and foot sliding, not a crash.
-
-For movement types do not resolve through RACE: the project's own root graph names them
-(§3.1), which covers 49 of 49 and distinguishes states within a project as a race link
-cannot. Resolving through the race also picks the wrong record for the player, whose
-highest `ForwardRun` is `NPC_Horse_MT` — the mounted type, at double the on-foot speed.
-
-Implementing §1 is sufficient to read and rewrite the file losslessly; §3 to interpret
-it; §6 and §8 to generate one.
-
-`HKSK.Cache.SpeedDataFile` does the first two. `SkyrimCache.Load` picks the file up from
-the meshes folder when it is there and `SkyrimCache.Save` writes it back; the round trip
-is byte-exact against the shipped file. `Sample(project, state, direction, goalSpeed)`
-answers the query the engine makes (§4.2), and returns `goalSpeed` unchanged for an
-absent project, state or curve — which is the engine's own behaviour with no database,
-and not zero, which would model a creature that cannot move.
-
-**That is all the library holds of this file.** `HKSK.Cache` is `SpeedDataFile` and
-nothing more, the way it is `AnimationDataFile` and `AnimationSetDataFile` for the other
-two files of the cache. Everything below models what the table *describes*, which is a
-different job, and it lives in the test suite where it can be checked against the
-shipped bytes without becoming something a caller has to argue with.
-
-`SpeedSampler` walks a project to its table: `FromProject` finds the sampler, reads the
-variables off it, and returns the states the project declares (key and movement-type
-name, from its `iState_<MOVT>` variables, read from the root graph the character file
-names), every ladder the sampler's answer drives, the compasses those ladders hang
-under with the behaviour file each was defined in, and the compasses a
-`BSiStateTaggingGenerator` puts under each iState value. Every one of those is
-something the graph says. It returns null for the eight projects that have no sampler,
-which is the honest answer: the table is not part of how they move. Over the corpus
-that is 1038 ladders, 142 compasses, 996 arms and 3416 rungs, every rung naming an
-animation and carrying its root motion.
-
-`Sample(arms, direction, x)` answers a heading, blending the two arms bracketing it when
-it falls between them — which is 15 of every 19 headings, since the file samples at 0.05
-and the arms sit at 0.125 (§3.2). Rounding to the nearest arm instead is twenty times
-worse.
-
-`SpeedLadder` implements §6 — `Evaluate(x)` over rungs carrying a vector travel and a
-duration — and `FromBlender` builds the ladder from a project's blender. `Evaluate` is
-the runtime's own response, measured exact (§6.1). `Tabulate(x)` is what a shipped table
-says at x, which is the same curve read `SamplerOffset` earlier (§6.2); use that one to
-check or regenerate a table, and `Evaluate` to predict a creature.
-
-**Which compass serves a state is not modelled here at all.** The graph settles it only
-where it tags the state, and for most creatures it does not settle it; the rest is a
-name match, and it sits in `FamilyGuess` in the test suite under that name. A project
-that knows the mapping supplies it, and should not have to route around a library that
-thinks it already knows.
-
-Generation (§8) is `SpeedDataGenerator`, and `tools/speedgen` runs it. It does not
-need `top(s)`: the sweep's bound is what the game can ask for, not what the shipped
-tool chose. `StateKeys.Writable` is the block set, by the engine's own reading (§4.5).
-
-### hkmeasure
-
-The blend law in §6 is checked against Havok itself rather than against the shipped file,
-by `tools/hkmeasure`. It builds a skeleton, two clips of chosen travel and duration, and a
-`hkbBlenderGenerator`, then steps the graph and reads the root motion back. Four things
-about the host are worth writing down, because each cost a day:
-
-- **Havok must be initialised through `HavokManaged.HavokSystem.Init()`.** Without it
-  `hkBaseSystem::isInitialized()` still reports true, but the per-thread memory router is
-  never bound, and the first allocation dereferences a null `TlsGetValue`. The Behavior
-  Tool's own startup is `HavokSystem.Init` → `new hbtHavokEnvironment()` → run →
-  `Dispose` → `Terminate`, and nothing shorter works.
-- **Skyrim's own HKX will not load.** They are `hk_2010.2.0-r1` with 8-byte pointers and
-  the tool is 32-bit; `HavokPackfile.load` returns null. Content reaches the harness as an
-  **XML packfile**, which is layout-independent — written by the tool itself, so the
-  schema is right by construction. `hkaDefaultAnimatedReferenceFrame` has no managed
-  constructor, so the root motion is patched in as text afterwards.
-- **`Methods.generate` hard-codes a `0.0f` timestep** where it calls
-  `hkbBehaviorGraph::generate`; the Tool advances time from its own timeline. A headless
-  caller poses the graph forever at t=0 until that is passed through.
-- **`activate()` clones the node tree.** `m_blendParameter` has to be set on the template
-  before the clone is taken, or the sweep is flat.
-
-Under Wine the runtime is Mono, which runs the mixed-mode assembly but rejects the IL of
-a few of its methods. Only one is on this path — the physics floor under a character,
-which the harness does not use.
-
-## 13. Entry census
-
-Every entry in the file against the movement type its key resolves to, in file order.
-86 of the 88 resolve; the two that do not are the Falmer's corrupt keys (§10), which
-carry no points and so have no bounds either.
-
-Speeds are the `MOVT` translation speeds in game units/s. The three rotation fields are
-degrees/s on a different axis (§5.2) and are omitted.
-
-- **`max x`** takes 8 distinct values and is shared by all 19 records of an entry (I8).
-- **`min x` is 0 on 84 of the 86 populated entries**; the exceptions are `DeerProject`
-  21 at 400 and `GiantProject` 2 at 150 (§8).
-- **`min y` is above 0 on 82 of the 86.** Of the four that reach 0, three are zero
-  throughout — `AtronachStormProject`, `WispProject`, `WitchlightProject` hover and
-  carry no root motion. A generator must reproduce the all-zero curve rather than treat
-  it as a gap.
-- **`max y` is bounded by what the clips deliver** (I9), not by any `MOVT` field. On 24
-  of the 86 it exceeds every translation speed in its own row.
-
-| character | state | movement type | min x | max x | min y | max y | fwd walk | fwd run | back walk | back run | left walk | left run | right walk | right run |
-| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ChickenProject | 0 | `Chicken_Default_MT` | 0 | 324.50 | 0.49 | 403.10 | 34.71 | 251.94 | 0 | 0 | 0 | 0 | 0 | 0 |
-| HareProject | 0 | `Hare_Default_MT` | 0 | 324.50 | 3.64 | 320.62 | 89.18 | 244.44 | 0 | 77.84 | 0 | 0 | 0 | 0 |
-| AtronachFlame | 1 | `AtronachFlame_Default` | 0 | 324.50 | 7.77 | 499.50 | 112.50 | 500 | 112.50 | 500 | 112.50 | 500 | 112.50 | 500 |
-| AtronachFrostProject | 0 | `AtronachFrost_Default_MT` | 0 | 324.50 | 3.56 | 324.05 | 70.88 | 325.38 | 57.49 | 194.82 | 69.07 | 277.46 | 71.46 | 275.36 |
-| AtronachStormProject | 0 | `AtronachStorm_Default` | 0 | 324.50 | 0 | 0 | 100 | 500 | 100 | 500 | 100 | 500 | 100 | 500 |
-| BearProject | 0 | `Bear_Default_MT` | 0 | 324.50 | 3.59 | 285.23 | 59.82 | 638.07 | 51.89 | 51.89 | 0 | 0 | 0 | 0 |
-| DogProject | 30 | `Dog_Default_MT` | 0 | 424.50 | 4.99 | 288.73 | 74.54 | 500.14 | 74.54 | 74.54 | 0 | 0 | 0 | 0 |
-| WolfProject | 100 | `Wolf_Default_MT` | 0 | 424.50 | 4.99 | 288.73 | 74.54 | 555.56 | 74.54 | 74.54 | 0 | 0 | 0 | 0 |
-| DefaultFemale | 0 | `NPC_Default_MT` | 0 | 324.50 | 7.55 | 307.02 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 1 | `NPC_Sprinting_MT` | 0 | 324.50 | 370.37 | 370.37 | 500 | 500 | 270.84 | 270.84 | 0 | 0 | 0 | 0 |
-| DefaultFemale | 2 | `NPC_Sneaking_MT` | 0 | 324.50 | 3.91 | 132.89 | 47.20 | 222 | 43.38 | 150 | 41.44 | 200 | 41.44 | 200 |
-| DefaultFemale | 3 | `NPC_BowDrawn_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 135 | 65.11 | 98 | 76.81 | 115 | 74.89 | 115 |
-| DefaultFemale | 4 | `NPC_Blocking_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 81 | 71 | 71 | 81 | 81 | 81 | 81 |
-| DefaultFemale | 5 | `NPC_Bleedout_MT` | 0 | 324.50 | 12.74 | 22.56 | 20.11 | 20.11 | 16.49 | 16.49 | 22.01 | 22.01 | 17.59 | 17.59 |
-| DefaultFemale | 6 | `NPC_1HM_MT` | 0 | 324.50 | 3.80 | 321.03 | 80.10 | 370 | 45.45 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 7 | `NPC_2HM_MT` | 0 | 324.50 | 4.20 | 321.10 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 8 | `NPC_Bow_MT` | 0 | 324.50 | 4.21 | 320.99 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 9 | `NPC_Magic_MT` | 0 | 324.50 | 3.80 | 320.84 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 10 | `NPC_MagicCasting_MT` | 0 | 749.50 | 3.80 | 395.94 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
-| DefaultFemale | 15 | `NPC_Drunk_MT` | 0 | 324.50 | 29.47 | 29.47 | 29.47 | 29.47 | 0 | 0 | 0 | 0 | 0 | 0 |
-| DefaultFemale | 16 | `NPC_BowDrawn_QuickShot_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 370 | 65.11 | 205.25 | 76.81 | 370 | 74.89 | 370 |
-| DefaultFemale | 17 | `NPC_Blocking_ShieldCharge_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 370 | 71 | 205.25 | 81 | 370 | 81 | 370 |
-| DefaultMale | 0 | `NPC_Default_MT` | 0 | 324.50 | 7.17 | 307.96 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 1 | `NPC_Sprinting_MT` | 0 | 324.50 | 370.37 | 370.37 | 500 | 500 | 270.84 | 270.84 | 0 | 0 | 0 | 0 |
-| DefaultMale | 2 | `NPC_Sneaking_MT` | 0 | 324.50 | 3.91 | 132.89 | 47.20 | 222 | 43.38 | 150 | 41.44 | 200 | 41.44 | 200 |
-| DefaultMale | 3 | `NPC_BowDrawn_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 135 | 65.11 | 98 | 76.81 | 115 | 74.89 | 115 |
-| DefaultMale | 4 | `NPC_Blocking_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 81 | 71 | 71 | 81 | 81 | 81 | 81 |
-| DefaultMale | 5 | `NPC_Bleedout_MT` | 0 | 324.50 | 12.74 | 22.56 | 20.11 | 20.11 | 16.49 | 16.49 | 22.01 | 22.01 | 17.59 | 17.59 |
-| DefaultMale | 6 | `NPC_1HM_MT` | 0 | 324.50 | 3.80 | 321.03 | 80.10 | 370 | 45.45 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 7 | `NPC_2HM_MT` | 0 | 324.50 | 4.20 | 321.10 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 8 | `NPC_Bow_MT` | 0 | 324.50 | 4.21 | 320.99 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 9 | `NPC_Magic_MT` | 0 | 324.50 | 3.80 | 320.84 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 10 | `NPC_MagicCasting_MT` | 0 | 749.50 | 3.80 | 395.94 | 80.10 | 370 | 71.93 | 170.84 | 80.09 | 370 | 79.75 | 370 |
-| DefaultMale | 15 | `NPC_Drunk_MT` | 0 | 324.50 | 29.47 | 29.47 | 29.47 | 29.47 | 0 | 0 | 0 | 0 | 0 | 0 |
-| DefaultMale | 16 | `NPC_BowDrawn_QuickShot_MT` | 0 | 999.50 | 6.35 | 155.21 | 120 | 370 | 65.11 | 205.25 | 76.81 | 370 | 74.89 | 370 |
-| DefaultMale | 17 | `NPC_Blocking_ShieldCharge_MT` | 0 | 324.50 | 3.80 | 321.03 | 81 | 370 | 71 | 205.25 | 81 | 370 | 81 | 370 |
-| FirstPerson | 0 | `NPC_Default_MT` | 0 | 324.50 | 8.25 | 237.14 | 80.10 | 370 | 71.93 | 205.25 | 80.09 | 370 | 79.75 | 370 |
-| ChaurusProject | 0 | `ChaurusDefault_MT` | 0 | 324.50 | 3.54 | 324.71 | 85.51 | 350.27 | 95.09 | 95.09 | 87.53 | 350 | 87.53 | 350 |
-| HighlandCowProject | 10 | `Cow_Default_MT` | 0 | 324.50 | 4.93 | 324.25 | 65 | 525.45 | 77.84 | 77.84 | 0 | 0 | 0 | 0 |
-| DeerProject | 20 | `Deer_Default_MT` | 0 | 449.50 | 4.92 | 431.92 | 169.80 | 833 | 123.80 | 123.80 | 0 | 0 | 0 | 0 |
-| DeerProject | 21 | `Deer_DefaultRun_MT` | 400 | 832.50 | 391.50 | 832.25 | 169.80 | 833 | 123.80 | 123.80 | 0 | 0 | 0 | 0 |
-| ChaurusFlyer | 0 | `ChaurusFlyer_Default_MT` | 0 | 324.50 | 0 | 0 | 150 | 725 | 99 | 710.50 | 95 | 725 | 95 | 0 |
-| VampireBruteProject | 0 | `GargoyleDefault_MT` | 0 | 324.50 | 5.54 | 314.79 | 118.92 | 403.72 | 75.41 | 180.57 | 78.12 | 340 | 89.14 | 340 |
-| BenthicLurkerProject | 0 | `BenthicLurkerDefault_MT` | 0 | 324.50 | 5 | 232.09 | 122.15 | 305.46 | 91.95 | 91.95 | 99.52 | 99.52 | 99.52 | 99.52 |
-| BenthicLurkerProject | 1 | `BenthicLurkerCombatRun_MT` | 0 | 324.50 | 3 | 320.81 | 122.15 | 305.46 | 91.95 | 91.95 | 99.52 | 99.52 | 99.52 | 99.52 |
-| BoarProject | 0 | `Boar_Default_MT` | 0 | 324.50 | 6.42 | 315.12 | 64.23 | 594.35 | 64.23 | 128 | 0 | 0 | 0 | 0 |
-| BallistaCenturion | 0 | `DwarvenBallista_Default_MT` | 0 | 324.50 | 2.34 | 336.58 | 99.80 | 284.72 | 100.04 | 284.96 | 99.44 | 302.07 | 100.16 | 302.42 |
-| HMDaedra | 0 | `HMDaedraDefault_MT` | 0 | 324.50 | 2.32 | 64 | 64 | 128 | 64 | 128 | 64 | 128 | 64 | 128 |
-| NetchProject | 0 | `DLC2Netch_Default_MT` | 0 | 324.50 | 400 | 400 | 60 | 350 | 60 | 350 | 60 | 350 | 60 | 350 |
-| RieklingProject | 0 | `DLC2Riekling_Default_MT` | 0 | 324.50 | 0.92 | 381.13 | 167.42 | 300 | 167.42 | 275.82 | 167.42 | 300 | 167.42 | 300 |
-| ScribProject | 0 | `ScribDefault_MT` | 0 | 324.50 | 24.06 | 84.63 | 401.01 | 802.29 | 95.09 | 95.09 | 0 | 0 | 0 | 0 |
-| DragonProject | 0 | `Dragon_Default_MT` | 0 | 324.50 | 381.18 | 384 | 384 | 384 | 384 | 384 | 0 | 0 | 0 | 0 |
-| Dragon_Priest | 0 | `DragonPriest_Default_MT` | 0 | 324.50 | 55.29 | 300 | 80 | 300 | 80 | 300 | 80 | 300 | 80 | 300 |
-| DraugrProject | 0 | `DraugrDefault_MT` | 0 | 324.50 | 4.63 | 312.89 | 76.97 | 339.24 | 70.09 | 70.09 | 76.97 | 339.24 | 76.97 | 339.24 |
-| DraugrProject | 3 | `Draugr1HM_MT` | 0 | 324.50 | 4.61 | 312.77 | 92.25 | 345.37 | 70.09 | 70.09 | 92.25 | 345.37 | 92.25 | 345.37 |
-| DraugrProject | 4 | `DraugrBattleAxe_MT` | 0 | 324.50 | 4.59 | 271.38 | 105.25 | 271.38 | 70.09 | 70.09 | 105.25 | 271.38 | 105.25 | 271.38 |
-| DraugrProject | 5 | `DraugrGreatSword_MT` | 0 | 324.50 | 4.56 | 271.38 | 106.93 | 271.38 | 70.09 | 70.09 | 106.93 | 271.38 | 106.93 | 271.38 |
-| DraugrProject | 6 | `DraugrH2H_MT` | 0 | 324.50 | 4.54 | 351.68 | 116.74 | 298.92 | 70.09 | 70.09 | 116.74 | 298.92 | 116.74 | 298.92 |
-| DraugrProject | 7 | `DraugrBow_MT` | 0 | 324.50 | 4.57 | 312.89 | 76.97 | 339.22 | 70.09 | 70.09 | 76.97 | 339.22 | 76.97 | 339.22 |
-| DraugrSkeletonProject | 0 | `DraugrDefault_MT` | 0 | 324.50 | 4.63 | 312.89 | 76.97 | 339.24 | 70.09 | 70.09 | 76.97 | 339.24 | 76.97 | 339.24 |
-| SphereCenturion | 0 | `SphereDefault_MT` | 0 | 324.50 | 4.63 | 324.48 | 192 | 384 | 192 | 384 | 192 | 384 | 192 | 384 |
-| DwarvenSpiderCenturionProject | 0 | `SpiderDefault_MT` | 0 | 324.50 | 1.80 | 162.81 | 85.09 | 300.20 | 90.09 | 299.67 | 90.09 | 154.21 | 90.09 | 154.21 |
-| SteamProject | 0 | `SteamDefault_MT` | 0 | 324.50 | 4.63 | 192 | 96 | 192 | 96 | 192 | 96 | 192 | 96 | 192 |
-| FalmerProject | 2147483648 | *corrupt* | — | — | — | — | — | — | — | — | — | — | — | — |
-| FalmerProject | 1 | `FalmerBowDrawn_MT` | 0 | 324.50 | 3.99 | 100.46 | 100.44 | 100.44 | 81.55 | 81.55 | 77.12 | 77.12 | 90.73 | 90.73 |
-| FalmerProject | 2 | `Falmer_1HM_Walk` | 0 | 324.50 | 4.62 | 298.61 | 100.44 | 175.77 | 81.55 | 142.71 | 77.12 | 134.96 | 90.73 | 158.78 |
-| FalmerProject | 1651406194 | *corrupt* | — | — | — | — | — | — | — | — | — | — | — | — |
-| FrostbiteSpiderProject | 0 | `SpiderDefault_MT` | 0 | 324.50 | 4.83 | 300.20 | 85.09 | 300.20 | 90.09 | 299.67 | 90.09 | 154.21 | 90.09 | 154.21 |
-| GiantProject | 0 | `GiantDefault_MT` | 0 | 324.50 | 4.59 | 123.10 | 61.84 | 61.84 | 54.43 | 54.43 | 66.14 | 66.14 | 64.92 | 64.92 |
-| GiantProject | 1 | `GiantCombatWalk_MT` | 0 | 189.50 | 4.61 | 187.43 | 82.46 | 247.37 | 63.50 | 190.50 | 93.70 | 281.09 | 103.86 | 311.59 |
-| GiantProject | 2 | `GiantCombatRun_MT` | 150 | 414.50 | 61.16 | 410.56 | 50 | 415 | 50 | 115.90 | 50 | 227.27 | 50 | 220.59 |
-| GoatProject | 40 | `Goat_Default_MT` | 0 | 324.50 | 4.97 | 324.49 | 62.13 | 360 | 39.65 | 39.65 | 0 | 0 | 0 | 0 |
-| HagravenProject | 0 | `Hagraven_Default_MT` | 0 | 324.50 | 3.99 | 116.29 | 73.79 | 116.24 | 73.79 | 102.87 | 73.79 | 116.24 | 73.79 | 116.24 |
-| HorkerProject | 50 | `Horker_Default_MT` | 0 | 324.50 | 3.31 | 83.41 | 32.77 | 83.41 | 32.77 | 32.77 | 0 | 0 | 0 | 0 |
-| HorseProject | 60 | `Horse_Default_MT` | 0 | 324.50 | 5 | 321.14 | 125.11 | 450 | 108.08 | 108.08 | 0 | 0 | 0 | 0 |
-| IceWraithProject | 0 | `IceWraith_Default_MT` | 0 | 324.50 | 230.52 | 319.67 | 100 | 319.67 | 100 | 319.67 | 100 | 319.67 | 100 | 319.67 |
-| MammothProject | 70 | `Mammoth_Default_MT` | 0 | 324.50 | 2.50 | 290.34 | 61.84 | 400 | 61.84 | 61.84 | 0 | 0 | 0 | 0 |
-| MudcrabProject | 0 | `MCrab_Default_MT` | 0 | 324.50 | 2.79 | 149.65 | 72.74 | 145.87 | 72.74 | 145.87 | 72.74 | 145.87 | 72.74 | 145.87 |
-| SabreCatProject | 80 | `SabreCat_Default_MT` | 0 | 324.50 | 4.98 | 288.79 | 113.09 | 563 | 66.79 | 66.79 | 0 | 0 | 0 | 0 |
-| SkeeverProject | 90 | `Skeever_Default_MT` | 0 | 324.50 | 5.15 | 308.37 | 36.14 | 486.23 | 36.14 | 36.14 | 0 | 0 | 0 | 0 |
-| SlaughterfishProject | 0 | `SlaughterfishSwim_MT` | 0 | 324.50 | 0.58 | 302.23 | 180 | 360 | 15 | 0 | 0 | 0 | 0 | 0 |
-| Spriggan | 0 | `Spriggan_Default` | 0 | 324.50 | 4.64 | 310.24 | 65.32 | 358.87 | 57.73 | 214.02 | 90.57 | 358.87 | 90.57 | 358.87 |
-| Spriggan | 1 | `Spriggan_Combat` | 0 | 324.50 | 3.74 | 297.51 | 65.32 | 358.87 | 57.73 | 214.02 | 67.93 | 358.87 | 67.93 | 358.87 |
-| TrollProject | 0 | `TrollDefault_MT` | 0 | 324.50 | 4.50 | 269.50 | 102.70 | 269.50 | 83.11 | 83.11 | 102.70 | 269.50 | 102.70 | 269.50 |
-| VampireLord | 0 | `VampireLordDefault_MT` | 0 | 324.50 | 5.46 | 350.87 | 70 | 400 | 70 | 400 | 70 | 400 | 70 | 400 |
-| WerewolfBeastProject | 0 | `WerewolfBeastDefault_MT` | 0 | 324.50 | 4.65 | 303.06 | 70 | 400 | 70 | 400 | 70 | 400 | 70 | 400 |
-| WispProject | 0 | `Wisp_Default_MT` | 0 | 324.50 | 0 | 0 | 100 | 300 | 100 | 300 | 100 | 300 | 100 | 300 |
-| WitchlightProject | 0 | `Witchlight_Default_MT` | 0 | 324.50 | 0 | 0 | 500 | 500 | 500 | 500 | 500 | 500 | 500 | 500 |
+- `HKSK.Cache.SpeedDataFile` — read, write, and `Sample(project, state, direction,
+  goalSpeed)`, the query as the engine makes it (§4.2), returning `goalSpeed` for an
+  absent project, state or curve.
+- `HKSK.Behavior.StateKeys` — the values a graph can put `iState` at, and by what.
+- `HKSK.Speed.SpeedSampler`, `SpeedLadder`, `Compass` — a project's ladders and the
+  curve law.
+- `HKSK.Speed.SpeedDataGenerator` — the table (§8); `tools/speedgen` runs it.
+- `tools/hkmeasure` — runs a graph inside Havok's own runtime, for measured answers.
