@@ -21,7 +21,7 @@ namespace HKSK.Engine;
 public static class Transitions
 {
     /// <summary>From the runtime's own <c>TransitionFlags</c>.</summary>
-    private const int FlagDisabled = 32, FlagDisableCondition = 256;
+    private const int FlagDisabled = 32, FlagDisableCondition = 256, FlagToNestedStateIdIsValid = 0x2000;
 
     /// <summary>
     /// The state a machine settles in, following transitions from its start state
@@ -29,15 +29,30 @@ public static class Transitions
     /// </summary>
     public static int Settle(
         hkbStateMachine machine, int from, Events events, Variables variables,
-        Properties? properties)
+        Properties? properties) =>
+        Settle(machine, from, events, variables, properties, out _);
+
+    /// <summary>
+    /// The state a machine settles in, and the state the last transition taken names
+    /// inside it: a transition may carry <c>toNestedStateId</c>, which the machine
+    /// below the target starts in instead of its own start state. That is how the
+    /// humanoid's bleedout enters its third-person branch.
+    /// </summary>
+    public static int Settle(
+        hkbStateMachine machine, int from, Events events, Variables variables,
+        Properties? properties, out int? nested)
     {
         int at = from;
+        nested = null;
         HashSet<int> seen = [at];
 
         // A cycle is possible -- two states each transitioning to the other on the
         // same event -- so stop when one repeats rather than counting passes.
-        while (Next(machine, at, events, variables, properties) is { } next && seen.Add(next))
-            at = next;
+        while (Step(machine, at, events, variables, properties) is { } taken && seen.Add(taken.m_toStateId))
+        {
+            at = taken.m_toStateId;
+            nested = (taken.m_flags & FlagToNestedStateIdIsValid) != 0 ? taken.m_toNestedStateId : null;
+        }
 
         return at;
     }
@@ -50,6 +65,11 @@ public static class Transitions
     /// </remarks>
     public static int? Next(
         hkbStateMachine machine, int from, Events events, Variables variables,
+        Properties? properties) =>
+        Step(machine, from, events, variables, properties)?.m_toStateId;
+
+    private static hkbStateMachineTransitionInfo? Step(
+        hkbStateMachine machine, int from, Events events, Variables variables,
         Properties? properties)
     {
         foreach (hkbStateMachineTransitionInfo info in Candidates(machine, from))
@@ -61,7 +81,7 @@ public static class Transitions
 
             if (info.m_toStateId == from) continue;
 
-            if (StateOf(machine, info.m_toStateId) is not null) return info.m_toStateId;
+            if (StateOf(machine, info.m_toStateId) is not null) return info;
         }
 
         return null;

@@ -32,6 +32,14 @@ public static class StateKeys
     /// <summary>How a key is written; one node may write several keys.</summary>
     public enum By { Initial, Tag, Manager, Expression }
 
+    /// <summary>One way a key is written, and the node that writes it.</summary>
+    /// <remarks>
+    /// <paramref name="Node"/> is the tagging generator, the state machine a manager
+    /// row names, or the expression modifier; null for the initial value, which no
+    /// node writes.
+    /// </remarks>
+    public readonly record struct Writer(int Key, By By, IHavokObject? Node);
+
     private static readonly Regex Literal = new(@"-?\d+", RegexOptions.Compiled);
 
     /// <summary>
@@ -39,14 +47,23 @@ public static class StateKeys
     /// </summary>
     public static IReadOnlyDictionary<int, IReadOnlySet<By>> Writable(ProjectWalk walk, BehaviorRoot root)
     {
+        var keys = new SortedDictionary<int, HashSet<By>>();
+        foreach (Writer writer in Writers(walk, root))
+        {
+            if (!keys.TryGetValue(writer.Key, out HashSet<By>? set)) keys[writer.Key] = set = [];
+            set.Add(writer.By);
+        }
+
+        return keys.ToDictionary(k => k.Key, k => (IReadOnlySet<By>)k.Value);
+    }
+
+    /// <summary>Every writer of <c>iState</c> in the project, with what it writes.</summary>
+    public static IReadOnlyList<Writer> Writers(ProjectWalk walk, BehaviorRoot root)
+    {
         ArgumentNullException.ThrowIfNull(walk);
 
-        var keys = new SortedDictionary<int, HashSet<By>>();
-        void Add(int value, By by)
-        {
-            if (!keys.TryGetValue(value, out HashSet<By>? set)) keys[value] = set = [];
-            set.Add(by);
-        }
+        var writers = new List<Writer>();
+        void Add(int value, By by, IHavokObject? node = null) => writers.Add(new Writer(value, by, node));
 
         string rootFile = Path.GetFileName(root.BehaviorFile);
         foreach (ProjectStep step in walk.Steps)
@@ -60,33 +77,39 @@ public static class StateKeys
                     if (names[i] == "iState") Add(values[i].m_value, By.Initial);
             }
 
-            if (step.Node is BSiStateTaggingGenerator tag) Add(tag.m_iStateToSetAs, By.Tag);
+            if (step.Node is BSiStateTaggingGenerator tag) Add(tag.m_iStateToSetAs, By.Tag, tag);
 
             if (step.Node is BSIStateManagerModifier manager)
                 foreach (BSIStateManagerModifierBSiStateData row in manager.m_stateData ?? [])
-                    Add(row.m_iStateToSetAs, By.Manager);
+                    Add(row.m_iStateToSetAs, By.Manager, StateOf(row));
         }
 
         IReadOnlyDictionary<string, int> constants = StateConstants.Of(walk, root);
         List<string>? expressions = null;
 
-        foreach (StateAssignment assignment in StateExpressions.In(walk))
+        foreach ((StateAssignment assignment, IHavokObject node) in StateExpressions.WithNodes(walk))
         {
             if (assignment.Base is { } name && constants.TryGetValue(name, out int value))
             {
-                if (assignment.Offset is null) Add(value, By.Expression);
+                if (assignment.Offset is null) Add(value, By.Expression, node);
                 else
                     foreach (int offset in RangeOf(assignment.Offset, expressions ??= [.. ExpressionsIn(walk)]))
-                        Add(value + offset, By.Expression);
+                        Add(value + offset, By.Expression, node);
             }
 
             foreach (string choice in assignment.Choices)
-                if (constants.TryGetValue(choice, out int chosen)) Add(chosen, By.Expression);
-                else if (int.TryParse(choice, out int literal)) Add(literal, By.Expression);
+                if (constants.TryGetValue(choice, out int chosen)) Add(chosen, By.Expression, node);
+                else if (int.TryParse(choice, out int literal)) Add(literal, By.Expression, node);
         }
 
-        return keys.ToDictionary(k => k.Key, k => (IReadOnlySet<By>)k.Value);
+        return writers;
     }
+
+    // The state a manager row names, so that the row can be placed like a tag.
+    private static IHavokObject? StateOf(BSIStateManagerModifierBSiStateData row) =>
+        row.m_pStateMachine is hkbStateMachine machine
+            ? machine.m_states?.FirstOrDefault(s => s.m_stateId == row.m_StateID)
+            : row.m_pStateMachine;
 
     private static IEnumerable<string> ExpressionsIn(ProjectWalk walk) =>
         walk.Steps.Select(s => s.Node).OfType<hkbEvaluateExpressionModifier>()

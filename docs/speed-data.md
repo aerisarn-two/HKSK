@@ -1778,7 +1778,25 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   places them in a subtree nothing under which reads the sampler and no other reading
   applies -- the player's mounted states, whose blends run on the horse's speed -- so
   a block there is unread, and running the graph with `iState` pinned would only hand
-  them another state's curve, since nothing in any graph selects on `iState`;
+  them another state's curve, since nothing in any graph selects on `iState`.
+
+  For such a key the graph is first driven *into* the tagged state
+  (`SpeedDataGenerator.TaggedAt`): one event per state on the way up that is neither
+  its machine's start nor chosen by a sync variable -- the event that also enters the
+  most other states on the way, then the shortest, since raising every transition's
+  event at once sends the player's root through `CartExit` as readily as
+  `attackStart` -- with each sync variable pinned to its state, and the evaluator
+  now following a transition's `toNestedStateId`. The reading counts only when the
+  writer itself comes out active, and then the sampler-fed ladders live beside it are
+  the key's. Measured: the sprint states land (the player's, the horse's, the rider's)
+  and carry no ladder, which agrees with vanilla's flat block 1; the bleedout does
+  not, because `BleedOutBehavior` picks its first- or third-person branch by a bound
+  start state the evaluation leaves at first person; and the attack states do not,
+  because `1HM_Behavior` settles in its block state on `attackStart` rather than in
+  `AttackState`. So no key is placed by this route yet, and the player's attack keys
+  read flat from the attack subtree. What it needs is the stance work of
+  `docs/behavior-engine.md` §4.7, the same gap as the evaluator's 17 misplaced
+  declared blocks;
 - **the curve** is §6 at the goal speed itself. The query applies no offset; the
   0.0404 in the shipped sweeps (§6.2) is the tool's lag, and `SpeedLadder.Tabulate`
   keeps it for reading that file;

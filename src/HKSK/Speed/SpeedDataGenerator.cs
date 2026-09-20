@@ -157,6 +157,8 @@ public static class SpeedDataGenerator
                 .Where(st => st.Arms.Count > 0)
                 .ToList();
 
+            IReadOnlyList<StateKeys.Writer> writers = StateKeys.Writers(walk, root);
+
             foreach ((int key, IReadOnlySet<StateKeys.By> writtenBy) in StateKeys.Writable(walk, root))
             {
                 // The movement type, where the key names one: it bounds the sweep and
@@ -173,6 +175,14 @@ public static class SpeedDataGenerator
                 // get a turn.
                 string route = "declared";
                 var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
+
+                // A tag or a manager row places the key in a subtree with no ladder of
+                // its own. Drive the graph into that subtree by the events that enter
+                // it and read which sampler-fed ladder is live beside it: the player's
+                // attack states are layered over the locomotion that keeps reading the
+                // sampler while the attack plays.
+                if (arms is null && TaggedAt(graph, walk, properties, actor, built, parameter, key, writers) is { } beside)
+                { arms = beside; route = "tagged"; }
 
                 if (arms is null && FlatAt(walk, properties, actor, key) is { } flat) { arms = flat; route = "flat"; }
 
@@ -303,6 +313,162 @@ public static class SpeedDataGenerator
         // no locomotion state in the ConsumersIn sense and no arms were built for
         // them. Take the compass straight off the graph instead.
         return live.Count == 0 ? null : ArmsAround(live[0].Blend, run.Walk ?? walk, actor);
+    }
+
+    /// <summary>
+    /// The ladder live beside a tagged subtree, found by driving the graph into it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A <c>BSiStateTaggingGenerator</c> or a <c>BSIStateManagerModifier</c> row says
+    /// exactly which state holds the key, and <see cref="LocomotionStates"/> finds the
+    /// ladder under it when there is one. When there is none, the sampler's answer is
+    /// still read -- by whatever ladder is live in parallel, since Bethesda layers an
+    /// attack, a block or a spell over the locomotion that keeps the feet moving. So
+    /// the graph is put in that state, by raising the events of every transition into
+    /// it and into each state above it, together with the locomotion events, and the
+    /// live ladders are read off the result.
+    /// </para>
+    /// <para>
+    /// The reading counts only when the writer itself came out live: the tagging
+    /// generator among the active generators, or the row's state's generator. A run
+    /// that settled elsewhere says nothing about this key, and the key falls to the
+    /// readings that do not need the graph run.
+    /// </para>
+    /// </remarks>
+    internal static List<(float Direction, SpeedLadder Ladder)>? TaggedAt(
+        hkbBehaviorGraph graph, ProjectWalk walk, Properties properties, ActorProject actor,
+        List<(LocomotionState State, List<(float Direction, SpeedLadder Ladder)> Arms)> built,
+        string parameter, int key, IReadOnlyList<StateKeys.Writer> writers)
+    {
+        Dictionary<string, IList<string>>? eventNames = null;
+
+        foreach (StateKeys.Writer writer in writers)
+        {
+            if (writer.Key != key || writer.Node is null) continue;
+            if (writer.By is not (StateKeys.By.Tag or StateKeys.By.Manager)) continue;
+
+            IHavokObject? live = writer.Node switch
+            {
+                hkbStateMachineStateInfo state => state.m_generator,
+                _ => writer.Node,
+            };
+            if (live is null) continue;
+
+            eventNames ??= EventNamesByFile(walk);
+            (IReadOnlyList<string> entry, var pins) = WayInto(walk, writer.Node, eventNames);
+            Events events = Events.Of([.. Moving.Names, .. entry]);
+
+            Evaluation run = ActiveGenerators.Evaluate(graph, walk, tables =>
+            {
+                foreach (Variables variables in tables.Values)
+                {
+                    variables.Set("iSyncIdleLocomotion", 1);
+                    variables.Set("iSyncForwardState", 0);
+                    variables.Set("iSyncTurnState", 1);
+                    variables.Set("Direction", 0f);
+                    variables.Set("TurnDelta", 0f);
+                    variables.Set("TurnDeltaDamped", 0f);
+                    variables.Set("Speed", 100f);
+                }
+
+                // A machine in sync mode starts where its variable says: say it.
+                foreach ((string file, string variable, int state) in pins)
+                    if (tables.TryGetValue(file, out Variables? table)) table.Set(variable, state);
+            }, properties, events);
+
+            if (!run.Active.Any(n => ReferenceEquals(n.Generator, live))) continue;
+
+            var ladders = Ladders.ActiveIn(run, walk, parameter);
+            if (ladders.Count == 0) continue;
+
+            foreach ((hkbBlenderGenerator blend, float _, float _) in ladders)
+                foreach ((LocomotionState state, var arms) in built)
+                    foreach (SpeedConsumer consumer in state.Blends)
+                        if (ReferenceEquals(consumer.Node, blend))
+                            return arms;
+
+            if (ArmsAround(ladders[0].Blend, run.Walk ?? walk, actor) is { } around) return around;
+        }
+
+        return null;
+    }
+
+    // How to put the graph in the state holding the node: one event for each state
+    // on the way up that is neither its machine's start nor chosen by a sync
+    // variable, and the sync variable pinned to the state where one chooses.
+    //
+    // Raising every transition's event at once sends the graph anywhere -- the
+    // player's root takes CartExit and GetUpExit as readily as attackStart -- so one
+    // event is chosen per level: the one that also enters the most other states on
+    // the way, since Bethesda routes attackStart into the attack state and into the
+    // right-hand attack below it, then the shortest name. Self-transitions and
+    // streaming queries enter nothing.
+    internal static (IReadOnlyList<string> Events, IReadOnlyList<(string File, string Variable, int State)> Pins) WayInto(
+        ProjectWalk walk, IHavokObject node, Dictionary<string, IList<string>> eventNames)
+    {
+        var levels = new List<(bool Needed, List<string> Events)>();
+        var pins = new List<(string, string, int)>();
+        ProjectVariables? variables = null;
+
+        for (IHavokObject? at = node; at is not null;)
+        {
+            if (walk.StepOf(at) is not { } step) break;
+
+            if (at is hkbStateMachineStateInfo state && step.Parent is hkbStateMachine machine
+                && eventNames.TryGetValue(step.File, out IList<string>? names))
+            {
+                var here = new List<string>();
+                void Add(int id)
+                {
+                    if (id < 0 || id >= names.Count) return;
+                    string name = names[id];
+                    if (name.StartsWith("selfTrans", StringComparison.Ordinal)) return;
+                    if (name.StartsWith("streamingQuery", StringComparison.Ordinal)) return;
+                    if (!here.Contains(name)) here.Add(name);
+                }
+
+                foreach (hkbStateMachineTransitionInfo transition in machine.m_wildcardTransitions?.m_transitions ?? [])
+                    if (transition.m_toStateId == state.m_stateId) Add(transition.m_eventId);
+
+                foreach (hkbStateMachineStateInfo other in machine.m_states ?? [])
+                    foreach (hkbStateMachineTransitionInfo transition in other.m_transitions?.m_transitions ?? [])
+                        if (transition.m_toStateId == state.m_stateId) Add(transition.m_eventId);
+
+                bool synced = (StartStateMode)machine.m_startStateMode == StartStateMode.START_STATE_MODE_SYNC
+                              && machine.m_syncVariableIndex >= 0
+                              && (variables ??= new ProjectVariables(walk.Steps)).NameOf(step.File, machine.m_syncVariableIndex) is { } chooser
+                              && Pin(chooser);
+                bool Pin(string chooser) { pins.Add((step.File, chooser, state.m_stateId)); return true; }
+
+                levels.Add((!synced && machine.m_startStateId != state.m_stateId, here));
+            }
+
+            at = step.Parent;
+        }
+
+        var chosen = new List<string>();
+        foreach ((bool needed, List<string> here) in levels)
+        {
+            if (!needed || here.Count == 0) continue;
+            string best = here
+                .OrderByDescending(e => levels.Count(l => l.Events.Contains(e)))
+                .ThenBy(e => e.Length)
+                .First();
+            if (!chosen.Contains(best)) chosen.Add(best);
+        }
+
+        return (chosen, pins);
+    }
+
+    private static Dictionary<string, IList<string>> EventNamesByFile(ProjectWalk walk)
+    {
+        var names = new Dictionary<string, IList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (ProjectStep step in walk.Steps)
+            if (step.Node is hkbBehaviorGraph graph && graph.m_data?.m_stringData?.m_eventNames is { } list)
+                names.TryAdd(step.File, list);
+
+        return names;
     }
 
     /// <summary>

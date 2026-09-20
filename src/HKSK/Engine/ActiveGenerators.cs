@@ -189,7 +189,14 @@ public static class ActiveGenerators
     private sealed record Trace(
         List<ActiveNode> Active,
         Dictionary<IHavokObject, int> States,
-        List<(hkbModifier Modifier, Variables Variables)> Managers);
+        List<(hkbModifier Modifier, Variables Variables)> Managers)
+    {
+        /// <summary>
+        /// The state the transition just taken names in the machine below: consumed
+        /// by the next machine visited, which starts there instead of its own start.
+        /// </summary>
+        public int? NestedStart { get; set; }
+    }
 
     private static Trace Run(hkbGenerator root, Tables reading)
     {
@@ -266,10 +273,15 @@ public static class ActiveGenerators
 
             case hkbStateMachine machine:
             {
-                int? at = StateIdOf(machine, variables, tables.Events, properties);
+                int? from = trace.NestedStart is { } named && Find(machine, named) is not null ? named : null;
+                trace.NestedStart = null;
+
+                int? at = StateIdOf(machine, variables, tables.Events, properties, from, out int? nested);
                 if (at is not null) trace.States[machine] = at.Value;
 
+                trace.NestedStart = nested;
                 Visit(Find(machine, at ?? int.MinValue), weight, depth + 1, tables, trace, seen, motion);
+                trace.NestedStart = null;
                 break;
             }
 
@@ -453,16 +465,28 @@ public static class ActiveGenerators
     /// <summary>The id of the state a machine rests in, or null when none matches.</summary>
     public static int? StateIdOf(
         hkbStateMachine machine, Variables variables, Events? events = null,
-        Properties? properties = null)
+        Properties? properties = null) =>
+        StateIdOf(machine, variables, events, properties, null, out _);
+
+    /// <summary>
+    /// As above, starting from <paramref name="named"/> when a transition above
+    /// named a nested state, and reporting the nested state the settling transition
+    /// names in turn.
+    /// </summary>
+    public static int? StateIdOf(
+        hkbStateMachine machine, Variables variables, Events? events,
+        Properties? properties, int? named, out int? nested)
     {
-        int wanted = Bindings.IntOf(machine, "startStateId", machine.m_startStateId, variables);
+        nested = null;
+        int wanted = named ?? Bindings.IntOf(machine, "startStateId", machine.m_startStateId, variables);
 
         // The sync variable is consulted only in that mode; otherwise the field is
         // set but unused, and reading it picks an arbitrary state. When it names no
         // state -- which is what the initial values give on the vampire brute -- the
         // machine falls back to its own startStateId rather than to nothing.
         int sync = machine.m_syncVariableIndex;
-        if ((StartStateMode)machine.m_startStateMode == StartStateMode.START_STATE_MODE_SYNC &&
+        if (named is null &&
+            (StartStateMode)machine.m_startStateMode == StartStateMode.START_STATE_MODE_SYNC &&
             sync >= 0 && sync < variables.Count)
         {
             int synced = variables.AsInt(sync);
@@ -474,7 +498,7 @@ public static class ActiveGenerators
         // Whatever the machine starts in, a raised event may carry it elsewhere.
         return events is null
             ? wanted
-            : Transitions.Settle(machine, wanted, events, variables, properties);
+            : Transitions.Settle(machine, wanted, events, variables, properties, out nested);
     }
 
     private static hkbGenerator? Find(hkbStateMachine machine, int stateId)
