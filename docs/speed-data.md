@@ -286,9 +286,24 @@ values. So for each heading:
 
 For a creature with one compass, that is eight numbers read off eight clips, and
 `SpeedLadder.FromBlender` produces them (`SpeedRung.Delivered`). A creature whose
-graph has no lateral clips (the chicken) records 0 for the sides. Rotation rates
-come from the turn clips' root yaw over duration where the graph has them; HKSK
-measures translation and does not yet read them.
+graph has no lateral clips (the chicken) records 0 for the sides.
+
+**The three rotation rates are not measured from anything.** `RotateInPlaceWalk`,
+`RotateInPlaceRun` and `RotateWhileMovingRun` are degrees per second, and over the
+107 shipped records they take 17 values, almost all of them 45, 90, 120, 135, 180,
+270 and 360, with a few fractions of those (22.5, 33.75, 84.375). Set against the
+turn clips' own root yaw over duration -- the cache records it, `ClipMovement.Turn`
+reads it, 43 projects have such clips -- they do not agree: the bear's looping turn
+yaws at 79°/s against a record of 120 and 180, the chicken's at 216 against 84, the
+sabre cat's at 150 against 240, and the wisp has no turning clip at all against
+360. Where they coincide (the troll, the netch, 180 for 180) it is the round number
+that coincides. Turning is driven by the controller -- the graph blends its turn
+clips on `TurnDelta`, and the humanoids' turn clips carry no root yaw -- so the
+rate is a gameplay constant capping how fast the controller may yaw the actor. Pick
+it by feel from the family the creature belongs to: a walk value at or below the
+run value, a moving value at or above it, 90/180/180 for a humanoid, 180/270/360
+for a bounding quadruped, 0 for the moving rate where the creature does not turn
+while running (the bow drawn, the blocking stance, the flame atronach).
 
 Authored this way, the table is the identity along every rung and departs from it
 only between gaits (§6), which is the smallest table a creature can have.
@@ -439,8 +454,8 @@ measure. 62,641 points, 524 KB, about seven seconds.
 - **The per-block offset** (§6.1): the tool's, not explained, not needed.
 - **The riekling's lateral records** and the **horse**: the shipped file's own
   anomalies and damaged cache respectively (`docs/speed-data-research.md`).
-- **Rotation rates** for `MOVT` authoring (§7.2): the turn clips are in the cache,
-  the reader is not written.
+- **Rotation rates** for `MOVT` authoring are settled as constants (§7.2); nothing
+  in the assets derives them.
 - **The chaurus flyer's zero table**: nothing reads it, so nothing depends on it.
 
 ## 10. Known corruption
