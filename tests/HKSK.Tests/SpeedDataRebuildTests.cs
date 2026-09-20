@@ -193,7 +193,9 @@ public sealed class SpeedDataRebuildTests
                 .Where(st => st.Arms.Count > 0)
                 .ToList();
 
-            var constants = StateConstants.Of(walk, BehaviorRoot.Of(path!)!.Value);
+            BehaviorRoot root = BehaviorRoot.Of(path!)!.Value;
+            var constants = StateConstants.Of(walk, root);
+            IReadOnlyList<StateKeys.Writer> writers = StateKeys.Writers(walk, root);
             List<StateAssignment> expressions = [.. StateExpressions.In(walk)];
             var placed = StateExpressions.WithNodes(walk).ToList();
 
@@ -241,18 +243,28 @@ public sealed class SpeedDataRebuildTests
                     _declared++;
 
                     // Ground truth: the graph itself says this state carries this key.
-                    // Does running it, driven by Bethesda's own selectors, land there?
-                    var found = StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key);
-                    if (found is null) _evaluatorMissed++;
-                    else if (ReferenceEquals(found, arms)) _evaluatorAgreed++;
+                    // Does driving the graph into that state -- by the events that
+                    // enter it, the choosers on the way and what the transitions ask
+                    // -- show that state's own ladder live?
+                    // A key the graph rests at -- its initial value -- is read at rest.
+                    var found = TaggedAt(graph, walk, properties, actor, built, parameter, (int)mine.Key, writers)
+                                ?? (writers.Any(w => w.Key == (int)mine.Key && w.By == StateKeys.By.Initial)
+                                    ? StateAt(graph, walk, properties, actor, built, parameter, (int)mine.Key)
+                                    : null);
+                    if (found is null)
+                    {
+                        _evaluatorMissed++;
+                        _mismatches.Add($"{name} key {mine.Key}: declared '{built.First(b => b.State.Key == (int)mine.Key).State.State.m_name}' -> evaluator nothing");
+                    }
+                    else if (built.Any(b => b.State.Key == (int)mine.Key && ReferenceEquals(b.Arms, found))) _evaluatorAgreed++;
                     else
                     {
                         _evaluatorDiffered++;
                         LocomotionState want = built.First(b => b.State.Key == (int)mine.Key).State;
-                        LocomotionState got = built.First(b => ReferenceEquals(b.Arms, found)).State;
+                        string got = built.FirstOrDefault(b => ReferenceEquals(b.Arms, found)).State.State?.m_name ?? "(a compass off the graph)";
                         _mismatches.Add(
                             $"{name} key {mine.Key}: declared '{want.State.m_name}' " +
-                            $"-> evaluator '{got.State.m_name}'");
+                            $"-> evaluator '{got}'");
                     }
                 }
                 if (shared) _sharedBlocks++; else _newBlocks++;
@@ -348,7 +360,11 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(13, _newBlocks);
         Assert.Equal(12786, _sharedHeld);
 
-        // On the 24 the graph declares, running it lands in the right state 7 times.
+        // On the 24 the graph declares, driving it into the declared state -- by
+        // the events that enter it, the choosers on the way, what the transitions ask
+        // and the end triggers held -- shows that state's own ladder live every time.
+        // Pinning iState and running with the movement selectors alone landed 7 and
+        // left 17 in default locomotion, every one a stance the right state 7 times.
         // Every one of the 17 differences is a stance -- sneaking, bow drawn,
         // blocking, one- and two-handed, magic ready, casting -- and the key's own
         // name says which: iState_NPCSneaking, iState_NPCBowDrawn, iState_NPC1HM and
@@ -357,8 +373,8 @@ public sealed class SpeedDataRebuildTests
         // them is known: iIsInSneak = 1 reaches Sneak_Locomotion_State, found by
         // searching the player's 301 variables against these declarations. The
         // others need a combination, and nothing here sets any of them yet.
-        Assert.Equal(7, _evaluatorAgreed);
-        Assert.Equal(17, _evaluatorDiffered);
+        Assert.Equal(24, _evaluatorAgreed);
+        Assert.Equal(0, _evaluatorDiffered);
         Assert.Equal(0, _evaluatorMissed);
     }
 

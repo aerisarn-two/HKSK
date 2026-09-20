@@ -500,11 +500,18 @@ right and this is not.
 
 ### The stance
 
-What remains on the player is one thing: the graph is not driven into a stance.
-Running it with Bethesda's movement selectors lands in default locomotion, which
-is correct for someone walking about with nothing drawn, and the speed table also
-records them sneaking, blocking, holding a bow and casting. So 17 of the 23 keys
-the graph declares are reached by declaration and not by running it.
+**Resolved.** Running the graph with Bethesda's movement selectors lands in default
+locomotion, which is correct for someone walking about with nothing drawn, and the
+speed table also records them sneaking, blocking, holding a bow and casting -- so
+17 of the 24 keys the graph declares were reached by declaration and not by
+running it. What reaches them is not a variable search but the way in: from the
+node that writes the key, up through its states, one entry event per level, each
+chooser on the way pinned to its state, what the chosen transition's condition
+asks pinned too, and the clips' end triggers held so a passing state is read as it
+passes (`SpeedDataGenerator.WayInto`, `TaggedAt`; `docs/speed-data.md` §8). Driven
+that way, all 24 declared blocks show their own ladder live, and the two keys the
+graph rests at are read at rest. The paragraphs below record the search that came
+before.
 
 Searching all 301 of the player's variables against those declarations -- the
 only ground truth available, since the graph says which state each key belongs
