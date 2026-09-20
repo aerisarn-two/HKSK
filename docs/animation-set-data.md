@@ -101,75 +101,131 @@ not vanilla's sets, and why it is derived instead (§6).
 
 ## 4. The engine side
 
-Read out of `SkyrimSE.exe` (unwrapped for reading; `docs/reverse-engineering.md`).
+Read out of `SkyrimSE.exe` 1.6.1170, unwrapped for reading only, by the recipes in
+`docs/reverse-engineering.md`; addresses are image-base `0x140000000` virtual
+addresses. The trail is stated so that each conclusion can be re-derived.
 
 ### 4.1 Where the file is read
 
-One loader reads `Meshes/AnimationSetDataSingleFile.txt`, behind
-`bLoadCollatedAnimTextData`, and publishes a singleton the consumers reach. The
-split form `MESHES/ANIMATIONSETDATA/` is the other path the same loader knows.
+The six path strings of the animation text data are `BSFixedString` globals built
+by static initialisers `0x14008fff0`–`0x1400900e0` and released by
+`0x141718bb0`–`0x141718c00`:
+
+    0x14315c900  Meshes/AnimationData/          0x14315c920  Meshes/AnimationSetData/
+    0x14315c910  BoundAnims/                    0x14315c928  DirList.txt
+    0x14315c918  Meshes/AnimationDataSingleFile.txt
+    0x14315c930  Meshes/AnimationSetDataSingleFile.txt
+
+The set data's two globals have one user, the loader **`0x14053b000`**. It publishes
+the manager as a singleton at `0x143138d58`, reads `bLoadCollatedAnimTextData:
+Animation` (setting record `0x1420107d8`, reader `0x140541fa0`, compiled default
+**1**), and with the gate on opens the single file, reads a line of at most 260
+characters, converts it to the project count and loops. With the gate off, **or
+when the single file does not open**, it goes to `0x14053b69b` and reads the split
+form, `Meshes/AnimationSetData/` and its `DirList.txt` (`0x14053b6f6`,
+`0x14053b776`). The manager is created unconditionally at start-up in
+`0x140541b80`, after the animation data manager (`0x140536ec0`, singleton
+`0x143138d50`) and in the routine that also creates the speed database, and
+destroyed by `0x140541e80`.
 
 ### 4.2 What the loader builds, and what reads it
 
-Each set becomes a 0x88-byte object filled in file order: the swap events as string
-handles, the hand variables as (name, min, max) triples, the attacks as (event, clip
-list, flag byte `atoi > 0`) records, and the checksum triples last. **Set names are
-read and discarded** — a set is addressed by index, so in the merged file only the
-order matters. A set with no swap event is given the empty string as one, so that it
-can still be selected.
+The project loop at `0x14053b200`–`0x14053b243` reads each set **name** into one
+scratch buffer on the stack, overwriting it every time, and only then allocates
+`count` sets of 0x88 bytes: **the names are discarded**, and a set is addressed by
+index. The per-set parser `0x14053d700` fills the object in file order:
 
-The lookup is keyed on a **swap event**: the consumer finds the sets whose event list
-holds the key and, of those, the ones whose hand variables all hold as **ranges
-against the graph's live variables** (`min <= value <= max`). Each matching set's
-checksums become a load request to `AnimationFileManagerSingleton`.
+    +0x00  swap events, string handles, count at +0x10
+    +0x18  hand variables, 16-byte (name, min, max), count at +0x28
+    +0x70  attacks, 0x18-byte (event, clip list, flag byte at +0x10 = atoi > 0)
+    +0x30  checksum triples, written last
+
+The version line is optional -- a first line starting with `V` is compared with 3
+at `0x14053de18`, and at 3 and above each checksum entry is three lines; below 3 it
+is one line, read and discarded. A set with no swap event is given the empty
+string as one (`0x14053d650`). The checksum writer `0x14053de91`–`0x14053debf`
+stores the **name** CRC at `+0x00`, the `hkx` constant at `+0x04` and the
+**folder** CRC at `+0x08` -- a `BSResource::ID` (file, extension, directory) -- which
+settles which of the file's first two lines is the folder.
+
+The singleton has fifteen referencing functions: the life cycle, and ten consumers.
+Each consumer takes a key and the actor's graph, finds the sets whose swap events
+hold the key and whose hand variables all hold as ranges against the graph's live
+variables, and turns each match's checksums into a load request to
+`AnimationFileManagerSingleton` (entries `0x140bca970` and `0x140bcab30`). The
+smallest consumer returns early without the file manager, which is how the
+dependency in §4.5 was found.
 
 ### 4.3 What sends a key
 
-Every non-empty key traced is the **animation event of an idle record**, the
-`ENAM` string, reached either directly by code that has chosen an idle, or by
-resolving an **action without performing it**: `Action Draw`, `Action Force Equip`
-and their kin are default objects, and a helper asks the idle manager which idle the
-action would pick for this actor now and uses that idle's event as the key. Nothing
-is sent to the graph by the lookup. So the keys the file can ever be asked for are
-the idle tree's events (1,246 in the masters) and the empty string.
+No consumer passes a literal. Every key traced is the animation event of an idle
+record, the `ENAM` string `TESIdleForm` keeps at `+0x50`, reached two ways: code
+that has chosen an idle passes its event; and `0x1407c66b0` fills a `TESActionData`
+(vftable `0x14178c478`) with the actor and an **action** and hands it to
+`0x14065cd10`, which, when the action data carries no event, asks the idle manager
+(`0x1403b1f80`, global `0x1420f8980`) which idle the action would pick for this
+actor now, copies that idle's event into the action data at `+0x28`, and returns
+it as the key -- nothing is sent to the graph. Actions are default objects by
+index: the manager at `0x1420f5600` holds them from `+0x20` with a loaded flag per
+index from `+0xb90`, and their names are a table of 24-byte records at
+`0x141fd8f50` (`Action Draw`, `Action Force Equip`, `Action Idle` = 0x40, the null
+fallback). So the keys the file can ever be asked for are the idle tree's events.
 
 ### 4.4 How an animation file gets loaded
 
-Three ways. Ahead of need, from a selected set (§4.2). **When a clip activates**:
-`hkbClipGenerator::activate` with no bound file maps the clip's binding index to a
-file id through the character's animation list and demands it from the same file
-manager, through a copy of its pointer the behaviour runtime holds. And from a save
-game, through a reader over the stream.
+Three ways. **Ahead of need** from a selected set (§4.2). **When a clip
+activates**: the executable names `IAnimationClipLoaderSingleton` (vftable
+`0x141989cd8`, all slots pure), implemented by `AnimationFileManagerSingleton`
+(`0x141989d10`); start-up copies the file manager pointer to a second global,
+`0x1431b2820`, which the behaviour runtime reads, and
+`hkbClipGenerator::activate` (`0x140acd750`, named by its profiling string), when
+the clip's `userData` at `+0x30` is 0, calls slot 1 (`0x140bcbb90`), which maps the
+clip's `animationBindingIndex` (`+0x70`) to a file id through the character's
+animation list and demands it. **From a save game**: the wrappers `0x140bcb710`
+and `0x140bcb820`, each with one caller (`0x1407c6170`, `0x1407c6290`) that builds
+an `AnimationStreamLoadGame` reader over the stream.
 
 ### 4.5 Is it necessary
 
-Not strictly. `bInitiallyLoadAllClips:Animation` (compiled default 0) decides
-whether the file manager exists at all: at 0 it exists, the set data prefetches and a
-clip it missed loads when it first plays; at 1 every clip is loaded up front and the
-consumers return before selecting anything. **The set data decides what is loaded
-ahead of need**, and an actor whose sets are wrong hitches rather than breaks.
+`bInitiallyLoadAllClips:Animation` (record `0x142015620`, compiled default **0**)
+is read in one place, `0x1407c50d0`, which caches its negation at `0x1431a939c`;
+start-up `0x1407c4d80` creates `AnimationFileManagerSingleton` only when that
+flag is set and shutdown `0x1407c4f90` mirrors it, and `0x1407c50d0` has no other
+caller. At the default the file manager exists, the consumers prefetch, and a clip
+they missed demands its file on activation; at 1 the file manager is never created,
+the consumers return before selecting, and every clip is loaded up front. The set
+data decides what is loaded ahead of need and nothing else.
 
 ### 4.6 The moving-attack flag
 
-The one value in the file that is not about loading. `CombatBehaviorContextMelee`
-(`0x1408a3d30`) walks the attacks the actor's race can make with its hand types,
-finds each by event name in the set data, asks the animation data for the clips'
-end translation, hit-frame translation and hit-frame time, scales the translations
-by the actor, and records a **reach**:
+The reader was found by the shape of the structure it walks, not by a string.
+`CombatBehaviorContextMelee`'s attack update, **`0x1408a3d30`**, iterates the
+attacks the actor's race can make with its hand types, finds each by event name in
+the set data, and asks the animation data (`0x140442a80`) for the clips' end
+translation, hit-frame translation and hit-frame time; the six translation floats
+are multiplied by the actor's scale, and a **reach** is recorded at the entry's
+`+0x20` with the hit time at `+0x24`:
 
-- flag **clear**: reach = |end translation| — the clip's own root motion;
-- flag **set**: reach = −1, and the attack check (`0x1408a2ee0`) uses the
-  **attacker's speed × time to the hit frame** instead, projecting the actor along
-  its own motion.
+- flag **clear**: `sqrt(x² + y² + z²)` of the scaled end translation;
+- flag **set**: `-1.0`, the constant at `0x141769578` beside `5.0`, `32.0`, `128.0`,
+  `2.0` and `0.9`.
 
-Either way the hit frame's translation places the blow. With the flag clear, an
-attack whose clips do not travel has a reach of 0, fails the 5.0-unit gate that
-predicts the attacker's position, and is treated as standing still for the whole
-swing. So the flag says **whose travel the attack has**: the animation's, or the
-character's locomotion under it. Vanilla sets it on 38 (project, event) pairs in 6
-projects — the player's regular, sprint and hand-to-hand attacks, the werewolf's
-running ones, three hovering creatures' — and clears it on lunges and power
-attacks. It was misnamed "mirrored" until the executable was read.
+The context's longest reach, a running `maxss` at `+0x30`, rises with a clear flag
+and never with a set one. The attack check **`0x1408a2ee0`** then uses the reach
+twice. First an early-out: a reach of zero or more skips the fetch of the
+attacker's own speed altogether, so the allowed distance is the clip's travel plus
+the base, plus a combat setting read at `+0x1a8`, plus the target's speed times the
+time to the hit frame; with the flag set the first term is the attacker's speed
+times that time instead. Then the prediction: the hit frame's translation, rotated
+into the actor's frame, places the blow whatever the flag; the reach is compared
+with zero a second time at `0x1408a31bd` and, set, `0x140853fb0` projects the actor
+along its own motion for that time, while clear the end translation is added to the
+position **only when the reach exceeds 5.0** -- below that the actor is modelled as
+standing still. So the flag is which of two estimates combat trusts, and an attack
+whose clips do not travel is, with the flag clear, both unreachable beyond the base
+distance and motionless for the swing. The setting reads first taken for the
+flag's "only reader" (`fCombatAttackMoving*`) turned out to sit on the common path;
+the flag itself is the byte at `+0x10` of the attack entry (§4.2), `atoi > 0`.
 
 ## 5. Rebuilding the file
 

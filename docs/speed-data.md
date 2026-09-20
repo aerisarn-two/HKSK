@@ -111,66 +111,160 @@ the movement type's scale. `x` is not a time or an index.
 
 ## 4. The engine side
 
-Read out of `SkyrimSE.exe` (unwrapped for reading, §11). Addresses are RVAs.
+Everything below was read out of `SkyrimSE.exe` 1.6.1170, unwrapped with Steamless
+for reading only (§11), by the recipes in `docs/reverse-engineering.md`. Addresses
+are image-base `0x140000000` virtual addresses; RVAs are given where the research
+log uses them. The trail is stated so that each conclusion can be re-derived from a
+local copy.
 
 ### 4.1 The gate
 
-`bUseSpeedSampler:Animation` defaults **on** in the compiled settings; no shipped INI
-names it. The data is live for every actor whose graph carries the modifier.
+Setting records are 32-byte structures: a vtable, the value at `+8`, the name
+pointer at `+16`. `bUseSpeedSampler:Animation` shares vtable `0x141775178` with
+the other 21 `b*:Animation` settings, and its value byte is **1**; the same offset
+reads 0 for the debug settings (`bDrawAnimPoseInVDB`, `bUseSPUGenerate`) and 1 for
+the functional ones (`bFootIK`, `bAnimInterpEnable`), which is the check that the
+offset is right. No shipped INI names it, so the compiled default applies.
 
 ### 4.2 The query
 
-`BSSpeedSamplerModifier::Update` (`0xb9f000`) reads its four bound members and calls
-the database singleton's second virtual, `Query(context, state, direction,
-goalSpeed) -> float` (`0xbc0e30`), storing the result in `speedOut`. Nothing is
-computed at runtime:
+`BSSpeedSamplerModifier` is a Havok modifier with the 25 virtuals every Bethesda
+modifier has (vftable `0x141985188`; `BSIsActiveModifier` and
+`BSModifyOnceModifier` have the same count, so nothing is added). Its `Update` is
+RVA `0xb9f000`; the read at `0x140b9f047` is the whole contract:
 
-1. **state** → the entry whose key matches exactly; no match returns `goalSpeed`;
-2. **direction** → exact match, else the **first record above** the request; past the
-   last record it **wraps to record 0**. Records are never blended;
-3. **goalSpeed** → the first point at or above the request. **Below the first point
-   the curve is interpolated from the origin (0, 0). Above the last point the request
-   is returned unchanged**, which is the same as having no table;
-4. a linear interpolation between the two bracketing points.
+    140b9f047  mov   0x1431bd160,%rcx    ; the database singleton
+    140b9f04e  movss 0x58(%rbx),%xmm0    ; goalSpeed
+    140b9f056  je    0x140b9f070         ; no database: xmm0 unchanged
+    140b9f05e  movss 0x54(%rbx),%xmm3    ; direction
+    140b9f063  mov   0x50(%rbx),%r8d     ; state, an int
+    140b9f06d  call  *0x8(%rax)          ; slot 1: Query(context, state, direction, goalSpeed)
+    140b9f070  movss %xmm0,0x5c(%rbx)    ; speedOut
 
-No offset is applied to `goalSpeed` anywhere. In memory a point is `{y, x}`; the
-loader swaps the on-disk order.
-
-With no database the call is skipped and `speedOut = goalSpeed`.
+The singleton `0x1431bd160` is written at start-up and shutdown and read here and
+nowhere else. Its class, `BSSpeedSamplerDBManager` (vftable `0x141988548`), has two
+slots -- a destructor `0x140bc1420` and the query `0x140bc0e30` (RVA `0xbc0e30`) --
+over the interface `BSISpeedSamplerDB` (vftable `0x141988530`, slot 1 pure). The
+query is three binary searches and a lerp: the entry by exact key (no match returns
+`goalSpeed`); the record by direction, exact or the first above, wrapping to
+record 0 past the last; the point by the first `x` at or above the request,
+interpolating from `(0, 0)` below the first and returning the request unchanged
+above the last; then `t = (x_hi - g)/(x_hi - x_lo)`, `y = (1-t) y_hi + t y_lo`,
+skipped when the two `x` are within `FLT_EPSILON`. Nothing between the `movss` at
+`0x140b9f04e` and the subtraction inside the query touches `goalSpeed`: there is no
+offset. In memory a point is `{y, x}` (the search reads `+4`, the result `+0`); on
+disk `x` comes first in all 1,634 records, so the loader swaps.
 
 ### 4.3 The load path
 
-The merged file `Meshes/SpeedDataSingleFile.txt` is read ungated inside the
-manager's constructor. A per-project `MESHES/SPEEDDATA/<Project>.SPD` is read
-lazily behind the gate; the game ships none, and a mod may add one creature that way.
+The three path fragments are `BSFixedString` globals filled by static initialisers:
+
+    0x1431c67e0   "MESHES/SPEEDDATA/"
+    0x1431c67f0   ".SPD"
+    0x1431c67f8   "Meshes/SpeedDataSingleFile.txt"
+
+The merged file is read **ungated** inside the manager's constructor, at RVA
+`0xbc08af`, which opens the global and parses the first line with radix 10 into a
+`u16`, the dirlist count. The per-project loader, RVA `0xbc0c20`, is the gated one:
+
+    140bc0c4b  cmp   %dil,0x1461a86(%rip)   ; bUseSpeedSampler
+    140bc0c52  je    0x140bc0e09            ; off: return false
+    140bc0c71  call  0x140bc1480            ; an entry already loaded?
+    140bc0cc0  call  0x14018a900            ; else "%s%s%s/%s%s" -> MESHES/SPEEDDATA/<...>.SPD
+
+so the gate controls the lazy `.SPD` load and the game ships no `.SPD`. The manager's
+storage `0x14315c9d0` is created in the same start-up routine as the animation text
+data managers (`0x140541b80`) and referenced from exactly nine places: four start-up
+and shutdown, five its own constructor and destructors, and `0x140bb0e2b`, the one
+caller of the gated loader.
 
 ### 4.4 Nothing writes a table
 
-Every reference to the path literals, the manager, the query singleton and both
-virtual tables is construction, destruction, loading or the query. The sampler that
-recorded the shipped file was an external tool, and its habits (§6.2, §8) are not
-the engine's.
+Over the unwrapped `.text` (7,232,505 instructions, every RIP-relative reference
+resolved), the references to the three globals, the storage, the singleton and both
+vftables are: the initialisers and exit destructors of the strings, the two loaders,
+construction, destruction, and the read in `Update`. The vftable has no method that
+adds a sample or writes a file; no format string sits beside the path strings. The
+sampler that recorded the shipped file was a tool outside the executable, so its
+habits -- the 0.0404 lag and the 324.5 sweep (§6.1) -- are not the engine's.
 
-### 4.5 The graph names the movement type, and the engine reads the answer back
+### 4.5 The graph names the movement type, and the game reads the answer back
 
-At graph load, `0x140bc5890` scans the graph's variable names for the `iState_`
-prefix and keeps each suffix against the variable's initial value. Whenever the
-movement type may have changed, `0x14069ba40` reads `iState` from the graph
-(`0x140bb3b20`), turns the value into that suffix, looks it up by name
-(`0x14038c710`) and, when a movement type of that name exists, applies it to the
-actor (`0x14069b860`). The `MTState` animation event, raised by seven graphs, only
-marks the actor's process so that the next update looks again.
+**The name table.** The engine keeps one lazily-built table of 189 `BSFixedString`s
+at `0x1420f6370`, filled by `0x14021f300` in a fixed order, and reaches each by
+slot. The slots this document needs, read off the filler's `lea 0x<slot>(%rbx)` /
+`lea <string>(%rip)` pairs:
 
-So the direction is the one `bAnimationDriven` has: **the graph tells the game which
-movement type it is in.** The race's six base movement defaults (walk, run, swim,
-fly, sneak, sprint) are what the actor has when the graph names nothing.
+    +0x500  VelocityZ      +0x508  Speed        +0x510  TurnDelta
+    +0x518  Direction      +0x520  SpeedSampled +0x528  HorseSpeedSampled
+    +0x568  bAnimationDriven               +0x570  bAllowRotation
 
-The engine also keeps the sampler's answer per actor. `SpeedSampled` and
-`HorseSpeedSampled` are registered as
-`BSTAnimationGraphDataChannel<Actor, float, ActorCopyGraphVariableChannel>`, a
-channel polled each frame that reads the graph variable into the actor's side. So a
-wrong `y` is wrong twice: as the ladder's parameter and as what the actor believes
-it delivers. `Speed`, `Direction` and `TurnDelta` go the other way, actor to graph.
+A user of a name is `call <accessor>` followed by `lea 0x<slot>(%rax)`. `Speed`,
+`TurnDelta` and `Direction` are taken at `0x140669b4b`, `0x14069db8a`/`0x14069df48`/
+`0x14069e011` and `0x1407b2000`/`0x1407b21f0`/`0x1407b2400` -- actor-to-graph
+channels. `SpeedSampled` and `HorseSpeedSampled` are taken at one site each,
+`0x1402188d6` and `0x140218974`, inside `0x1402187a0`.
+
+**The copy channel.** `0x1402187a0` (called from the graph manager's set-up,
+`0x140213580`, `0x140214900`, `0x140214bd0`) allocates two 0x28-byte objects, gives
+each the name from the slot, and stores them into the holder's channel array. Their
+class is `BSTAnimationGraphDataChannel<Actor, float, ActorCopyGraphVariableChannel>`
+(vftable `0x141789bf0`, over `BSAnimationGraphChannel` at `0x141789af0`). The
+channel's poll, `0x14021a3c0`, calls `0x1407b25c0`, which is the holder's virtual
+`+0x80` -- the float getter beside the bool getter `+0x90` that `bAnimationDriven`
+uses -- with the channel's name and a pointer to a local, and stores the result at
+the channel's `+0x18`. So each frame the actor holds a copy of what the sampler
+answered. A second site, `0x14072ad0f`, registers `HorseSpeedSampled` the same way
+on another owner. What reads the copy was not traced.
+
+**`iState_` at load.** The strings `"iState_"` and `"iState"` are `BSFixedString`
+globals `0x1431c6810` and `0x1431c67a0` (static initialisers `0x1400dd130` and
+`0x1400dc7e0`), beside the speed table's own globals. `"iState_"` has one user,
+`0x140bc5890`, called from `0x140bc2970`, called from `0x140bb0800` -- graph load. It
+walks the graph's name-to-index map (24-byte entries: name, index, next), and for
+each name longer than `"iState_"` whose prefix matches (`strncmp` through the import
+at `0x141750198`, length `7`) it builds a new string from the rest of the name
+(`0x140cec5d0` on `name + 7`), reads the variable's initial value
+(`0x40(%rbp) -> +0x10 -> [index*4]`, negatives clamped to 0), keeps the running
+maximum at `+0x48`, and appends a 0x208-byte node holding the suffix and the value
+to a list on the graph object. That list is the engine's `state id -> MNAM` table.
+
+**`iState` at run time.** `"iState"` has three readers. `0x140bada60` and
+`0x140badbf0` (called from `0x140c2a580`/`0x140c2a5b0`, Havok-side, beside the
+sampler) are the tagging generator's and the state manager's own lookups of the
+variable they write. The engine's is `0x140bb3b20`: it takes the graph's variable
+table (`0x140bc2920`), hashes `"iState"` (`0x140cc8460`), finds its index in the
+graph's map (`0x98`, bucket count `0x7c`), reads the current value from the values
+array (`0x10(%rdi)[index]`), bounds it against a count at `+0xf8`, and copies the
+string at that index of an array at `+0xe8` into the caller's out parameter
+(`0x140cec820`). Its only caller is `0x1405415c0`, a 48-byte wrapper, whose callers
+are `0x140694130` -- a holder virtual, called through a vtable -- and
+`0x14069ba40`.
+
+**Applying the movement type.** `0x14069ba40` asks the holder for its graph manager
+(vtable `+0x10` at `this+0x38`), locks it (`0x1401949b0`), picks the active graph
+(index at `+0xb0`), calls `0x1405415c0` for the name, unlocks, and if a name came
+back looks it up in a hash map by `0x14038c710` (a `0x140cc8460` hash and a probe)
+and, on a hit, calls `0x14069b860(actor, movementType, arg)`, which reaches the
+movement controller (`0x1406ab320`, `0x140661970`). Its callers are the actor's
+update `0x140687a80` (4,128 bytes, from `0x140727d70`), `0x14069b6b0` (six
+callers, the state changes) and `0x1406a2690` (four). None of them writes
+`iState`; the direction is graph to engine.
+
+**`MTState`.** The event name has a handler class, `MTStateHandler` (vftable
+`0x1418ba118`, registered through `AutoRegisterCreator<MTStateHandler,
+BSTCreateFactoryManager<BSFixedStringCI, IHandlerFunctor<Actor, BSFixedStringCI>>>`
+at `0x1418bc380`). Its functor, `0x1407ba940`, is 48 bytes: take the actor's
+process at `+0xf8` and, if there is one, call `0x140713080(process, 1)`, a 32-byte
+setter. It marks the process; the next update above does the reading. Seven graphs
+raise the event: the two humanoid masters, both `horsebehavior.hkx`, the dragon,
+the vampire lord and the werewolf.
+
+**The join is `MNAM`.** The suffix kept at load is matched against the movement
+type's name field, and the masters bear it out: 101 of the 103 `iState_` suffixes
+the root graphs declare are an `MNAM` exactly, case-insensitive, and the two that
+are not (`CombatSpider_MT`, `CowSiwmDefault`) name no record. Editor ids are never
+read.
 
 ## 5. The graph side
 
