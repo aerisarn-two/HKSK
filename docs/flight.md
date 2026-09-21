@@ -431,6 +431,79 @@ follower are likewise one implementation; a creature that should fly in a way th
 six path shapes cannot express (a straight-line darter, a hoverer that never
 cruises) can still ship, but it will be flown along those shapes.
 
+### 3.10 Approach, hover and melee from the air
+
+How the AI would fight with a flying melee creature, from what the combat trees
+say. The combat root (`CombatBehaviorTreeCombat`, `0x14085f7d0`) is a **Combat
+Parallel** of two trees: an *Action* tree, which holds the melee, ranged, magic and
+shout contexts, and a *Movement* tree, which selects among `CloseMovement`,
+`FlankingMovement`, `RangedMovement`, `Search`, `ExitWater`, `ReturnToCombatArea`,
+`Hide`, `Flee` and **`Flight`** (`0x1408ad390`). Flight is a movement tree. It moves
+the body; it never swings. Swinging is the melee context's, running beside it,
+and no melee function reads the attacker's fly state: the fly-state readers in
+the combat code are the flight tree, the flight path requests, the shout context
+and the flight settings, none of them the melee context.
+
+The flight tree's loop (`0x140897d20`, read from its node names in construction
+order): a `Flight Sequence` of `Takeoff` (conditional) and a `Flight Repeat`, each
+turn of which is an `Attack Sequence Selector` between `Orbit Distant` and an
+`Attack Sequence` of `Orbit` followed by an `Attack Selector` that picks, by the
+style's chances (§3.3), one of `Hover`, `Flying Attack`, `Dive Bomb`, `Perch
+Attack` or `Ground Attack`, with `Land Selector`, `Wait to Land`, `Wait for
+Cruise`, `Leave Perch` and `Crash Land Sequence` around them.
+
+For a creature that fights with its body rather than its breath, the turn that
+matters is **Hover**:
+
+1. The `Hover` node (`CombatBehaviorHover`) raises `CombatPathRequestHover`, whose
+   destination is *none*, that is the target. The hover path builder
+   (`0x1404f5420`) plans a path to a point beside the target and writes the tween
+   set: `TweenPosition`, `TweenRotation`, `TweenEntryDirection`.
+2. The engine's hover wrapper (`0x1406a4230`) sets fly state 3 and requests
+   `ActionHoverStart`; the idle tree sends the graph's hover-entry event; the graph
+   enters its hover machine, whose entry declares `FlightHovering`, tweens to the
+   engine's target, and sets `iState` to the hover movement type (no translation,
+   a turn rate), so the follower keeps the creature there, facing the target.
+3. Meanwhile the Action tree's melee context asks its own question, reach: the
+   distance from the attacker to the target's attack point, which for a flying
+   attacker or target is taken by the flying variant (`0x140672e70`). When the
+   race's attack data (`ATKD`) says an attack reaches, the context requests
+   `ActionRightAttack` or its kin, the idle tree's attack roots resolve it for the
+   race, and the graph receives `attackStart…`.
+4. The graph's hover machine must **hold the attack**: a transition from the hover
+   idle to an attack state that sends `weaponSwing`, `HitFrame`, `AttackWinStart`
+   and `AttackWinEnd`, `attackStop`, and returns. The dragon's does not (its hover
+   holds idle, turns, shouts, injury and stagger), which is why a dragon's hover is
+   a breath attack: the shout context, not the melee context, is what fires there.
+   A creature whose hover machine has the transition gets a melee hover from the
+   same trees with no engine change.
+5. After `HoverTime` the node ends, `ActionHoverStop` sends the exit, the creature
+   returns to cruise, the repeat orbits and selects again.
+
+The same shape gives the other two melee turns. **Ground Attack** is `Land`
+followed by the melee context fighting on the ground as any walker, then
+`Takeoff`; the dragon's bite, tail and wing attacks are these. **Perch Attack** is
+the same from a perch furniture (`PerchTowerAttackSmashBite`).
+
+What the creature has to bring, beyond §3.2 to §3.7:
+
+- a style with `HoverChance` and a `HoverTime` long enough for a swing, and a
+  `GroundAttackChance` if it should also land to fight;
+- attack data on the race with a reach that matches where the hover puts it, and
+  attack idle roots that fire while flying (the dragon's carry no flying
+  condition, so the default is that they do);
+- a hover machine with the attack transitions, and a hover movement type whose
+  turn rate lets it keep facing a moving target.
+
+What was not read, and decides whether the reach works: how the hover path
+builder chooses the hover point's height and distance from the target. The
+dragon hovers at a height and offset that suit a bite that does not come; a small
+creature may be placed too high for its reach or too far for its swing, and the
+adjustment is in the builder, not in data. The `Flying Attack` and `Dive Bomb`
+turns are passes, not hovers: the pass ends at the target and the melee context
+can fire during it, but the body is moving, and the dive's geometry is the five
+global settings of §3.9.
+
 ## 4. The player
 
 What is generic and would work for the player as it stands:
