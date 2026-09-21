@@ -73,6 +73,51 @@ it are `fCombatFlightEffectiveDistance`, `fCombatFlightMinimumRange`,
 `fMoveFlyWalkMult`, `fMoveFlyRunMult`. This whole layer decides *where* the actor
 flies; it never names an animation.
 
+**Guidance, avoidance and attacking from the air.** The six pathing requests each
+have a builder registered under `PathBuilderFlight` (`FlyPath`, `FlyTakeOffPath`,
+`FlyHoverPath`, `FlyLandPath`, `FlyOrbitPath`, `FlyActionPath`), plain functions of
+300 to 1,300 lines (`0x1404f38f0`, `0x1404f8110`, `0x1404f5420`, `0x1404f7430`,
+`0x1404f6260`, `0x1404f3e50`) over one shared helper (`0x1404f8840`). Traced three
+calls deep, they build their paths from arrays of points with the pathing-space
+utilities and reach **no raycast, no line-of-sight grid and no navmesh search**,
+with one exception: the landing builder runs a navmesh fit-sphere search
+(`NavMeshSearchFitSphere`, `0x1404e2ee0`) to choose a landing spot. There is no
+flight counterpart of the ground path's `GroundPathRayValidator` and
+`GroundPathPathingNodeGenerator`, or of the water path's, and the avoidance agents,
+`Avoid Box`, `Avoid Player`, `AvoidThreat`, `MovementPathManagerAgentStaticAvoider`,
+belong to the ground path manager. A flying dragon's guidance is therefore
+geometric: a path shaped for take-off, cruise, orbit, hover, action or landing,
+followed by `MovementAgentPathFollowerFlight`, which turns the path into
+`TargetSpeed`, `Pitch` and `TurnDelta` and clamps the turn by
+`fFlyingActorDefaultTurningSpeed` (`0x140673210`). Nothing steers it round a tower;
+the fly-state setter takes it out of the cell's actor lists, and the world is not in
+its way because the paths are planned above it and the landing is planned on the
+navmesh. Whether the builders sample the terrain height along the path was not
+read; they share no call with the water-height queries the swim update uses.
+
+Attacking from flight is the combat tree's, `CombatBehaviorTreeFlight`
+(`0x140897d20`), and it has the shape of a dragon fight: `Takeoff`, `Wait for
+Cruise`, `Orbit` and `Orbit Distant` around the target, `Hover`, `Flying Attack`,
+`Dive Bomb`, `Perch Attack`, `Ground Attack` after a `Land` chosen by `Land
+Selector` between `Land Nearby` and `Land Far`, `Wait to Land`, `Leave Perch`, and
+a `Crash Land Sequence`. Its choices are the settings `fCombatFlyingAttackChanceMin`
+and `Max` (`0x1408dc990`), `fCombatFlyingAttackTargetDistanceThreshold`
+(`0x140897550`), `fCombatDiveBombChanceMin` and `Max` (`0x1408dc810`),
+`fCombatFlightEffectiveDistance` (`0x1408dd350`) and `fCombatFlightMinimumRange`
+(`0x1408dd240`). The approach is a combat path request of its own,
+`CombatPathRequestFlyingAttack` with destination *none*, that is the target itself,
+beside `CombatPathRequestFlight` to a location or a reference,
+`CombatPathRequestHover` and `CombatPathRequestOrbit`; the node
+`CombatBehaviorFlyingAttack` runs it. The dive is a `DiveBombSpeedController`
+(`0x140894100`) with `fCombatDiveBombOffsetPercent` for where the dive aims and
+`fCombatDiveBombSlowDownDistance` (`0x1408994c0`) for the pull-up. The breath
+attack in the air is the graph's `BHR_Flight_Shout`, requested as a voice cast like
+any other, and the snatch is the `FlightGrab` procedure with the graph's
+`ST_Flight_Kill_Grab`. So: yes to guidance, in the sense of planned paths and a
+follower; no to obstacle avoidance in flight; and yes to approaching and attacking
+from the air, through a dedicated combat path request and a tree that decides
+between a pass, a dive, a hover attack and a landing.
+
 **How the AI reaches the graph.** The executable contains no `TakeOff`,
 `FlyStartCruise`, `HoverStart` or `FlyStopDefault` string. The AI requests one of
 five actions, `ActionFlyStart`, `ActionFlyStop`, `ActionHoverStart`,
