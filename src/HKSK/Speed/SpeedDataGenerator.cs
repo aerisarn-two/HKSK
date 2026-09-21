@@ -133,6 +133,18 @@ public static class SpeedDataGenerator
     /// </summary>
     public const float SweepBeyond = 2f;
 
+    /// <summary>
+    /// How far every sweep runs at least: 324.5, where 74 of the 86 shipped blocks stop.
+    /// </summary>
+    /// <remarks>
+    /// A slow creature's doubled speed falls short of it -- the horker's movement type tops
+    /// out near 83, so its sweep ended below 170 and a request past that came back unchanged,
+    /// where the shipped table answers the 83.4 the creature can actually deliver. Past the top
+    /// rung the curve is flat, so reaching here costs a record one point, and it recovers 284
+    /// of the shipped points and loses none.
+    /// </remarks>
+    public const float SweepFloor = 324.5f;
+
     /// <summary>The 19 headings every shipped block carries, at 0.05 apart.</summary>
     // Accumulated, not multiplied: the game's headings are 0.05f added nineteen times,
     // and 0.05f * i differs from that in 12 of the 19 (SpeedRecord.StandardDirections).
@@ -317,12 +329,12 @@ public static class SpeedDataGenerator
             // so the record has to reach every speed the game can ask for: the fastest
             // the movement type names, scaled by SweepBeyond for SpeedMult, and the
             // whole ladder, whose top rung may lie far above that -- the humanoids'
-            // is the run at ten times speed, 3,510. Beyond the top rung the curve is
-            // flat, so reaching past it costs one point.
+            // is the run at ten times speed, 3,510 -- and never short of SweepFloor.
+            // Beyond the top rung the curve is flat, so reaching past it costs one point.
             float fastest = type is { } t
                 ? new[] { t.ForwardWalk, t.ForwardRun, t.BackWalk, t.BackRun, t.LeftWalk, t.LeftRun, t.RightWalk, t.RightRun }.Max()
                 : 0f;
-            float end = MathF.Max(top, SweepBeyond * fastest);
+            float end = MathF.Max(MathF.Max(top, SweepBeyond * fastest), SweepFloor);
 
             foreach (float heading in Headings())
             {

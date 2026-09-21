@@ -561,8 +561,11 @@ for the engine that reads it, not to reproduce the shipped file:
 - **the sweep starts at zero** on every heading, because below the first point the
   query reads from the origin, and **ends past everything the game can ask** — the
   whole ladder (the humanoids' top rung is the run at ten times speed, 3,510) and
-  twice the fastest speed the type names, for `SpeedMult`; beyond the top rung the
-  curve is flat and costs one point;
+  twice the fastest speed the type names, for `SpeedMult` -- and never short of
+  324.5, where the shipped sweeps stop, since a slow creature's doubled speed falls
+  below it and a request past the end comes back unchanged where the shipped table
+  answers the speed the creature can reach; beyond the top rung the curve is flat and
+  costs one point;
 - **thinning** is the shipped file's own greedy pass, at 0.5 units rather than its 2.
 
 **Driving the graph into a state** (`WayInto`, `TaggedAt`) is how a key with no
@@ -588,10 +591,10 @@ Six writable keys get no block: the rider's mounted states and the first-person
 camera carry no root motion, and the horse's swim clip records no travel. An
 absent block is the game's own answer there, the request unchanged.
 
-Read back through the game's lookup, the result holds 13,931 of the 16,930 shipped
-points on the shared blocks (82.3%). Each engine-side choice costs against that
+Read back through the game's lookup, the result holds 14,215 of the 16,930 shipped
+points on the shared blocks (84.0%). Each engine-side choice costs against that
 measure — the offset 171 points, the zero start 99, measured before the horse was
-read at its own numbers (§6.3) — and is kept, because the engine is the measure. 62,342 points, 521 KB, about five seconds.
+read at its own numbers (§6.3) — and is kept, because the engine is the measure. 62,526 points, 523 KB, about five seconds.
 
 ## 9. Open
 

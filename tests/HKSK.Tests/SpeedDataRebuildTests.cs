@@ -429,18 +429,19 @@ public sealed class SpeedDataRebuildTests
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "rebuild-readback.txt"),
             $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n\n" + string.Join("\n", perBlock));
 
-        // 82.3% of the shipped points on the 76 blocks, read through the game's own
-        // lookup; 79.5% before the horse's and the werewolf's motion was read at their
+        // 84.0% of the shipped points on the 76 blocks, read through the game's own
+        // lookup. 79.5% before the horse's and the werewolf's motion was read at their
         // caches' own numbers (ActorProject.MotionOf), which took them from 0 and 26 of
-        // their points to 289 and 217. Three choices made for the
+        // their points to 289 and 217, and 82.3% before every sweep reached 324.5
+        // (SweepFloor), which a slow creature's doubled speed fell short of. Three choices made for the
         // engine cost against the shipped file and are kept, measured before that fix:
         // no sampler offset (13,622 with it, against 13,451), every heading swept from
         // zero where the shipped sweeps settle in from 0.5 (13,550 starting there), and
         // a tolerance of 0.5 (13,288 at the game's 2).
         Assert.Equal(10, unasked);
         Assert.Equal(16930, points);
-        Assert.Equal(13931, held);
-        Assert.Equal(507, recordsHeld);
+        Assert.Equal(14215, held);
+        Assert.Equal(587, recordsHeld);
     }
 
     /// <summary>The inferred table writes back as a well-formed file.</summary>

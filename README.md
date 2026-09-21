@@ -309,7 +309,7 @@ does it from the command line. `SpeedDataGenerator.Amend(cache, "MyCreatureProje
 rebuilds one project's block in place instead, and leaves every other one as it was;
 `SetDataGenerator.Amend` does the same for the set data. Against the shipped file it writes 76
 of the 86 blocks the game ships -- the other ten are ones the engine never asks for -- and 52
-it does not, and read the way the game reads it holds 82.3% of the shipped points within 2%. **`docs/speed-data.md`** is the specification —
+it does not, and read the way the game reads it holds 84.0% of the shipped points within 2%. **`docs/speed-data.md`** is the specification —
 the layout, the nine invariants, the closed form for the curve, how to choose `MOVT`
 for an animated creature, and the open questions with what has been ruled out.
 
