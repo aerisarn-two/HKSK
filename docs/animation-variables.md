@@ -206,19 +206,48 @@ acts. Every one is a report: the graph decides, the engine follows.
 
 ## 4. Events the engine listens for
 
-Names compared against incoming animation events, so a clip trigger with one of
-them reaches game code. `HitFrame`, `preHitFrame`, `weaponSwing`,
+Two mechanisms carry an animation event from a clip trigger into game code, and
+they are separate.
+
+**Names in the string table** (§1) are compared against incoming events by the
+code that needs a time or a moment: `HitFrame`, `preHitFrame`, `weaponSwing`,
 `weaponLeftSwing`, `AttackWinStart`, `AttackWinEnd` (combat: the hit lands, the
-swing sound, the window in which the next attack may be queued -- the set data's
-combat context also reads the `HitFrame` time out of the animation);
-`MLh_SpellFire_Event`, `MRh_SpellFire_Event`, `Voice_SpellFire_Event`,
+swing, the window in which the next attack may be queued; the combat context of
+`docs/animation-set-data.md` §4.6 reads the `HitFrame` time out of the animation
+data); `MLh_SpellFire_Event`, `MRh_SpellFire_Event`, `Voice_SpellFire_Event`,
 `arrowRelease` (the projectile leaves); `EndAnim`, `StopEffect`; `PickUp`,
-`PathTweenerStart`, `PathTweenerEnd`; `ActorResponse`, `PlayerCharacterResponse`;
-`SpecialIdle_Cast`, `SpecialIdle_AreaEffect`; `English`, `Russian`, `Polish`
-(lip-sync language); `ObjectActivated`, `PairedKillTarget`, `TurnDynamic`,
-`fFlameProjectileLength`, `Imod`, `Rimod`, `Left`, `fIdleTimer` (in the table, no
-reader found in this pass). `MTState`, handled by `MTStateHandler`, is not in this
-table: event handlers are registered by name in a factory.
+`PathTweenerStart`, `PathTweenerEnd`; `ActorResponse`,
+`PlayerCharacterResponse`; `SpecialIdle_Cast`, `SpecialIdle_AreaEffect`;
+`English`, `Russian`, `Polish` (lip-sync language). `ObjectActivated`,
+`PairedKillTarget`, `TurnDynamic`, `fFlameProjectileLength`, `Imod`, `Rimod`,
+`Left` and `fIdleTimer` are in the table with no reader found in this pass.
+
+**Handlers registered by name.** Every event the game *acts on* has a class
+`<Name>Handler` implementing `IHandlerFunctor<Actor, BSFixedStringCI>`, registered
+through `AutoRegisterCreator` into a `BSTCreateFactoryManager` keyed on the event
+name, case-insensitive. The RTTI names every one -- **93 handlers** -- and that
+list is the complete set of events a clip trigger can send to the game. By what
+they do:
+
+| group | handlers (event name = class name without `Handler`) |
+| --- | --- |
+| motion mode | `AnimationDriven`, `MotionDriven`, `AllowRotation` -- the three the engine sends itself on a change of `bAnimationDriven`/`bAllowRotation`, and a graph may send directly; `ZeroPitch`, `EnableCharacterPitch`, `DisableCharacterPitch`, `PitchOverrideStart`/`End`, `EnableCharacterBumper`, `DisableCharacterBumper`, `HeadTrackingOn`/`Off` |
+| movement type | `MTState` -- marks the actor's process so the next update re-reads `iState` (`docs/speed-data.md` §4.5) |
+| combat, melee | `HitFrame`, `AnticipateAttack`, `AttackWinStart`, `AttackWinEnd`, `AttackStop`, `WeaponRightSwing`, `WeaponLeftSwing`, `RecoilStop`, `StaggeredStop`, `Decapitate`, `KillActor`, `KillMoveStart`, `KillMoveEnd`, `PairedStop`, `DeathEmote`, `DeathStop` |
+| weapons | `WeaponBeginDrawRight`, `RightHandWeaponDraw`, `WeaponBeginSheatheRight`, `RightHandWeaponSheathe`, `BowDrawn`, `BowRelease`, `BowZoomStart`/`Stop`, `ArrowAttach`, `ArrowDetach`, `ArrowRelease` |
+| magic | `LeftHandSpellCast`, `LeftHandSpellFire`, `RightHandSpellCast`, `RightHandSpellFire`, `VoiceSpellCast`, `VoiceSpellFire`, `InterruptCast`, `EndSummonAnimation`, `VampireFeedEnd` |
+| ragdoll and recovery | `AddRagdoll`, `RemoveRagdoll`, `RagdollStart`, `GetUpStart`, `GetUpEnd`, `JumpAnimEvent` |
+| furniture and idles | `ChairEnter`, `BedEnter`, `PlayerChairEnter`, `PlayerBedEnter`, `ChairFurnitureExit`, `BedFurnitureExit`, `PlayerFurnitureExit`, `PickNewIdle`, `IdleDialogueEnter`/`Exit`, `ActionActivateDone`, `NPCAttach`, `NPCDetach`, `AnimationObjectLoad`, `AnimationObjectDraw` |
+| mounts and carts | `MountDismountEnd`, `StopMountCamera`, `ExitCartBegin`, `ExitCartEnd` |
+| flight (dragons) | `FlightTakeOff`, `FlightCruising`, `FlightHovering`, `FlightPerching`, `FlightLanding`, `FlightLand`, `FlightLandEnd`, `FlightCrashLandStart`, `FlightAction`, `FlightActionEntryEnd`, `FlightActionEnd`, `FlightActionGrab`, `FlightActionRelease` |
+| camera | `AnimatedCameraStart`, `AnimatedCameraDeltaStart`, `AnimatedCameraEnd`, `CameraOverrideStart`/`Stop`, `CameraShake` |
+
+Everything else a clip announces -- `SoundPlay.X`, `FootLeft`, `FootRight`,
+`MLh_SpellReady_Event`, the `Start`/`Stop` pairs the machines transition on -- is
+either handled by a different registry (sound and footstep payloads go to the
+audio and impact systems by their prefix) or is the graph's own business. A new
+creature may invent any event it likes for its own transitions; only the 93 above
+reach the actor, and only by these exact names.
 
 ## 5. Authoring a creature's behaviour
 
@@ -244,6 +273,38 @@ player can queue.
 `_Player` variants of the power attacks are tagged differently for `iState` -- and
 a first-person graph is told so by `IsFirstPerson`; the horse rider additionally
 reads `HorseSpeedSampled`, the mount's sampled speed pushed into the rider.
+
+### 5.1 A new weapon type, and a sub-type the engine does not know
+
+The engine writes `iRightHandType` from the record's animation type and folds any
+value the enum does not name into "none" (§2.0), so a new type cannot be
+introduced through `DNAM`. It can be introduced one level below, on a variable the
+engine does not own:
+
+1. give the record the closest existing animation type, so equip, sheathing, the
+   attack data, the set data's hand ranges and every engine reader behave;
+2. declare `iRightHandSubType` (and the left) in the root graph, initial value 0,
+   and set it on equip from a keyword -- from Papyrus with
+   `SetAnimationVariableInt`, reapplied on load and on equip since the engine
+   does not restore it, or by an animation event with a payload the graph
+   latches with an expression modifier;
+3. under the borrowed type's state in the weapon-selection machines, add a machine
+   in sync mode on the sub-type variable, state 0 the stock branch and state 1
+   yours, so the stock animations remain the default;
+4. tag your branch with `BSiStateTaggingGenerator` carrying the borrowed type's
+   `iState` id -- or, for different movement speeds, a new `MOVT` with its own
+   `MNAM`, its `iState_<MNAM>` declared in the root graph and the tag on that id,
+   which `speedgen` then writes a block for (`docs/speed-data.md` §7.4): the one
+   place a new type gets first-class treatment, because the engine reads `iState`
+   from the graph;
+5. fire the events of §4 from the new clips -- `HitFrame`, the swings, the attack
+   window, `ArrowRelease` for a launcher -- so combat measures your animation;
+6. regenerate the animation data and the set data; the new attacks fall into the
+   borrowed type's hand ranges, which is what the engine's readers see.
+
+Do not put the sub-type on a reserved name and do not expect a new number in
+`iRightHandType` to be seen: the propagation that keeps first and third person in
+step copies whatever the graph holds, and every reader folds the record's byte.
 
 Everything else a graph declares -- `SpeedDamped`, `iWantBlock`, `bWantCastLeft`,
 the `iState_` constants, the hundreds of `b*Ready` and `iSync*` intermediates -- is
