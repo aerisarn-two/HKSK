@@ -329,5 +329,6 @@ structure it walks rather than by any string. The recipes are
 - `HKSK.Cache.AnimationSetDataFile` — read, write, `HavokCrc`.
 - `HKSK.SetData.SetDataGenerator`, `GraphReach`, `StateGraph` — the rebuild (§5) and
   the flag (§6); `tools/setgen` runs it against the extracted meshes and the masters.
+- `SetDataGenerator.Amend` — one project's sets, rebuilt in place, the others untouched.
 - `HKSK.Records.GameRecordRules.Events` — the inputs of §5.1 from the records.
 - `SetDataRebuildTests`, `MasterCorpus` — the numbers above, as exact assertions.

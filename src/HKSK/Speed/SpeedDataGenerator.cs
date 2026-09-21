@@ -53,6 +53,61 @@ public static class SpeedDataGenerator
         return Infer(cache, movements, tolerance).File;
     }
 
+    /// <summary>Rebuilds one project's block, leaving every other project's as it is.</summary>
+    /// <remarks>
+    /// The project gets exactly the block <see cref="Generate(SkyrimCache, IReadOnlyDictionary{string, MovementType}, float)"/>
+    /// would give it: a new creature is added at the end, an existing one is rebuilt where
+    /// it stands, and one that no longer carries a sampler is taken out, since the game
+    /// answers an absent project by passing the request through. A cache with no table
+    /// gains one only when the project needs a block.
+    /// </remarks>
+    /// <exception cref="ArgumentException">The animation data lists no such project.</exception>
+    /// <exception cref="InvalidOperationException">The project's Havok files cannot be found.</exception>
+    public static Amendment Amend(
+        SkyrimCache cache, string projectName,
+        IReadOnlyDictionary<string, MovementType> movements,
+        float tolerance = DefaultTolerance)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(movements);
+        if (!(tolerance > 0f)) throw new ArgumentOutOfRangeException(nameof(tolerance));
+
+        CacheProject project = Amendments.Open(cache, projectName);
+        if (project is ActorProject && cache.FindProjectFile(project.Name) is null)
+            throw new InvalidOperationException($"the Havok project file of '{project.Name}' cannot be found beside the cache");
+
+        SpeedProjectBlock? block = BlockOf(cache, project, movements, tolerance, new Tally());
+        if (block is null && cache.SpeedData is null) return Amendment.None;
+
+        SpeedDataFile file = cache.SpeedData ??= new SpeedDataFile();
+
+        // The listing and the block are parallel lists, so they move together.
+        int at = file.Projects.FindIndex(p => string.Equals(SpeedDataFile.StemOf(p), project.Name, StringComparison.OrdinalIgnoreCase));
+        if (at >= 0 && at < file.Blocks.Count)
+        {
+            if (block is null)
+            {
+                file.Projects.RemoveAt(at);
+                file.Blocks.RemoveAt(at);
+                return Amendment.Removed;
+            }
+
+            file.Projects[at] = SpeedDataFile.ListingFor(project.Name);
+            file.Blocks[at] = block;
+            return Amendment.Replaced;
+        }
+
+        if (block is null) return Amendment.None;
+
+        file.Projects.Add(SpeedDataFile.ListingFor(project.Name));
+        file.Blocks.Add(block);
+        return Amendment.Added;
+    }
+
+    /// <summary>Rebuilds one project's block, with the movement types taken from the game's records.</summary>
+    public static Amendment Amend(SkyrimCache cache, string projectName, Records.IGameRecords records, float tolerance = DefaultTolerance) =>
+        Amend(cache, projectName, Records.GameRecordRules.MovementTypes(records), tolerance);
+
     /// <summary>Builds the whole table, with the movement types taken from the game's records.</summary>
     public static SpeedDataFile Generate(SkyrimCache cache, Records.IGameRecords records, float tolerance = DefaultTolerance) =>
         Generate(cache, Records.GameRecordRules.MovementTypes(records), tolerance);
@@ -118,152 +173,170 @@ public static class SpeedDataGenerator
         float tolerance = DefaultTolerance)
     {
         var file = new SpeedDataFile();
-        int projects = 0, blocks = 0, unbuildable = 0;
-        var how = new Dictionary<(string, int), string>();
+        var tally = new Tally();
 
         foreach (CacheProject project in cache.OpenAll())
-        {
-            if (project is not ActorProject actor) continue;
-
-            string? path = cache.FindProjectFile(project.Name);
-            if (path is null) continue;
-
-            if (BehaviorRoot.Of(path) is not { } root) continue;
-
-            ProjectWalk walk = ProjectWalk.Of(path);
-
-            // The sampler is the only thing that reads the table. A project without
-            // one -- the eight flyers and hoverers -- is left out, and the game
-            // answers a request for it as it answers any absent project: unchanged.
-            if (Ladders.ParameterOf(walk) is not { } parameter) continue;
-
-            projects++;
-            file.Projects.Add(SpeedDataFile.ListingFor(project.Name));
-
-            var block = new SpeedProjectBlock();
-            file.Blocks.Add(block);
-
-            // The project is read once and evaluated many times -- one run per state
-            // per heading -- so the walk and the character properties are hoisted.
-            hkbBehaviorGraph? graph = null;
-            foreach (ProjectStep step in walk.Steps)
-                if (step.Node is hkbBehaviorGraph found) { graph = found; break; }
-
-            if (graph is null) continue;
-            Properties properties = Properties.OfProject(path);
-
-            var constants = StateConstants.Of(walk, root);
-            var variables = new ProjectVariables(walk.Steps);
-            List<StateAssignment> expressions = [.. StateExpressions.In(walk)];
-            var placed = StateExpressions.WithNodes(walk).ToList();
-
-            var built = LocomotionStates.In(walk, variables)
-                .Select(st => (State: st, Arms: Compass.ArmsOf(walk, st, actor)))
-                .Where(st => st.Arms.Count > 0)
-                .ToList();
-
-            IReadOnlyList<StateKeys.Writer> writers = StateKeys.Writers(walk, root);
-
-            foreach ((int key, IReadOnlySet<StateKeys.By> writtenBy) in StateKeys.Writable(walk, root))
+            if (BlockOf(cache, project, movements, tolerance, tally) is { } block)
             {
-                // The movement type, where the key names one: it bounds the sweep and
-                // helps pair an undeclared key. A key that names none -- the player's
-                // mounted states, declared in the horse's file -- is asked for all
-                // the same.
-                MovementType? type = StateConstants.MovementTypeOf(constants, key) is { } movement
-                                     && movements.TryGetValue(movement, out MovementType found) ? found : null;
+                file.Projects.Add(SpeedDataFile.ListingFor(project.Name));
+                file.Blocks.Add(block);
+            }
 
-                // What the graph declares, first: a BSiStateTaggingGenerator tags the
-                // subtree it guards and a BSIStateManagerModifier declares a table of
-                // (machine, state) pairs, and ProjectWalk.KeyOf reads both. Only where
-                // the graph declares nothing does the heuristic, then the evaluator,
-                // get a turn.
-                string route = "declared";
-                var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
+        return new Inferred(file, tally.Projects, tally.Blocks, tally.Unbuildable, tally.How);
+    }
 
-                // A tag or a manager row places the key in a subtree with no ladder of
-                // its own. Drive the graph into that subtree by the events that enter
-                // it and read which sampler-fed ladder is live beside it: the player's
-                // attack states are layered over the locomotion that keeps reading the
-                // sampler while the attack plays.
-                if (arms is null && TaggedAt(graph, walk, properties, actor, built, parameter, key, writers) is { } beside)
-                { arms = beside; route = "tagged"; }
+    /// <summary>What happened to each project and key while a table was built: for the tests, not the table.</summary>
+    internal sealed class Tally
+    {
+        public int Projects, Blocks, Unbuildable;
+        public Dictionary<(string, int), string> How { get; } = [];
+    }
 
-                if (arms is null && FlatAt(walk, properties, actor, key) is { } flat) { arms = flat; route = "flat"; }
+    /// <summary>
+    /// One project's block, or null when the project has no place in the table.
+    /// </summary>
+    private static SpeedProjectBlock? BlockOf(
+        SkyrimCache cache, CacheProject project, IReadOnlyDictionary<string, MovementType> movements,
+        float tolerance, Tally tally)
+    {
+        if (project is not ActorProject actor) return null;
 
-                if (arms is null)
-                {
-                    (LocomotionState? paired, Pairing.By _) = type is { } known
-                        ? Pairing.For(walk, built, key, known, constants.Count, expressions, constants, placed)
-                        : (null, default);
+        string? path = cache.FindProjectFile(project.Name);
+        if (path is null) return null;
 
-                    if (paired is { } chosen) { arms = built.First(b => b.State.Equals(chosen)).Arms; route = "paired"; }
-                    else if (LikeAnother(built, constants, movements, type) is { } alike) { arms = alike; route = "alike"; }
-                    // A tag or a manager row says exactly which subtree holds the key.
-                    // When nothing under it reads the sampler and no other reading
-                    // applies -- the player's mounted states, whose blends run on the
-                    // horse's speed -- the honest block is none: running the graph with
-                    // iState pinned would hand the key another state's curve, since
-                    // nothing in any graph selects on iState.
-                    else if (writtenBy.All(by => by is StateKeys.By.Tag or StateKeys.By.Manager)) { how[(project.Name, key)] = "unread"; continue; }
-                    else if (StateAt(graph, walk, properties, actor, built, parameter, key) is { } run) { arms = run; route = "evaluated"; }
-                }
+        if (BehaviorRoot.Of(path) is not { } root) return null;
 
-                // Nothing in this graph reads a speed into a blend, so the creature
-                // has no curve: whatever it plays, it plays at one speed.
-                if (built.Count == 0 && arms is null && Standing(walk, properties, actor) is { } standing) { arms = standing; route = "standing"; }
+        ProjectWalk walk = ProjectWalk.Of(path);
 
-                if (arms is null) { unbuildable++; how[(project.Name, key)] = "unbuildable"; continue; }
-                how[(project.Name, key)] = route;
+        // The sampler is the only thing that reads the table. A project without
+        // one -- the eight flyers and hoverers -- is left out, and the game
+        // answers a request for it as it answers any absent project: unchanged.
+        if (Ladders.ParameterOf(walk) is not { } parameter) return null;
 
-                // A creature that cannot move by root motion has a curve, and it is
-                // zero. The grid it is written on is degenerate because the ladder
-                // gives no extent, and the shipped one spans 0 to 324.5 like 74 of
-                // the 86 blocks do -- where that extent comes from is not derived
-                // here, and the curve is zero at every x either way.
-                bool still = arms.All(a => a.Ladder.Rungs.All(r => r.Travel.Length() <= 0f));
+        tally.Projects++;
 
-                float top = arms.Max(a => a.Ladder.Rungs.Count == 0 ? 0f : a.Ladder.Rungs[^1].Weight);
-                if (top <= 0f && !still) { unbuildable++; continue; }
-                if (arms.Any(a => a.Ladder.Rungs.Count == 0)) { unbuildable++; continue; }
+        var block = new SpeedProjectBlock();
 
-                var entry = new SpeedEntry { Key = (uint)key };
-                block.Entries.Add(entry);
-                blocks++;
+        // The project is read once and evaluated many times -- one run per state
+        // per heading -- so the walk and the character properties are hoisted.
+        hkbBehaviorGraph? graph = null;
+        foreach (ProjectStep step in walk.Steps)
+            if (step.Node is hkbBehaviorGraph found) { graph = found; break; }
 
-                float share = Share(graph, walk, properties, parameter);
+        if (graph is null) return block;
+        Properties properties = Properties.OfProject(path);
 
-                // Where the sweep stops. Above a record's last point the game does not
-                // clamp -- it hands the request back unchanged (SpeedRecord.Sample) --
-                // so the record has to reach every speed the game can ask for: the fastest
-                // the movement type names, scaled by SweepBeyond for SpeedMult, and the
-                // whole ladder, whose top rung may lie far above that -- the humanoids'
-                // is the run at ten times speed, 3,510. Beyond the top rung the curve is
-                // flat, so reaching past it costs one point.
-                float fastest = type is { } t
-                    ? new[] { t.ForwardWalk, t.ForwardRun, t.BackWalk, t.BackRun, t.LeftWalk, t.LeftRun, t.RightWalk, t.RightRun }.Max()
-                    : 0f;
-                float end = MathF.Max(top, SweepBeyond * fastest);
+        var constants = StateConstants.Of(walk, root);
+        var variables = new ProjectVariables(walk.Steps);
+        List<StateAssignment> expressions = [.. StateExpressions.In(walk)];
+        var placed = StateExpressions.WithNodes(walk).ToList();
 
-                foreach (float heading in Headings())
-                {
-                    // Swept on the file's own half-unit grid from zero: below a record's
-                    // first point the query interpolates from the origin, so the first
-                    // point has to be the response at zero itself. The curve is the blend
-                    // law at the goal speed and nothing else -- the query applies no
-                    // offset (docs/speed-data.md §4.2); the 0.0404 the shipped sweeps
-                    // read early is the tool's, and SpeedLadder.Tabulate keeps it for
-                    // reading that file.
-                    List<SpeedPoint> sweep = [];
-                    for (float x = 0f; x <= end; x += 0.5f)
-                        sweep.Add(new SpeedPoint(x, share * SpeedSampler.Sample(arms, heading, x)));
+        var built = LocomotionStates.In(walk, variables)
+            .Select(st => (State: st, Arms: Compass.ArmsOf(walk, st, actor)))
+            .Where(st => st.Arms.Count > 0)
+            .ToList();
 
-                    entry.Records.Add(new SpeedRecord { Direction = heading, Points = SpeedRecord.Retain(sweep, tolerance) });
-                }
+        IReadOnlyList<StateKeys.Writer> writers = StateKeys.Writers(walk, root);
+
+        foreach ((int key, IReadOnlySet<StateKeys.By> writtenBy) in StateKeys.Writable(walk, root))
+        {
+            // The movement type, where the key names one: it bounds the sweep and
+            // helps pair an undeclared key. A key that names none -- the player's
+            // mounted states, declared in the horse's file -- is asked for all
+            // the same.
+            MovementType? type = StateConstants.MovementTypeOf(constants, key) is { } movement
+                                 && movements.TryGetValue(movement, out MovementType found) ? found : null;
+
+            // What the graph declares, first: a BSiStateTaggingGenerator tags the
+            // subtree it guards and a BSIStateManagerModifier declares a table of
+            // (machine, state) pairs, and ProjectWalk.KeyOf reads both. Only where
+            // the graph declares nothing does the heuristic, then the evaluator,
+            // get a turn.
+            string route = "declared";
+            var arms = built.FirstOrDefault(b => b.State.Key == key).Arms;
+
+            // A tag or a manager row places the key in a subtree with no ladder of
+            // its own. Drive the graph into that subtree by the events that enter
+            // it and read which sampler-fed ladder is live beside it: the player's
+            // attack states are layered over the locomotion that keeps reading the
+            // sampler while the attack plays.
+            if (arms is null && TaggedAt(graph, walk, properties, actor, built, parameter, key, writers) is { } beside)
+            { arms = beside; route = "tagged"; }
+
+            if (arms is null && FlatAt(walk, properties, actor, key) is { } flat) { arms = flat; route = "flat"; }
+
+            if (arms is null)
+            {
+                (LocomotionState? paired, Pairing.By _) = type is { } known
+                    ? Pairing.For(walk, built, key, known, constants.Count, expressions, constants, placed)
+                    : (null, default);
+
+                if (paired is { } chosen) { arms = built.First(b => b.State.Equals(chosen)).Arms; route = "paired"; }
+                else if (LikeAnother(built, constants, movements, type) is { } alike) { arms = alike; route = "alike"; }
+                // A tag or a manager row says exactly which subtree holds the key.
+                // When nothing under it reads the sampler and no other reading
+                // applies -- the player's mounted states, whose blends run on the
+                // horse's speed -- the honest block is none: running the graph with
+                // iState pinned would hand the key another state's curve, since
+                // nothing in any graph selects on iState.
+                else if (writtenBy.All(by => by is StateKeys.By.Tag or StateKeys.By.Manager)) { tally.How[(project.Name, key)] = "unread"; continue; }
+                else if (StateAt(graph, walk, properties, actor, built, parameter, key) is { } run) { arms = run; route = "evaluated"; }
+            }
+
+            // Nothing in this graph reads a speed into a blend, so the creature
+            // has no curve: whatever it plays, it plays at one speed.
+            if (built.Count == 0 && arms is null && Standing(walk, properties, actor) is { } standing) { arms = standing; route = "standing"; }
+
+            if (arms is null) { tally.Unbuildable++; tally.How[(project.Name, key)] = "unbuildable"; continue; }
+            tally.How[(project.Name, key)] = route;
+
+            // A creature that cannot move by root motion has a curve, and it is
+            // zero. The grid it is written on is degenerate because the ladder
+            // gives no extent, and the shipped one spans 0 to 324.5 like 74 of
+            // the 86 blocks do -- where that extent comes from is not derived
+            // here, and the curve is zero at every x either way.
+            bool still = arms.All(a => a.Ladder.Rungs.All(r => r.Travel.Length() <= 0f));
+
+            float top = arms.Max(a => a.Ladder.Rungs.Count == 0 ? 0f : a.Ladder.Rungs[^1].Weight);
+            if (top <= 0f && !still) { tally.Unbuildable++; continue; }
+            if (arms.Any(a => a.Ladder.Rungs.Count == 0)) { tally.Unbuildable++; continue; }
+
+            var entry = new SpeedEntry { Key = (uint)key };
+            block.Entries.Add(entry);
+            tally.Blocks++;
+
+            float share = Share(graph, walk, properties, parameter);
+
+            // Where the sweep stops. Above a record's last point the game does not
+            // clamp -- it hands the request back unchanged (SpeedRecord.Sample) --
+            // so the record has to reach every speed the game can ask for: the fastest
+            // the movement type names, scaled by SweepBeyond for SpeedMult, and the
+            // whole ladder, whose top rung may lie far above that -- the humanoids'
+            // is the run at ten times speed, 3,510. Beyond the top rung the curve is
+            // flat, so reaching past it costs one point.
+            float fastest = type is { } t
+                ? new[] { t.ForwardWalk, t.ForwardRun, t.BackWalk, t.BackRun, t.LeftWalk, t.LeftRun, t.RightWalk, t.RightRun }.Max()
+                : 0f;
+            float end = MathF.Max(top, SweepBeyond * fastest);
+
+            foreach (float heading in Headings())
+            {
+                // Swept on the file's own half-unit grid from zero: below a record's
+                // first point the query interpolates from the origin, so the first
+                // point has to be the response at zero itself. The curve is the blend
+                // law at the goal speed and nothing else -- the query applies no
+                // offset (docs/speed-data.md §4.2); the 0.0404 the shipped sweeps
+                // read early is the tool's, and SpeedLadder.Tabulate keeps it for
+                // reading that file.
+                List<SpeedPoint> sweep = [];
+                for (float x = 0f; x <= end; x += 0.5f)
+                    sweep.Add(new SpeedPoint(x, share * SpeedSampler.Sample(arms, heading, x)));
+
+                entry.Records.Add(new SpeedRecord { Direction = heading, Points = SpeedRecord.Retain(sweep, tolerance) });
             }
         }
 
-        return new Inferred(file, projects, blocks, unbuildable, how);
+        return block;
     }
 
     /// <summary>

@@ -604,5 +604,7 @@ redistributable and is not in this repository; `tools/exe-re` holds the helpers.
 - `HKSK.Behavior.StateKeys` — the values a graph can put `iState` at, and by what.
 - `HKSK.Speed.SpeedSampler`, `SpeedLadder`, `Compass` — a project's ladders and the
   curve law.
-- `HKSK.Speed.SpeedDataGenerator` — the table (§8); `tools/speedgen` runs it.
+- `HKSK.Speed.SpeedDataGenerator` — the table (§8); `tools/speedgen` runs it. `Amend`
+  rebuilds one project's block in place and leaves the others byte for byte, which is
+  how a new creature joins a table without the rest being re-swept.
 - `tools/hkmeasure` — runs a graph inside Havok's own runtime, for measured answers.

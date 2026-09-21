@@ -305,7 +305,9 @@ file.Save("speeddatasinglefile.txt");
 ```
 
 `records` is the game's plugin data (see *The game's records* below). `tools/speedgen`
-does it from the command line. Against the shipped file it writes all 86
+does it from the command line. `SpeedDataGenerator.Amend(cache, "MyCreatureProject", records)`
+rebuilds one project's block in place instead, and leaves every other one as it was;
+`SetDataGenerator.Amend` does the same for the set data. Against the shipped file it writes all 86
 blocks the game ships and 63 it does not, and read the way the game reads it holds
 82% of the shipped points within 2%. **`docs/speed-data.md`** is the specification —
 the layout, the nine invariants, the closed form for the curve, how to choose `MOVT`

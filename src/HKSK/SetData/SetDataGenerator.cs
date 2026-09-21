@@ -95,11 +95,49 @@ public static class SetDataGenerator
             if (!project.HasCache) continue;
             if (Build(cache.MeshesFolder, project, events, slack) is not { } sets) continue;
 
-            file.Projects.Add(new AnimationSetDataProject { Name = $"{project.Name}Data\\{project.Name}.txt", Sets = sets });
+            file.Projects.Add(Entry(project.Name, sets));
         }
 
         return file;
     }
+
+    /// <summary>Rebuilds one project's sets in the cache's set data, leaving every other project's as it is.</summary>
+    /// <remarks>
+    /// The project gets exactly the entry <see cref="Generate(SkyrimCache, GameEvents, double)"/>
+    /// would give it: a new creature is added at the end and an existing one rebuilt where it
+    /// stands. A project with no animation cache -- a prop -- has no sets, and any it had are
+    /// taken out.
+    /// </remarks>
+    /// <exception cref="ArgumentException">The animation data lists no such project.</exception>
+    /// <exception cref="InvalidOperationException">The project's Havok files cannot be found.</exception>
+    public static Amendment Amend(SkyrimCache cache, string projectName, GameEvents events, double slack = DefaultSlack)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(events);
+        if (!(slack >= 1)) throw new ArgumentOutOfRangeException(nameof(slack), "a set cannot be smaller than the files one weapon loads");
+        if (cache.MeshesFolder is null)
+            throw new ArgumentException("the cache has to be read from a meshes folder, to find the animation files", nameof(cache));
+
+        CacheProject project = Amendments.Open(cache, projectName);
+        AnimationSetDataProject? entry = null;
+
+        if (project is ActorProject { HasCache: true } actor)
+        {
+            if (actor.ProjectFile is null)
+                throw new InvalidOperationException($"the Havok project file of '{actor.Name}' cannot be found beside the cache");
+
+            if (Build(cache.MeshesFolder, actor, events, slack) is { } sets) entry = Entry(actor.Name, sets);
+        }
+
+        return Amendments.Apply(cache.SetData.Projects, p => string.Equals(p.Stem, project.Name, StringComparison.OrdinalIgnoreCase), entry);
+    }
+
+    /// <summary>Rebuilds one project's sets, with the events taken from the game's records.</summary>
+    public static Amendment Amend(SkyrimCache cache, string projectName, Records.IGameRecords records, double slack = DefaultSlack) =>
+        Amend(cache, projectName, Records.GameRecordRules.Events(records), slack);
+
+    private static AnimationSetDataProject Entry(string project, ProjectAttackListBlock sets) =>
+        new() { Name = $"{project}Data\\{project}.txt", Sets = sets };
 
     /// <summary>Builds the whole file, with the events taken from the game's records.</summary>
     public static AnimationSetDataFile Generate(SkyrimCache cache, Records.IGameRecords records, double slack = DefaultSlack) =>
