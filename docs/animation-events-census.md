@@ -4,8 +4,10 @@ Step 1 and 2 of the event investigation (`docs/animation-variables.md` §4): eve
 `<Name>Handler` registered for `IHandlerFunctor<Actor, BSFixedStringCI>`, its functor
 (slot 1 of its vftable) and what the functor calls, from `index.py summary`. Input,
 menu and UI handlers that share the name suffix are left out. Empty `calls` means
-the functor returns without calling anything: the event exists for the engine to
-send or a script to wait on, and the game does nothing on receiving it.
+only that the functor makes no direct call: most of those write actor state, one
+calls a virtual and two tail-jump. What each event does is in
+`docs/animation-events.md`, which read every functor; its §10 lists what this
+census got wrong.
 
 ```
 ActionActivateDoneHandler 0x1407b9670 calls: 140179710 1402eac20 1406de6d0 1406e4230 1406e4260 
@@ -104,7 +106,7 @@ ZeroPitchHandler 0x1407ba970 calls: 1408e5970
 ```
 
 Shared callees, which is where step 3 starts: `0x1407c2c10` (AnimationDriven, MotionDriven,
-AllowRotation -- one setter of the motion mode); `0x1405bf030` / `0x1405bbd40` (every spell
+AllowRotation -- the lookup of `IMovementMotionDrivenControl`, on which each calls a different method); `0x1405bf030` / `0x1405bbd40` (every spell
 cast / fire); `0x14070db20` (arrow attach, detach, release); `0x1406567c0` + `0x14069be40` +
 `0x1406d1ee0` (every flight state); `0x14069c6d0` + `0x140711b60` (every furniture enter and
 exit, and PairedStop, StopMountCamera); `0x1408e42d0` / `0x1408e4460` (animated camera);
