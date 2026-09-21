@@ -527,6 +527,43 @@ pathing, the camera states and the messages all exist for it, and it needs only 
 race with the `Flies` flag, its graph, and the ride packages. It keeps the flying
 actor an NPC, which is why the player's own flight code is all about the mount.
 
+### 4.4 Combat in the air
+
+Nothing in the engine refuses a combat action to a flying actor. The action
+mediator's gate (`0x1406cf1b0`), which refuses attacks, bashes and casts to a
+swimming actor whose race carries `NoCombatInWater` (`docs/swimming.md` §1), does
+not read the fly state. The player's attack roots in the idle tree carry no flying
+condition: `AttackRightRoot` and `AttackLeftRoot` are gated on `IsSwimming == 0` and
+`IsRidingMount == 0` in Skyrim.esm and on nothing in Update.esm. A flying player who
+attacks has the request turned into its `attackStart` event and sent to the graph as
+on the ground; the graph, not the engine, decides what is allowed in the air.
+
+Bethesda shipped one form of it. On the flying mount, Dragonborn's idles allow
+spells and shouts under `IsOnFlyingMount == 1` (`MountedMagicDraw`, `MountedVoice`,
+the `AttackMagicLeft/RightRoot` duplicates), gated by the default-object lists
+`Flying Mount - Allowed Spells` and `Disallowed Spells`, and block melee under the
+same condition. The shipped design is ranged and voice combat from the air, no
+melee, on a body the AI flies.
+
+For the player's own flight (§4.1) the work is the graph's, on the pattern mounted
+combat already uses in `0_master`: an upper-body attack layer over the flight
+locomotion, as mounted combat lays attacks over the horse's motion and the dragon
+lays `BHR_Flight_Shout` over its cruise. The attack states are the ordinary ones,
+sending `weaponSwing`, `HitFrame`, `AttackWinStart`, `AttackWinEnd` and `attackStop`
+for melee and the spell-fire events for magic; a shout needs nothing new and is
+the nearest thing to the dragon's flying attack.
+
+What the engine then does for free: a melee `HitFrame` resolves against whatever
+the swing has collected, so it lands on anything within reach of the airborne
+player; arrows and spells launch from the actor's nodes at any height; enemies
+treat a flying player as they treat a dragon, archers and casters shoot, melee
+attackers cannot reach and wait or flee.
+
+Unverified, and settled by the same prototype as the flight itself: whether the
+weapon's hit collection runs while the controller is in the flying state, since it
+is fed by the character's movement update; and whether the enemy AI's reachability
+test gives up on a low-flying player rather than jumping at it.
+
 ## 5. How this was measured
 
 The dragon graph was dumped with HKX2 through `BehaviorFile.Load` (machines, states,
