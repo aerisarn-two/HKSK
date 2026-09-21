@@ -136,13 +136,26 @@ reference:
 - **the race**: `FlightRadius` (400 on every dragon race), read by the combat area
   code beside `fCombatAreaStandardFlyingRadiusMult` (`0x1407fa510`), and the
   `Flies` flag.
-- **the game settings**, global to every flying actor: effective distance and
-  minimum range, the chance ranges above, the dive offset and slow-down, the
-  default turning speed, the exterior hostile distance.
+- **the game settings**, global to every flying actor: `fCombatFlightEffectiveDistance`
+  and `fCombatFlightMinimumRange`, the chance ranges above, `fCombatDiveBombOffsetPercent`
+  and `fCombatDiveBombSlowDownDistance`, `fHostileFlyingActorExteriorDistance`.
+  `fFlyingActorDefaultTurningSpeed` is not one of them in practice: the turn-rate
+  reader (`0x140673210`) first asks the actor's current movement type for its
+  rotation speeds and returns the larger, and falls back to the setting only when
+  the actor has no movement type.
 
-The speeds are in the movement types the graph names and in the graph's own
-constants (§2), so they are per behaviour file, shared by every race on that
-project; the dragon races share one.
+The speeds and turn rates are therefore in the movement types the graph names, and
+the wing model in the graph's own constants (§2): per behaviour file, shared by
+every race on that project, and the dragon races share one.
+
+What that means for a new creature: it cannot have its own engagement distances,
+dive geometry or hostile radius, since those five settings are single values for
+every flying actor in the game. It can have its own chances within the global
+ranges (style), its own combat-area radius (race), its own speeds and turn rates
+(movement types), and its own flight machine (graph). A different dive, in the
+sense of a different pull-up distance or aim offset, needs a plugin that changes
+the setting per actor, or a graph that ignores the engine's dive and animates its
+own.
 
 **How the AI reaches the graph.** The executable contains no `TakeOff`,
 `FlyStartCruise`, `HoverStart` or `FlyStopDefault` string. The AI requests one of
