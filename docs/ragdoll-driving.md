@@ -34,17 +34,37 @@ executable registers all three:
 Both driving modifiers take a bone list, empty meaning all, so a body can be driven
 on some bones and free on the rest.
 
+Two `Animation` INI settings sit under all three. `bDriveRagdollWithGraph`
+(default 1) is read when the graph is bound to its character (`0x140bb0800`) and
+when the ragdoll is built (`0x140bbef90`); at 0 the driver is detached and nothing
+below applies. `bAlwaysDriveRagdoll` (default 0) is the per-frame gate
+(`0x140bbd880`, called twice from the graph update at `0x140bade10`): the driver is
+stepped only when one of the control modifiers has a nonzero weight this frame, or
+always with the setting on. So the driver is not a cost paid by every actor every
+frame; it runs when a modifier asks.
+
 ## 2. What the shipped graphs do with them
 
 Every project, in the modifier list of its **root** modifier generator, active for
 the whole life of the actor:
 
-- `DriveRagdollRB`, a rigid-body ragdoll control on all bones with the same gains
-  in every file read: `hierarchyGain 0.17`, `velocityGain 0.6`, `positionGain
-  0.05`, `accelerationGain 1`, `velocityDamping 0`, snap gain 0.1 within 0.03 m and
-  0.1 rad at 0.3 units/s, `durationToBlend 0.5`;
+- `DriveRagdollRB`, a rigid-body ragdoll control on all bones. A sweep of the 117
+  behaviour files of the corpus finds 54 of them over 45 projects, in three
+  tunings:
+
+  | projects | hierarchy | velocity | position | acceleration | damping | max lin / ang | snap |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 39 (48 instances) | 0.17 | 0.6 | 0.05 | 1 | 0 | 1.4 / 1.8 | 0.1 |
+  | giant, draugr, vampire brute, benthic lurker, netch | 0.17 | 0.6 | 0.5 | 0.2 | 0.1 | 1 / 1 | 0.1 |
+  | mammoth | 0.17 | 0.6 | 0.1 | 1 | 0 | 1.4 / 1.8 | 0.05 |
+
+  All with snap distance 0.03 m and 0.1 rad at 0.3 units/s and `durationToBlend
+  0.5`. So Bethesda tuned it twice: the heavy bodies hold position ten times
+  harder and accelerate five times softer, with damping, which is the tuning for a
+  body that must not be pushed around by contacts; the mammoth is in between;
 - `KeyframeLowerBody`, keyframing the pelvis and legs: 8 bones on the character
-  and the draugr, 17 on the bear's root, 6 on the horse.
+  and the draugr, 17 on the bear's root, 6 on the horse, 3 on the netch, 39 on the
+  frostbite spider.
 
 So while the ragdoll is in the world, the legs are kinematic and the rest is driven
 dynamically toward the pose. The same pair sits again in the get-up modifier list.
@@ -63,10 +83,12 @@ body registers the blow.
 
 **The get-up** is the one use of the powered mode: `MatchAndSendGetup` holds
 `PoweredRagdollMatching` on all bones with `maxForce 200`, `tau 0.8`, `damping 1`,
-recovery velocities 2 and 1, and pose matching (`mode 2`) on bones 0, 11 and 10,
-that is the root, the spine and the pelvis on the humanoids (0, 9, 10 on the
-horse): the motors pull the fallen body toward the get-up animation while the model
-frame is matched to the ragdoll's pose, and `GetUpStart` then re-attaches the
+recovery velocities 2 and 1, the same in all 45 projects that have it, and pose
+matching (`mode 2`) on three bones that vary per skeleton: 0, 11 and 10, root,
+spine and pelvis, on the humanoids and most quadrupeds; 0, 9, 10 on the horse; 0,
+1, 2 on the netch, the dwarven spider and the lurker of Apocrypha; 0, 17, 8 on the
+mammoth. The motors pull the fallen body toward the get-up animation while the
+model frame is matched to the ragdoll's pose, and `GetUpStart` then re-attaches the
 controller (`docs/animation-events.md` §7). A `PoweredRagdollNoMatching` twin with
 `maxForce 0` and `mode 4` exists in the same files and belongs to no list.
 
@@ -200,18 +222,40 @@ So the answer to the open point: **a walking actor's driven ragdoll goes on
 load, keyframed, on 33, and the root's `DriveRagdollRB` and `KeyframeLowerBody`
 take it from there. The dragons and the swarms have shipped that way since
 release, which is how a dragon's tail and wings take arrows. The flag is a race
-record field, so it is a plugin change and nothing else. `GetUpEnd`
-(`0x1407ba170`) is the one handler that moves a ragdoll back to `BIPED`, and only
-when `iGetUpType` is 0; a flagged race is put back on 33 by the sit code's exit
-path but not by a get-up, which is worth a run to check.
+record field, so it is a plugin change and nothing else.
 
-## 6. Open points
+**What a knockdown does to it.** The ragdoll commands go through one queued
+dispatcher (`0x1406595d0` posting, `0x140656f30` running, 97 cases). A knockdown
+(command 10, `0x140710c80`, reached from the death code, the grab and paralysis
+effects, the projectile knock and the sneak-attack kill) and its paralysis variant
+(command 11, `0x140710ae0`) put the ragdoll on `DEADBIP`, make it dynamic and set
+`iGetUpType` to 1; `GetUpEnd` (`0x1407ba170`) then either sets `BIPED` and
+keyframed itself when `iGetUpType` is 0, or posts command 12 (`0x1407114b0`),
+which does the same. Neither reads the race flag: only the actor's 3D load and the
+furniture exit do. So a flagged race that has been knocked down gets up with its
+ragdoll on `BIPED`, keyframed, and by the rule above out of the world until its 3D
+is next loaded. Of the twenty flagged records the ones that can be knocked down
+are the dragons and the two swarms; the wisps, the wraiths, the anomaly and the
+spectral dragon carry *No Knockdowns*. The get-up's pose matching is not
+disturbed by a ragdoll that was in the world beforehand, because the knockdown
+command rebuilds the body's state the same way whether or not it was in: the
+witchlight, flagged and with no ragdoll bodies at all, shows the flag is inert
+rather than harmful when there is nothing to add.
 
-Only a run settles these: whether the get-up's pose matching is disturbed by a
-ragdoll that is in the world before the knockdown, and whether `GetUpEnd` leaves
-a flagged race's ragdoll on `BIPED`; the gains for a trailing part, since the
-shipped ones are tuned to hold a dying body to its clip; and the cost per actor
-at scale.
+## 6. What the ragdoll costs
+
+The price of a driven ragdoll is its bodies and constraints, from the 45 shipped
+`skeleton.hkx` files: 3 bodies on the Apocrypha daedra, 6 on the slaughterfish, 7
+on the chicken, 18 on the character, draugr, falmer and vampire lord, 22 on the
+wolf and dog, 27 on the horse, 31 on the dragon and the mammoth, 39 on the netch,
+48 on the frostbite spider, each with one constraint fewer and one position motor
+shared by all (none on the atronachs, the ice wraith, the chicken, the
+slaughterfish and the daedra, whose powered get-up therefore has no motor to
+drive). A humanoid driven ragdoll is 18 dynamic capsules and 17 ragdoll
+constraints solved every physics step, against one capsule for the controller.
+How many of those a scene affords is the one point that only a run settles, along
+with the gains for a trailing part, for which the heavy-body tuning above is the
+starting point.
 
 ## 7. How this was measured
 
@@ -223,5 +267,9 @@ executable was read for the callers of the queued add and remove of the ragdoll,
 the per-graph virtuals the handlers use, the Papyrus natives, the sit-state's
 layer choice, the actor's 3D load, the collision filter's constructor, table
 initialiser, data-load override and pair test, the body wrapper's keyframe
-transition, and the readers of race flag bit 18 and of the `HAVOK` setting. The
-`COLL` records and the race flags were read from the five masters with Mutagen.
+transition, the readers of race flag bit 18 and of the three INI settings, the
+ragdoll command dispatcher's jump table, and the knockdown, get-up and
+`GetUpEnd` paths. The `COLL` records and the race flags were read from the five
+masters with Mutagen. The 117 behaviour files and 45 skeletons of the corpus
+were swept with HKX2 for every driving modifier's control data and bone list and
+every ragdoll's body, constraint and motor counts.
