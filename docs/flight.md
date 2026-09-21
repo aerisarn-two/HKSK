@@ -266,14 +266,67 @@ What is missing, and is the whole problem:
   state correctly; it would then have to compute its own `Speed`, as the dragon does,
   because the engine's `TargetSpeed` would be zero.
 
-So the player can be given a fly state today with a console `SetAllowFlying` plus
-any caller of `0x14069be40`, and will float without gravity, but will not move by
-input. Making the player fly for real is a plugin's work at three points, none of
-which the shipped engine provides a hook for: an agent (or a replacement of the
-per-frame writer's inputs) that maps controls to `TargetSpeed`, `Pitch` and
-`TurnDelta`; a player graph with a flight machine of its own; and a camera state,
-since the third-person camera follows a ground pivot. The flying-mount route is the
-only one Bethesda built, and it keeps the flying actor an NPC on purpose.
+So the player can be given a fly state today by any caller of `0x14069be40`, and
+will float without gravity, but nothing in the engine turns input into flight: the
+`Player Controls` agent yields a ground heading and speed, no key means pitch or
+altitude, and the flight follower needs a path. What the engine lacks is the
+*driver*, and the driver can be the graph.
+
+### 4.1 The data-only route
+
+Every hook a flying player needs is reachable from data, so a prototype needs
+neither a patched executable nor an SKSE plugin. It is the dragon's own design
+turned inward:
+
+- **Entering flight is a graph event.** A flight machine added to the player's
+  graph whose entry state sends `FlightCruising`: the response file routes it to the
+  handler, the handler calls the setter on the player, and gravity stops. Leaving
+  the machine sends `FlightLanded` and gravity returns. The setter checks no race
+  flag and no permission bit on this path. The machine's own entry event is
+  whatever name the graph defines, so Papyrus starts and stops flight with
+  `SendAnimationEvent`.
+- **Movement is root motion.** The flight states set `bAnimationDriven`; the engine
+  answers with `StartAnimationDriven` and hands movement to the `Animation Driven`
+  agent, and the clips carry the player. The dragon's cruise clips are this shape.
+- **Steering is the variables the engine already writes for the player.**
+  `Direction` and `Speed` from the movement keys, `TurnDelta` from the turn,
+  `Pitch` from the per-frame writer (`0x14069dac0`, shared by PlayerCharacter),
+  which is the actor's own pitch and for the player follows the look input, and
+  `AimPitchCurrent`, written for aiming (`0x1406a07b0`). A blend on `Direction`
+  picks forward, strafe and back; a blend on `Pitch` picks climb, level and dive; a
+  threshold on `Speed` picks the fast clip while sprint is held.
+- **The movement type is the graph's.** `iState_<MNAM>` naming a player-only
+  flight `MOVT` in the plugin keeps the engine's requested `Speed` sane instead of
+  falling through to the `Default MovementType: Fly` object.
+
+What the machine must defend against: **the jump**. `JumpBegin` puts the controller
+into its jumping state and gravity comes back, so the flight machine must own no
+transition that sends it. Furniture, mounts, ragdoll and kill moves leave through
+their own state changes; the flight machine should sit at a level those events
+cannot enter from.
+
+What is unverified, and is the in-game test: whether the animation-driven agent
+applies vertical root motion while the controller is in the flying state (on the
+ground the ground constraint overrides the Z delta; in the flying state nothing
+does, so it should pass through); whether the third-person camera tolerates an
+actor rising away from its pivot; and collision, which the flying state does not
+remove, only gravity and ground contact, so walls should still stop the player.
+
+### 4.2 What a plugin would add
+
+Altitude by a key rather than by looking up, a camera state made for the air, and
+speed as a number rather than a choice of clips: an agent, or a replacement of the
+per-frame writer's inputs, that maps controls to `TargetSpeed`, `Pitch` and
+`TurnDelta`, so that a motion-driven flight like the dragon's becomes possible.
+None of that has a hook in the shipped engine; all of it is polish on a prototype
+that data alone can show flying.
+
+### 4.3 The mount route
+
+The one Bethesda built: the player rides a creature that flies itself. The AI, the
+pathing, the camera states and the messages all exist for it, and it needs only a
+race with the `Flies` flag, its graph, and the ride packages. It keeps the flying
+actor an NPC, which is why the player's own flight code is all about the mount.
 
 ## 5. How this was measured
 
