@@ -495,14 +495,34 @@ What the creature has to bring, beyond §3.2 to §3.7:
 - a hover machine with the attack transitions, and a hover movement type whose
   turn rate lets it keep facing a moving target.
 
-What was not read, and decides whether the reach works: how the hover path
-builder chooses the hover point's height and distance from the target. The
-dragon hovers at a height and offset that suit a bite that does not come; a small
-creature may be placed too high for its reach or too far for its swing, and the
-adjustment is in the builder, not in data. The `Flying Attack` and `Dive Bomb`
-turns are passes, not hovers: the pass ends at the target and the melee context
-can fire during it, but the body is moving, and the dive's geometry is the five
-global settings of §3.9.
+How the hover point is chosen, read from the hover node's chooser
+(`0x1408945e0`, called from `CombatBehaviorHover`), since it decides whether a
+melee reach ever connects:
+
+- the centre is the target's **anticipated position**, `fCombatAnticipateTime`
+  ahead (`0x140853fb0`);
+- the radius is the combat state's current **attack range** (`state+0x10 → +0x1A0`),
+  the same value the ground close-movement behaviours advance to and back off
+  from. For a melee creature that is its reach, so the hover puts it where it can
+  swing; for the dragon it is the breath's range, which is why a hover is a breath;
+- `iCombatHoverLocationCount` candidate directions are spread evenly round the
+  target, each at a height of radius × tan(angle) with the angle drawn between
+  `fCombatHoverAngleMin` and `fCombatHoverAngleMax` and capped by
+  `fCombatHoverAngleLimit`;
+- each candidate is checked for **line of sight** by a Havok cast (`0x14055ad40` →
+  `0x140853970`) and by the combat target check (`0x1408d80f0` → `0x1408c4b90`),
+  and the first that passes is the hover point;
+- the hover lasts the style's `HoverTime` mapped into `fCombatHoverTimeMin` and
+  `Max` (`0x1408dc870`).
+
+So the reach does connect by construction, at the radius, and the height is
+where a small creature can be placed out of its own reach: with the shipped
+angles a hover sits above the target by radius × tan(angle). The angles, the
+count and the time range are game settings, global to every flyer but a plugin's
+to change; the radius is the creature's own attack data. The `Flying Attack` and
+`Dive Bomb` turns are passes, not hovers: the pass ends at the target and the
+melee context can fire during it, but the body is moving, and the dive's
+geometry is the five global settings of §3.9.
 
 ## 4. The player
 
