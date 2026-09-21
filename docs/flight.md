@@ -118,6 +118,32 @@ follower; no to obstacle avoidance in flight; and yes to approaching and attacki
 from the air, through a dedicated combat path request and a tree that decides
 between a pass, a dive, a hover attack and a landing.
 
+**Where the knobs live.** Three layers, none of them per actor except by
+reference:
+
+- **the combat style** (`CSTY`, its flight block): `HoverChance` and `HoverTime`,
+  `DiveBombChance`, `GroundAttackChance` and `GroundAttackTime`, `PerchAttackChance`
+  and `PerchAttackTime`, `FlyingAttackChance`. The tree reads them through the
+  actor's style (`0x1406b5580`, fields `+0x80` dive, `+0x98` flying attack) and maps
+  each chance into the range the game settings give (`0x1408dc070` with
+  `fCombatDiveBombChanceMin/Max`, `fCombatFlyingAttackChanceMin/Max`). Every dragon
+  NPC in the masters uses `csDragon` (hover 0.52 for 0.42 s, dive 0.36, ground
+  attack 0.85 for 1 s, perch 0.5, flying attack 0.75) except Alduin
+  (`AlduinCombatStyle`, no ground attack, dive 0.2), Odahviing in his quest
+  (`MQ301OdahviingCombatStyle`, always a flying attack), the helgen dragon
+  (`csDragonCharGen*`, no landing) and the test styles. So the fight is per actor
+  through the style the NPC record names, and shared by every actor naming it.
+- **the race**: `FlightRadius` (400 on every dragon race), read by the combat area
+  code beside `fCombatAreaStandardFlyingRadiusMult` (`0x1407fa510`), and the
+  `Flies` flag.
+- **the game settings**, global to every flying actor: effective distance and
+  minimum range, the chance ranges above, the dive offset and slow-down, the
+  default turning speed, the exterior hostile distance.
+
+The speeds are in the movement types the graph names and in the graph's own
+constants (§2), so they are per behaviour file, shared by every race on that
+project; the dragon races share one.
+
 **How the AI reaches the graph.** The executable contains no `TakeOff`,
 `FlyStartCruise`, `HoverStart` or `FlyStopDefault` string. The AI requests one of
 five actions, `ActionFlyStart`, `ActionFlyStop`, `ActionHoverStart`,
