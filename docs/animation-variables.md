@@ -85,7 +85,14 @@ The function that computes the value from the equipped object -- the one that
 reads `DNAM` and yields 9 to 12 for the non-weapons -- sits above these on the
 equip path and was not reached in this pass; the record-to-value correspondence
 above is established by the enum identity and by the set data's hand ranges,
-which name the same numbers against the same weapons. For authoring, the
+which name the same numbers against the same weapons. One reader of the record was found on the way, and it says how the engine
+buckets the type: `0x14043a380` reads the animation type as a signed byte at
+**`+0x19d` of the `WEAP` form** and folds it to a class -- 0 hand-to-hand; 1 for
+1–4, the one-handers; 2 for 5–6, the two-handers; 4 for 7 and 9, bow and crossbow;
+staff (8) and **any value above 9 to 12, "none"** -- to index a twelve-entry table
+of settings at `0x14200d8a0`. A `DNAM` value the enum does not name is not a new
+kind: it falls into the "none" bucket everywhere the engine folds the type. For
+authoring, the
 consequence is fixed either way: **a graph must use the record's animation-type
 numbers for 0 to 8 and the engine's 9 to 12 for the rest**, and a new weapon kind
 cannot introduce a new number, because the engine, not the graph, decides it.
