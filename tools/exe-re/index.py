@@ -4,6 +4,7 @@
     python3 index.py <exe> text.asm refs  0x1431bd160 ...   # functions referencing addresses
     python3 index.py <exe> text.asm summary 0x14053bfa0 ...  # calls and strings of a function
     python3 index.py <exe> text.asm callers 0x1407c5660 ...  # direct callers and pointer slots
+    python3 index.py <exe> text.asm dump    0x1407b9cd0 ...  # a function's body, strings annotated
 
 Function starts are taken as the first instruction after int3 padding. That is a
 heuristic: it misses functions that follow one another without padding and can split a
@@ -58,3 +59,16 @@ for t in targets:
         direct = sorted({function_of(a)[0] for a, ins in parsed if re.search(r'(call|jmp)\s+0x%x\b' % target, ins)})
         print(f'{target:#x}: called by', ' '.join(hex(c) for c in direct) or 'nothing directly',
               '| stored at', ' '.join(hex(v) for v in p.pointers_to(target)) or 'nowhere')
+    elif mode == 'dump':
+        fs, fe = function_of(target)
+        print(f'; {fs:#x}-{fe:#x} ({fe - fs} bytes)')
+        for a, ins in body(target):
+            note = ''
+            if m := re.search(r'# 0x([0-9a-f]+)', ins):
+                try:
+                    s = p.cstr(int(m.group(1), 16))
+                    if 3 <= len(s) < 80 and all(32 <= ord(c) < 127 for c in s):
+                        note = f'\t; "{s}"'
+                except Exception:
+                    pass
+            print(f'{a:x}:\t{ins}{note}')
