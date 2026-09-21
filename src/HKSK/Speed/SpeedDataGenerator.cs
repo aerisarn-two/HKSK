@@ -92,6 +92,8 @@ public static class SpeedDataGenerator
                 return Amendment.Removed;
             }
 
+            if (Bytes(file.Blocks[at]).AsSpan().SequenceEqual(Bytes(block))) return Amendment.Unchanged;
+
             file.Projects[at] = SpeedDataFile.ListingFor(project.Name);
             file.Blocks[at] = block;
             return Amendment.Replaced;
@@ -103,6 +105,9 @@ public static class SpeedDataGenerator
         file.Blocks.Add(block);
         return Amendment.Added;
     }
+
+    private static byte[] Bytes(SpeedProjectBlock block) =>
+        new SpeedDataFile { Projects = ["_"], Blocks = [block] }.Write();
 
     /// <summary>Rebuilds one project's block, with the movement types taken from the game's records.</summary>
     public static Amendment Amend(SkyrimCache cache, string projectName, Records.IGameRecords records, float tolerance = DefaultTolerance) =>

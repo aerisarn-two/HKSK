@@ -336,6 +336,21 @@ it needs as `HKSK.Records.IGameRecords` -- plain records with opaque ids, alread
 resolved to the load order's winners -- and a caller fills it. `SKAssets` does that with
 Mutagen; `GameRecords` is a list of each for a caller that builds them by hand.
 
+With the records in hand, one call brings all three merged files up to date for a
+creature -- adding it where they do not list it yet, as an actor when a race wears it --
+and leaves every other project's entries as they were:
+
+```csharp
+SkyrimCache cache = SkyrimCache.Load(meshesFolder);
+CacheAmendment done = CacheGeneration.Amend(cache, "MyCreatureProject", records);
+cache.Save();
+```
+
+`CacheGeneration.Regenerate(cache, records)` does every project: the animation data is
+amended entry by entry, since its root motion and event lists are in no Havok file
+(`docs/animation-data.md` §3), and the set data and speed table are generated whole.
+Amending the shipped game's animation data changes none of its 429 entries.
+
 What the records *mean* is decided here, because those are the engine's rules rather
 than the plugin format's: `GameRecordRules.MovementTypes` names a movement type the way
 `iState_<MOVT>` does, `MovementRoles` says what the races use each one for, and `Events`

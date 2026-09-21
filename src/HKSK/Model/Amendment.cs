@@ -27,7 +27,11 @@ public enum Amendment
 internal static class Amendments
 {
     /// <summary>Puts one project's entry into a list, or takes it out, keeping every other entry where it is.</summary>
-    public static Amendment Apply<T>(List<T> entries, Func<T, bool> isProject, T? entry) where T : class
+    /// <param name="entries">The file's entries.</param>
+    /// <param name="isProject">Whether an entry is the project's.</param>
+    /// <param name="entry">The entry it should have, or null for none.</param>
+    /// <param name="text">What the file says for an entry, to tell a rebuilt one from a changed one.</param>
+    public static Amendment Apply<T>(List<T> entries, Func<T, bool> isProject, T? entry, Func<T, string> text) where T : class
     {
         int at = entries.FindIndex(e => isProject(e));
 
@@ -43,6 +47,8 @@ internal static class Amendments
             entries.Add(entry);
             return Amendment.Added;
         }
+
+        if (text(entries[at]) == text(entry)) return Amendment.Unchanged;
 
         entries[at] = entry;
         return Amendment.Replaced;

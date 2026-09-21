@@ -105,8 +105,8 @@ public static class SetDataGenerator
     /// <remarks>
     /// The project gets exactly the entry <see cref="Generate(SkyrimCache, GameEvents, double)"/>
     /// would give it: a new creature is added at the end and an existing one rebuilt where it
-    /// stands. A project with no animation cache -- a prop -- has no sets, and any it had are
-    /// taken out.
+    /// stands, or left alone when that is what it already says. A project with no animation
+    /// cache -- a prop -- has no sets, and any it had are taken out.
     /// </remarks>
     /// <exception cref="ArgumentException">The animation data lists no such project.</exception>
     /// <exception cref="InvalidOperationException">The project's Havok files cannot be found.</exception>
@@ -129,7 +129,9 @@ public static class SetDataGenerator
             if (Build(cache.MeshesFolder, actor, events, slack) is { } sets) entry = Entry(actor.Name, sets);
         }
 
-        return Amendments.Apply(cache.SetData.Projects, p => string.Equals(p.Stem, project.Name, StringComparison.OrdinalIgnoreCase), entry);
+        return Amendments.Apply(
+            cache.SetData.Projects, p => string.Equals(p.Stem, project.Name, StringComparison.OrdinalIgnoreCase), entry,
+            p => new AnimationSetDataFile { Projects = [p] }.Write());
     }
 
     /// <summary>Rebuilds one project's sets, with the events taken from the game's records.</summary>
