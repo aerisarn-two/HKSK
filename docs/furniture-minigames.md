@@ -83,22 +83,32 @@ furniture camera does not suit, and exiting through `IdleFurnitureExit`.
 
 ## 3. Aiming inside a furniture
 
-The engine writes the player's aim into the graph every frame through an Actor
-virtual (`0x1406a07b0`, slot `0x120`, called from the player's update at
-`0x140727ec0`): `AimHeadingCurrent`, `AimHeadingMax`, `AimPitchCurrent`,
-`bAimActive`, `IsBlocking`. The player's mounted graph (`horsebehavior.hkx`) is the
-shipped consumer: `BSDirectAtModifier`s bound to `AimHeadingCurrent`,
-`AimPitchCurrent`, `bAimActive`, `AimHeadingMaxMounted`, `AimPitchMaxMounted`,
-`BowAimOffsetHeading`, `BowAimOffsetPitch` and the `camerafromx/y/z` triple turn the
-rider's upper body toward the camera's aim, with `AimGainOn`, `AimGainOff` and
-`AimGainOnMounted` as the follow rates. The dragon rider's
-`DragonRider_BSDirectAtModifier_HeadOnly` in `0_master` does the same for the head.
+The aiming is not an engine input to the graph; it is a native modifier the graph
+places. `BSDirectAtModifier` reads the camera itself, bends the bones it names
+toward the camera's aim within `limitHeadingDegrees` and `limitPitchDegrees`, with
+`offsetHeadingDegrees` and `offsetPitchDegrees`, and follows at `onGain` and
+`offGain`; it publishes what it did through three output members that the shipped
+graphs bind to variables: `active` to `bAimActive`, `currentHeadingOffset` to
+`AimHeadingCurrent`, `currentPitchOffset` to `AimPitchCurrent`, and its own camera
+position `directAtCameraX/Y/Z` to `camerafromx/y/z`, which the `BSLookAtModifier`s
+take as their `lookAtCamera` input. None of these names is written by the engine:
+`camerafromx` is not even a string in the executable, and every engine access to
+`bAimActive`, `AimHeadingCurrent`, `AimPitchCurrent` and the two `Max` limits is a
+read (`0x1406a07b0` from the player's update, and the getters at `0x14069b010`
+through `0x14069b2d0`), which is how the launch learns where the graph is aiming.
+The `Aim*` and `camerafrom*` entries of `docs/animation-variables.md` are therefore
+graph-to-engine, and `bAimActive` is not "engaged by the engine"; it is the
+modifier reporting that it is active.
 
-That is the aiming a seated minigame gets for free: the body does not turn, the
-camera does, the engine reports where it points, and a direct-at modifier bends
-the bones that matter, the arms and the ballista's own turret if the ballista is
-an animated object attached to the player. Nothing in the aim writer checks the
-furniture state.
+The shipped consumers are all one modifier: `BSDirectAtModifier_Bow` in
+`1hm_behavior` and `BSDirectAtModifier_Magic` in `magicbehavior` on foot,
+`MC_BSDirectAtModifier_Bow` in `horsebehavior` with the `Mounted` limits and gains,
+`DragonRider_BSDirectAtModifier` and its `_HeadOnly` twin in `0_master`. Nothing in
+the modifier or its readers checks the furniture state or a drawn weapon: a
+direct-at modifier placed in a furniture state aims at the camera for as long as
+that state is active, with nothing to switch on. That is the aiming a seated
+minigame gets, and the ballista's turret is one more bone in its list if the
+ballista is an animated object on the player.
 
 ## 4. Firing
 
@@ -154,12 +164,16 @@ either nothing more, if the player's own bow launches the bolt, or
 reference, with the reference's angle set from the camera heading and pitch, if the
 bolt should leave the ballista.
 
-What was not verified in a run: that the aim writer keeps `bAimActive` true while
-the player is in the sit state with no weapon drawn (the mounted graph draws the
-bow, and `bAimActive` may follow the drawn state), which decides whether the
-direct-at layer needs a drawn-weapon state around it; and that the fighting flag
-restored by script survives the furniture code, which touches the control map only
-on entry and exit.
+Two things read in the executable rather than run: the aim needs no drawn weapon
+and no engine switch, since the direct-at modifier is active whenever its state
+is and publishes `bAimActive` itself; and the fighting flag a script restores
+survives the seat, since the control map's fighting bit (`0x40`) is cleared only
+by `PlayerChairEnterHandler` and restored only by `PlayerFurnitureExitHandler`'s
+pop; the other toggles in the executable are the animated-object draw (`0x20`,
+the POV switch, at `0x1407c37a0`, `0x1407c3a90`, `0x1407c3de0`), the menus, and
+the Papyrus natives themselves. What only a run settles: that the exit's pop,
+which restores the state saved at entry, does not undo a script's change made
+before the entry, and the feel of the direct-at gains on a turret.
 
 ## 6. What else this makes possible
 
