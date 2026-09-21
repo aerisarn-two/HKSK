@@ -338,18 +338,22 @@ public sealed partial class ActorProject : CacheProject
     /// <remarks>
     /// <para>
     /// The motion at the slot the character lists the clip's animation at -- unless the
-    /// cache numbers the clip past the end of that list. Then the cache was written against
-    /// another list, and its own number is the only one that finds the clip's motion: the
-    /// horse's walks are numbered 88 in a cache whose character lists 51 animations, and
-    /// slot 50, where the character puts <c>WalkForward.hkx</c>, holds another animation's
-    /// travel. Read that way, the horse's recorded motion looked damaged; read at the cache's
-    /// numbers, the shipped speed table follows it at every one of its 289 points.
+    /// cache's number for the clip names another animation in that list, or none. Then the
+    /// cache was written against another list, and its own number is the only one that finds
+    /// the clip's motion. Two caches in the game are: the horse numbers its clips up to 88
+    /// against a character listing 51 animations, and the werewolf numbers every one of its
+    /// 175 clips that fall inside its list at another animation's slot -- its
+    /// <c>StandingIdle</c> at <c>WW_JumpLand</c>'s. Read through the character, the horse's
+    /// walk took the trot's travel and its run none, and the horse looked damaged; read at the
+    /// cache's numbers, the shipped speed table follows it at every one of its 289 points.
     /// </para>
     /// <para>
-    /// Only then, because a clip is found by name and a name does not pin one clip down:
-    /// names repeat across a project's graphs, and <c>Crossbow_IdleHeld</c> and
-    /// <c>CrossBow_IdleHeld</c> are two of the humans'. Where the cache's number falls inside
-    /// the list, the character's slot is the one to trust.
+    /// Only then, and only for a name one generator has, because the cache holds one clip per
+    /// name and a name does not pin one generator down. The humans have two generators called
+    /// <c>Bow_RunStrafeRight</c>, one playing the strafe and one the forward run; the cache's
+    /// entry is the strafe's, and read for the other it took the humans' bow ladder from 135
+    /// of its points to 19. Where the cache's number names the animation the clip plays, or
+    /// the name is shared, the character's slot is the one to trust.
     /// </para>
     /// </remarks>
     public ClipMovement? MotionOf(HKX2.hkbClipGenerator generator)
@@ -358,23 +362,31 @@ public sealed partial class ActorProject : CacheProject
 
         if (Character is { } character
             && Data.Block.Clips.FirstOrDefault(c => c.Name == generator.m_name) is { } cached
-            && cached.CacheIndex >= character.AnimationNames.Count)
+            && !Lists(character.AnimationNames, cached.CacheIndex, generator.m_animationName)
+            && Behaviors.Sum(b => b.Clips.Count(g => g.m_name == generator.m_name)) == 1)
             return MotionOf(cached);
 
         return generator.m_animationName is { Length: > 0 } animation
             ? Animation(Path.GetFileNameWithoutExtension(animation.Replace('\\', '/')))?.Motion
             : null;
+
+        // by file name: the female character lists Animations\female\... where her
+        // graph's clips say Animations\male\...
+        static bool Lists(IList<string> names, int slot, string? animation) =>
+            slot >= 0 && slot < names.Count && animation is not null &&
+            string.Equals(Path.GetFileName(names[slot].Replace('\\', '/')),
+                          Path.GetFileName(animation.Replace('\\', '/')), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>The root motion at the number the cache gives a clip.</summary>
     public ClipMovement? MotionOf(ClipGeneratorEntry clip) => Data.Movements?.For(clip.CacheIndex);
 
     /// <summary>
-    /// The root motion of a cached clip: its slot's, or the cache's own when the cache numbers
-    /// it past the character's list (<see cref="MotionOf(HKX2.hkbClipGenerator)"/>).
+    /// The root motion of a cached clip, read as <see cref="MotionOf(HKX2.hkbClipGenerator)"/>
+    /// reads it; a clip no loaded graph defines has only the cache's number.
     /// </summary>
     public ClipMovement? MotionOf(Clip clip) =>
-        clip.Slot is { } slot ? slot.Motion : MotionOf(clip.Entry);
+        clip.Generator is { } generator ? MotionOf(generator) : MotionOf(clip.Entry);
 
     /// <summary>Every clip that plays a given slot.</summary>
     public IEnumerable<Clip> ClipsOf(AnimationSlot slot) =>

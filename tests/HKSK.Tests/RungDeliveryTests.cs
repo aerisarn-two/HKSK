@@ -86,6 +86,48 @@ public sealed class RungDeliveryTests
         Assert.Null(horse.Animation("SprintForward")!.Motion);
     }
 
+    /// <summary>
+    /// The werewolf's cache is numbered against another list too, inside its character's
+    /// list rather than past it: not one of its clips with a number the list has plays the
+    /// animation listed there.
+    /// </summary>
+    /// <remarks>
+    /// Its <c>StandingIdle</c> is numbered at <c>WW_JumpLand</c>'s slot and its turns at the
+    /// walks'. Read through the character, its forward clips delivered a constant multiple of
+    /// their rungs and four arms no travel at all, and it held 26 of its 230 shipped points;
+    /// read at the cache's numbers it holds 217, and delivers its rung weights at the median.
+    /// Against the humans, whose 2,520 clips disagree three times, and every time because two
+    /// generators share a name.
+    /// </remarks>
+    [CorpusFact]
+    public void TheWerewolfsCacheIsNumberedAgainstAnotherListToo()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        (int Inside, int Agree) Count(string name)
+        {
+            var project = cache.OpenActor(name)!;
+            IList<string> list = project.Character!.AnimationNames;
+            int inside = 0, agree = 0;
+
+            foreach (Clip clip in project.Clips)
+            {
+                if (clip.Generator is null || clip.CacheIndex >= list.Count) continue;
+                inside++;
+                if (string.Equals(Path.GetFileName(list[clip.CacheIndex].Replace('\\', '/')),
+                                  Path.GetFileName(clip.Generator.m_animationName.Replace('\\', '/')),
+                                  StringComparison.OrdinalIgnoreCase))
+                    agree++;
+            }
+
+            return (inside, agree);
+        }
+
+        Assert.Equal((175, 0), Count("WerewolfBeastProject"));
+        Assert.Equal((2520, 2517), Count("DefaultMale"));
+        Assert.Equal(1.0, Medians()["WerewolfBeastProject"], 3);
+    }
+
     private static Dictionary<string, double> Medians()
     {
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);

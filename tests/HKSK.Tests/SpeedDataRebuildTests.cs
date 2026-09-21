@@ -142,7 +142,7 @@ public sealed class SpeedDataRebuildTests
     }
 
     /// <summary>
-    /// Where a block was recovered, the curve is close: 89% of the shipped points.
+    /// Where a block was recovered, the curve is close: 90% of the shipped points.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -346,10 +346,10 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1444, records);
         Assert.Equal(16930, points);
 
-        // 89%. The rate is held down by RieklingProject, in the denominator with
+        // 90%. The rate is held down by RieklingProject, in the denominator with
         // 1037 points and 138 of them right.
-        Assert.Equal(15109, pointsHeld);
-        Assert.Equal(1235, recordsHeld);
+        Assert.Equal(15296, pointsHeld);
+        Assert.Equal(1252, recordsHeld);
         Assert.Equal(49, blocksHeld);
 
         // The spider centurion's arms play at a rate an expression computes from the
@@ -359,7 +359,7 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(24, _declared);
         Assert.Equal(63, _sharedBlocks);
         Assert.Equal(13, _newBlocks);
-        Assert.Equal(13088, _sharedHeld);
+        Assert.Equal(13275, _sharedHeld);
 
         // On the 24 the graph declares, driving it into the declared state -- by
         // the events that enter it, the choosers on the way, what the transitions ask
@@ -429,17 +429,18 @@ public sealed class SpeedDataRebuildTests
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "rebuild-readback.txt"),
             $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n\n" + string.Join("\n", perBlock));
 
-        // 81.2% of the shipped points on the 76 blocks, read through the game's own
-        // lookup; 79.5% before the horse's motion was read at the cache's own numbers,
-        // which alone accounts for 289 of the 300 gained. Three choices made for the
+        // 82.3% of the shipped points on the 76 blocks, read through the game's own
+        // lookup; 79.5% before the horse's and the werewolf's motion was read at their
+        // caches' own numbers (ActorProject.MotionOf), which took them from 0 and 26 of
+        // their points to 289 and 217. Three choices made for the
         // engine cost against the shipped file and are kept, measured before that fix:
         // no sampler offset (13,622 with it, against 13,451), every heading swept from
         // zero where the shipped sweeps settle in from 0.5 (13,550 starting there), and
         // a tolerance of 0.5 (13,288 at the game's 2).
         Assert.Equal(10, unasked);
         Assert.Equal(16930, points);
-        Assert.Equal(13751, held);
-        Assert.Equal(498, recordsHeld);
+        Assert.Equal(13931, held);
+        Assert.Equal(507, recordsHeld);
     }
 
     /// <summary>The inferred table writes back as a well-formed file.</summary>

@@ -165,12 +165,12 @@ public sealed class SpeedSamplerTests
         Assert.Equal(996, arms);
         Assert.Equal(3420, rungs);
 
-        // A rung is allowed to stand still, and 100 of them do: a first-person
+        // A rung is allowed to stand still, and 78 of them do: a first-person
         // body clip does not translate because the camera does, and an in-place
         // attack like H2H_AttackLeft is a rung of the blend it interrupts. They
         // are resolved, not skipped -- a rung with no entry in the cache at all
         // is what SpeedLadder drops, and there are none of those here.
-        Assert.Equal(100, stationary);
+        Assert.Equal(78, stationary);
     }
 
     /// <summary>The tolerance a rebuilt curve has to hold, at every point.</summary>
@@ -223,8 +223,8 @@ public sealed class SpeedSamplerTests
         }
 
         Assert.Equal(1482, curves);
-        Assert.Equal(660, pass);
-        Assert.Equal(214, fail);
+        Assert.Equal(677, pass);
+        Assert.Equal(197, fail);
         Assert.Equal(608, unresolved);
     }
 
@@ -400,7 +400,7 @@ public sealed class SpeedSamplerTests
     /// This is the cheap test of the obvious suspicion. If a curve misses because
     /// the wrong family was picked, then some other family in the same graph fits
     /// it, and trying all of them finds it. Over the whole corpus that rescues
-    /// <strong>none</strong> of the 214: every compass the falmer owns is outside
+    /// <strong>none</strong> of the 197: every compass the falmer owns is outside
     /// tolerance on every one of its key 2 curves, and so on down the list. The gap
     /// is in the blend or in the inputs, not in the choice.
     /// </remarks>
@@ -428,7 +428,7 @@ public sealed class SpeedSamplerTests
                 }
         }
 
-        Assert.Equal(214, failing);
+        Assert.Equal(197, failing);
         Assert.Equal(0, rescued);
     }
 

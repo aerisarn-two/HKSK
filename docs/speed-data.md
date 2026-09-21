@@ -348,16 +348,26 @@ and its character lists 51 animations. Reading a clip's motion at the slot the
 character lists its animation at then reads another animation's: the horse's
 `WalkForward` came out as `TrotForward`'s 182.344 units, its `RunForward` as zero,
 its `SprintForward` as nothing, and the horse looked damaged. Read at the cache's own
-numbers -- `ActorProject.MotionOf`, used wherever a clip number past the end of the
-character's list says the cache was numbered elsewhere -- the walk travels 137.62,
-the run 212.32 and the sprint 334.60, the rungs deliver their weights exactly, and
-the rebuilt table holds all 289 of the horse's shipped points.
+numbers the walk travels 137.62, the run 212.32 and the sprint 334.60, the rungs
+deliver their weights exactly, and the rebuilt table holds all 289 of the horse's
+shipped points.
 
-`WerewolfBeastProject` numbers 25 clips past its character's 99 animations and is
-read the same way; its forward clips still deliver a constant multiple of their
-rungs, which may be the same misfiling at numbers that fall inside the list. Nothing
-can tell that from a genuine difference (`CacheDamageTests`), so the cache stays the
-input, and a block built from it is the engine's honest reading of it.
+`WerewolfBeastProject` is the same case inside the list: 25 clips are numbered past
+its character's 99 animations, and not one of the 175 numbered inside it plays the
+animation listed there -- its `StandingIdle` sits at `WW_JumpLand`'s slot. Read
+through the character it held 26 of its 230 points, with arms recording no travel;
+read at its cache's numbers it holds 217.
+
+`ActorProject.MotionOf` reads a clip's motion at the cache's number whenever the
+character's animation at that number is not the one the clip plays, and the clip's
+name belongs to one generator. The second condition matters: the cache holds one
+entry per name, and the humans have two generators called `Bow_RunStrafeRight`, one
+playing the strafe and one the forward run -- read for the other, the entry took their
+bow ladder from 135 points to 19. Those shared names are the humans' only three
+disagreements in 2,520 clips. With both caches read at their own numbers no creature's
+shipped table is described better by its rung weights than by its cache
+(`CacheDamageTests`): the cache is the input, and a block built from it is the engine's
+honest reading of it.
 
 ## 7. Authoring a creature: the movement type
 
@@ -578,8 +588,8 @@ Six writable keys get no block: the rider's mounted states and the first-person
 camera carry no root motion, and the horse's swim clip records no travel. An
 absent block is the game's own answer there, the request unchanged.
 
-Read back through the game's lookup, the result holds 13,751 of the 16,930 shipped
-points on the shared blocks (81.2%). Each engine-side choice costs against that
+Read back through the game's lookup, the result holds 13,931 of the 16,930 shipped
+points on the shared blocks (82.3%). Each engine-side choice costs against that
 measure — the offset 171 points, the zero start 99, measured before the horse was
 read at its own numbers (§6.3) — and is kept, because the engine is the measure. 62,195 points, 520 KB, about five seconds.
 
@@ -587,9 +597,8 @@ read at its own numbers (§6.3) — and is kept, because the engine is the measu
 
 - **Bit-exact floats**: unreachable from six-digit root motion.
 - **The per-block offset** (§6.1): the tool's, not explained, not needed.
-- **The riekling's lateral records** and the **werewolf's forward clips**: the
-  shipped file's own anomalies, and motion that may be misfiled inside the
-  character's list where the horse's was misfiled past it (§6.3).
+- **The riekling's lateral records**: the shipped file's own anomalies
+  (`docs/speed-data-research.md`).
 - **Rotation rates** for `MOVT` authoring are settled as constants (§7.2); nothing
   in the assets derives them.
 - **The chaurus flyer's zero table**: nothing reads it, so nothing depends on it.

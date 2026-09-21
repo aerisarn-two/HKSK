@@ -12,7 +12,7 @@ namespace HKSK.Tests;
 public sealed class CacheDamageTests
 {
     /// <summary>
-    /// The cache is the right input, and one creature is the exception.
+    /// The cache is the right input, for every creature.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -20,30 +20,20 @@ public sealed class CacheDamageTests
     /// it, and the speed the clip beneath it actually travels at. Replacing the
     /// second with the first everywhere is a way of asking which one the shipped
     /// file followed, and over the 6140 points of the declared keys the answer is
-    /// emphatic -- <strong>the cache holds 5349 and the weights 3956</strong>.
+    /// emphatic -- <strong>the cache holds 5536 and the weights 4045</strong>.
     /// <c>VampireLord</c> goes from 223 of its 223 points to 7 and
     /// <c>BallistaCenturion</c> from 224 to 14, which is section 0's whole claim
     /// made visible: the table is there because the two numbers differ.
     /// </para>
     /// <para>
-    /// <strong>One creature prefers the weights.</strong> <c>WerewolfBeastProject</c>
-    /// holds 41 through the cache and 83 through the weights: its forward clips deliver
-    /// 0.9 and 197.15 where the rungs say 5 and 303.04, a constant per animation rather
-    /// than per rung, while its sideways arms deliver their weights to four figures. Its
-    /// cache numbers 25 clips past the end of its character's 99 animations, as the
-    /// horse's does, and those are read at the cache's numbers; the rest may be misfiled
-    /// the same way at numbers that still fall inside the list, which nothing can tell.
-    /// </para>
-    /// <para>
-    /// <c>HorseProject</c> was the other, at 0 against 213, and was taken to be damaged.
-    /// It was misread: its whole cache is numbered against another character list, and
-    /// read at its own numbers it holds all 289 of its points either way
-    /// (<see cref="RungDeliveryTests.TheHorsesMotionIsReadAtItsCachesOwnNumbers"/>).
-    /// </para>
-    /// <para>
-    /// So 491 of the points still missing are bounded by the cache and not by the
-    /// model. That is not a licence to mend them: see
-    /// <see cref="TheMastersCannotTellDamageFromTheDifferenceTheTableRecords"/>.
+    /// <strong>No creature prefers the weights.</strong> Two used to, the horse at 0
+    /// against 213 and the werewolf at 28 against 67, and both were taken to have damaged
+    /// root motion: clips delivering a constant multiple of their rungs per animation,
+    /// arms recording no travel at all. Both caches are numbered against another
+    /// character list -- the horse's past the end of its character's, the werewolf's at
+    /// another animation's slot for every clip -- and both were read through the
+    /// character. Read at the caches' own numbers (<see cref="ActorProject.MotionOf(HKX2.hkbClipGenerator)"/>)
+    /// the horse holds all 289 of its points and the werewolf all 228.
     /// </para>
     /// </remarks>
     [MastersFact]
@@ -52,11 +42,12 @@ public sealed class CacheDamageTests
         (int cacheHeld, int weightHeld, int all, var byProject) = Compare(mend: false);
 
         Assert.Equal(6140, all);
-        Assert.Equal(5349, cacheHeld);
-        Assert.Equal(3956, weightHeld);
+        Assert.Equal(5536, cacheHeld);
+        Assert.Equal(4045, weightHeld);
+        Assert.DoesNotContain(byProject, p => p.Value.Item2 > p.Value.Item1);
 
         Assert.Equal((289, 289), byProject["HorseProject"]);
-        Assert.Equal((41, 83), byProject["WerewolfBeastProject"]);
+        Assert.Equal((228, 172), byProject["WerewolfBeastProject"]);
         Assert.Equal((223, 7), byProject["VampireLord"]);
     }
 
@@ -65,12 +56,12 @@ public sealed class CacheDamageTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The werewolf looks identifiable from the inputs alone: its rung weights are its
-    /// movement type's own speeds, to within a tenth of a percent, while the cache says
-    /// the clip travels at something else entirely. Two inputs agreeing and the third
-    /// contradicting both is a tempting rule, and mending only those rungs does help it,
-    /// by 11 points. (The horse was the other example, until its cache was read at its
-    /// own numbers and there was nothing left to mend.)
+    /// A creature whose rung weights are its movement type's own speeds, to within a tenth
+    /// of a percent, while the cache says the clip travels at something else entirely,
+    /// looks identifiable from the inputs alone. Two inputs agreeing and the third
+    /// contradicting both is a tempting rule. It was written for the horse and the
+    /// werewolf, which turned out to be misread rather than damaged (above); read at their
+    /// caches' own numbers there is nothing left in either to mend.
     /// </para>
     /// <para>
     /// <strong><c>VampireLord</c> refutes it, 223 points to 90.</strong> Its rungs
@@ -92,7 +83,7 @@ public sealed class CacheDamageTests
         Assert.True(mendedHeld < cacheHeld, $"mending held {mendedHeld} against {cacheHeld}");
 
         Assert.Equal((289, 289), byProject["HorseProject"]);
-        Assert.Equal((41, 52), byProject["WerewolfBeastProject"]);
+        Assert.Equal((228, 228), byProject["WerewolfBeastProject"]);
         Assert.Equal((223, 90), byProject["VampireLord"]);
     }
 

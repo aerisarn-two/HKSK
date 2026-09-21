@@ -1151,9 +1151,10 @@ and the weights 3,864.** `VampireLord` falls from 223 of its 223 points to 7 and
 table exists because the two numbers differ.
 
 **Two creatures prefer the weights, and both have damaged root motion.** *(Corrected:
-the horse's was misread, not damaged -- §6.3. Read at its cache's own numbers the
-cache holds 5,349 and the weights 3,956, the horse all 289 of its points either way,
-and the werewolf 41 against 83.)*
+neither was damaged; both caches are numbered against another character list and were
+read through the character -- §6.3. Read at their own numbers the cache holds 5,536
+and the weights 4,045, no creature prefers the weights, the horse holds all 289 of its
+points and the werewolf all 228.)*
 `HorseProject` goes from 0 to 213 and `WerewolfBeastProject` from 28 to 67. The
 werewolf is the horse's case again -- its forward clips deliver 0.9 and 197.15
 where the rungs say 5 and 303.04, a constant 5.55 and 1.537 per animation rather
@@ -1401,7 +1402,9 @@ steps fits, so the twenty-fourths stay a property of goal speed zero.
 > rebuilt table holds all 289 of the horse's points. `ActorProject.MotionOf` reads
 > them that way; `docs/speed-data.md` §6.3 and `RungDeliveryTests` state the
 > finding. The section is kept as it was written, because the trap it fell into is
-> the reason for the rule.
+> the reason for the rule. The werewolf was the same case, inside its list: none of
+> its 175 in-range clips plays the animation listed at its number, and read at the
+> cache's numbers it holds 217 of its 230 points, not 26.
 
 A ladder child's weight is a position on the speed axis and the clip beneath it
 travels at some speed of its own. §0 says the two are meant to be the same number
@@ -1856,8 +1859,8 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   a half-unit grid. 62,641 points, 524 KB.
 
 Read back through the game's own lookup, the result holds 13,451 of the 16,930 shipped
-points on the 76 shared blocks (79.5%) -- 13,751 (81.2%) once the horse is read at its
-cache's own numbers (§6.3) -- and each of the three choices above costs
+points on the 76 shared blocks (79.5%) -- 13,931 (82.3%) once the horse and the werewolf are
+read at their caches' own numbers (§6.3) -- and each of the three choices above costs
 against that measure -- the offset 171 points, the start 99, the tolerance a whole
 record here and there -- and is kept because the engine, not the file, is what the
 table is for.
