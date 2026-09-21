@@ -69,8 +69,8 @@ public static class MasterRecords
                 races[r.FormKey] = new RaceRecord
                 {
                     Id = r.FormKey.ToString(), EditorID = r.EditorID,
-                    MaleBehavior = r.BehaviorGraph.Male?.File.DataRelativePath.Path,
-                    FemaleBehavior = r.BehaviorGraph.Female?.File.DataRelativePath.Path,
+                    MaleBehavior = r.BehaviorGraph.Male?.File.GivenPath,
+                    FemaleBehavior = r.BehaviorGraph.Female?.File.GivenPath,
                     AttackEvents = [.. r.Attacks.Select(a => a.AttackEvent).OfType<string>()],
                     DefaultMovements = defaults,
                 };
@@ -81,7 +81,7 @@ public static class MasterRecords
                 {
                     Id = i.FormKey.ToString(), EditorID = i.EditorID,
                     AnimationEvent = string.IsNullOrEmpty(i.AnimationEvent) ? null : i.AnimationEvent,
-                    BehaviorFile = i.Filename?.DataRelativePath.Path,
+                    BehaviorFile = i.Filename?.GivenPath,
                     Parent = Link(i, 0), PreviousSibling = Link(i, 1),
                     Conditions = [.. i.Conditions.Select(Condition)],
                 };
