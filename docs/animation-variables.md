@@ -47,7 +47,75 @@ Written by the engine. A graph reads these and must not write them.
 | `iLeftHandType`, `iRightHandType` | int | the weapon type in each hand (0 hand-to-hand, 1 sword, 2 dagger, 3 axe, 4 mace, 5 two-handed, 6 two-handed axe, 7 bow, 8 staff, 9 magic, 10 shield, 11 torch, 12 crossbow) -- also the hand variables of the set data |
 | `iLeftHandEquipped`, `iRightHandEquipped` | int | equipped state per hand |
 | `bIsSynced`, `bSpeedSynced`, `bDisableInterp` | bool | paired-animation synchronisation and interpolation control |
-| `iSyncIdleLocomotion`, `iSyncTurnState`, `iSyncForwardState`, `iSyncStrafeState`, `iSyncSprintState` | int | the state ids the engine wants the locomotion machines to start in, consumed by machines in `START_STATE_MODE_SYNC`. Bethesda's own driver values are idle-locomotion 1, forward 0, turn 1 |
+| `iSyncIdleLocomotion`, `iSyncTurnState`, `iSyncForwardState`, `iSyncStrafeState`, `iSyncSprintState` | int | the state ids the engine wants the locomotion machines to start in, consumed by machines in `START_STATE_MODE_SYNC` and written back by them -- §2.1 |
+
+#### 2.1 The `iSync*` variables: start-state synchronisation
+
+These deserve more than a row, because they are the one place the engine and the
+graph share *state ids* rather than facts, and because the mechanism is Havok's,
+not Bethesda's.
+
+**The mechanism.** An `hkbStateMachine` has a `startStateMode`. In the default mode
+it starts in `startStateId` when it activates. In `START_STATE_MODE_SYNC` it reads
+its `syncVariableIndex` variable on activation and starts in the state whose id the
+variable holds; when no state has that id it falls back to `startStateId` (measured
+on the vampire brute, whose initial values name no state). And a synced machine
+**writes the variable back** whenever it changes state, so the variable always
+holds the id of the state the machine is in. That is the "sync": several machines
+bound to one variable start in matching states, a machine re-entered after an
+interruption resumes where its siblings are, and anyone who reads the variable --
+another graph file, or the engine -- learns the graph's current state without
+knowing the machine. The field is set on machines that do not use it too, so
+reading `syncVariableIndex` without checking the mode picks an arbitrary state.
+
+**How the engine takes part.** The engine writes four of them once, when the graph
+is bound to the actor (`0x14014eeb0` on the slots of `iSyncIdleLocomotion`,
+`iSyncTurnState`, `iSyncForwardState` and `iSyncStrafeState`): the state ids it
+wants the locomotion machines to start in. It pushes two every frame through
+channels -- `iSyncSprintState` (`0x14054b790`) and `iSyncStrafeState`
+(`0x14054b7b0`) -- because sprinting and strafing are things the controller decides
+and the graph has to follow. And it **reads back** `iSyncIdleLocomotion`,
+`iSyncTurnState` and `iSyncSprintState` with the int getter (`+0x88`), which is the
+sync mechanism working in the other direction: after the graph's own machines have
+moved, the variable says whether the actor is standing or moving, turning or not,
+sprinting or not, and the engine reads it as a fact about the animation.
+
+**What the ids mean**, read off every machine in the shipped graphs that is in sync
+mode on one of these names (a census over the 49 projects):
+
+| variable | machines | ids | where |
+| --- | --- | --- | --- |
+| `iSyncIdleLocomotion` | 3 in sync mode, 11 files declare it | **0 standing, 1 moving** (`BlockIdle_StandingState`/`BlockIdle_MovingState`, `H2H_Standing_State`/`H2H_Locomotion_State`, `IdleState`/`NonCombatLocomotion`) | the humanoid's block idle, the falmer, the riekling |
+| `iSyncSprintState` | 20 | **0 default, 1 sprint** (`JumpFall`/`JumpFall_Sprint`, `MT_Jump`/`MT_Jump_Sprint`, `1HM_UpperBodyDefaultState`/`1HM_UpperBodySprintState`, `MT_Torch_IdleLocomotion`/`MT_Torch_Sprint` ...) | every humanoid machine that has a sprinting variant of a state: the jumps, the falls, the landings, the torch arm, the first-person upper body |
+| `iSyncTurnState` | 1 in sync mode, 9 files declare it | **1 not turning**, 0 turning in place | the humanoid's turn selectors; the rest read it through bindings |
+| `iSyncForwardState` | 0 in sync mode, 1 file declares it | **0 forward** | `mt_behavior.hkx`, read by binding |
+| `iSyncStrafeState` | 0 in sync mode | strafe direction | pushed per frame, read by bindings |
+| `iSyncIdleState` | 3 | 0 `LocomotionDefault`, 1–5 the dialogue idle variants (`_DialogueIdle`, `_Happy`, `_Angry`, `_ResponseNegative` ...) | `MT_LocomotionIdleSelector`, `MT_TurnLeftIdleSelector`, `MT_TurnRightIdleSelector` |
+| `iSyncDefaultState` | 14 | the creature's top-level mode: **0 non-combat, 1 combat** and the equip, unequip, stagger, kill-move and aggro-warning states after (`NonCombatState`/`CombatReadyState`/`WeapEquip`/`WeapUnEquip`/`StaggerState`/`KillMoveState`) | one base machine per creature: atronachs, giant, lurker, hagraven, ice wraith, netch, riekling, spriggan, vampire brute, wisp, witchlight |
+| `iSyncWard` | 2 | the ward's state | the humanoid's ward |
+
+The ids are the machine's own `stateId`s, and where two machines sync to one
+variable they agree by construction: every sprint variant is state 1, every
+non-combat state is 0. That is what makes the engine's defaults meaningful across
+creatures without the engine knowing any graph.
+
+**Bethesda's driver values.** Read a graph at rest the way the game binds it and
+you get `iSyncIdleLocomotion = 1`, `iSyncForwardState = 0`, `iSyncTurnState = 1`:
+moving, forward, not turning in place. Those are the values HKSK's evaluator sets
+to put a graph into locomotion (`ActiveGenerators`, `SpeedDataGenerator.StateAt`),
+and they are the ones that land the speed table's declared states. `iSyncSprintState
+= 1` is what the way into a sprint state pins, since the machine chooses by it
+rather than by an event.
+
+**Authoring.** Give a machine that has a resting and a moving form, or a walking
+and a sprinting form, sync mode on the shared variable and the same ids as the
+shipped graphs use (0 rest/default, 1 moving/sprint); the engine will then start
+it right and read it back right. Declare the four bound-at-start names in the root
+graph or the engine's write is silently dropped. Do not write `iSyncSprintState` or
+`iSyncStrafeState` from the graph: they are the controller's, pushed every frame,
+and a graph write is overwritten. `iSyncDefaultState` is a creature's own -- the
+engine neither writes nor reads it -- and is the conventional place to hold the
+combat/non-combat mode so that every machine that cares starts in step.
 
 **Every frame, through channels** (the actor's state, as the graph's inputs):
 
