@@ -271,50 +271,165 @@ and `iDirectionForward` like any quadruped, shouts in every posture, the flight 
 grab and snatch, paired kill moves, bleed-out, summon, the mount and dismount paired
 clips for the DLC2 rider, and the trailer shots.
 
-## 3. What is fixed and what is free for a new flying creature
+## 3. Authoring a flying creature
 
-Fixed, because the engine reads it by name or number:
+What follows is the order in which the pieces have to exist, with what each one
+decides. Everything here is data: records in a plugin, a behaviour project, and the
+three caches. Nothing needs a plugin of code unless §3.9 says so.
 
-- the race flag `Flies`, or nothing in the AI will ever request a take-off;
-- the six fly-state events from the response file, sent from the graph's own state
-  entries, or the engine thinks the creature is still on the ground and the
-  controller keeps gravity;
-- `iState_<MNAM>` variables naming movement types with the speeds the pathing should
-  plan with, since the fly path follower works from the movement type as the ground
-  one does;
-- the inbound names: whatever the idle records send. The shipped roots key on the
-  dragon's names, but an idle tree is data, and a new race's roots can send any names
-  under any conditions. What cannot change is the *set of actions*: Fly Start, Fly
-  Stop, Hover Start, Hover Stop, Land, and the path-end turn;
-- the per-frame inputs `TargetSpeed`, `Pitch`, `Roll`, `PitchDelta`, `TurnDelta`,
-  `Speed`, `Direction`, `DistToGoal`, the tween set, and the landing four. A graph is
-  free to ignore any of them, as the dragon ignores `Roll`;
-- `Injured` if the injured-landing conditions are wanted, `iGetUpType` for get-up.
+### 3.1 Decide which of the two shipped patterns it is
 
-Free, because the executable never sees it: the number and shape of flight states,
-whether there is a wing model at all, hovering as a state or as a tween, how speed
-integrates, banking and pitching, how many perch types, whether landing needs an
-approach. The hovering creatures show the other pattern that already ships: the ice
-wraith, wisp, witchlight and chaurus flyer have **no flight machine and no fly state**;
-they are ground creatures whose animations float, walking the navmesh with a tall
-offset, so they climb and descend only as the terrain does. A creature that should
-leave the navmesh needs the fly state and everything above; one that should only
-look airborne needs nothing.
+A creature that should **leave the navmesh** needs the fly state and every step
+below. A creature that should only **look airborne** needs none of them: the ice
+wraith, wisp, witchlight and chaurus flyer are ground creatures whose skeleton root
+sits high and whose animations float, walking the navmesh with a tall offset, so
+they climb and descend only as the terrain does and fight as ground creatures. If
+the creature never needs to cross a wall, a lake or a ravine, that pattern is
+cheaper by every step that follows.
 
-Three things a different pattern runs into:
+### 3.2 The race record
 
-- **the combat tree is one tree.** `CombatBehaviorTreeFlight` is chosen for a flying
-  actor and its nodes are dragon-shaped (dive bomb, perch attack, orbit). A creature
-  whose graph cannot orbit will be asked to; the request is an `ActionFlyStart` or a
-  hover with a tween target, so a graph that answers every request with *some* state
-  and reports its fly state honestly will not break, it will just fly like a dragon
-  that cannot dive;
-- **landing needs a place.** `FlyStop` conditions ask the pathing whether the landing
-  is hasty or a crash and which furniture type the target is; a creature with no
-  perch furniture gets only the default and hasty landings, which is fine;
-- **the tween is the engine's.** Take-off and landing clips are carried by
-  `BSTweenerModifier` to the engine's target; a graph that does not tween will land
-  where its root motion says, not where the path ends.
+- **`Flies`** (race flags bit 7). Without it nothing in the AI ever requests a
+  take-off; the fly-state setter itself does not check it, so a graph could still
+  declare flight, but no procedure, combat tree or pathing request would ask for one.
+- **`Walks`** as well, unless the creature must never be on the ground. The AI's
+  pathing asks `Walks && !Swims && !Flies` and `Swims && !Walks && !Flies` as
+  categories; a creature with `Flies` and not `Walks` has not been observed and would
+  be a fourth category the code was not written for.
+- **`FlightRadius`** (400 on every dragon race): the radius the combat area code
+  scales by `fCombatAreaStandardFlyingRadiusMult`. Bigger creatures want a bigger
+  one.
+- `NoCombatInWater` is irrelevant in the air and matters only if the creature also
+  swims (`docs/swimming.md`).
+- The behaviour graph file, as for any race, names the project.
+
+### 3.3 The combat style
+
+The `CSTY` flight block is where the fight is tuned, and the NPC record names the
+style, so two dragons of one race can fight differently:
+
+| field | csDragon | what it weighs |
+| --- | --- | --- |
+| `HoverChance`, `HoverTime` | 0.52, 0.42 s | hovering in front of the target and shouting |
+| `DiveBombChance` | 0.36 | the dive pass |
+| `GroundAttackChance`, `GroundAttackTime` | 0.85, 1 s | landing to fight on the ground |
+| `PerchAttackChance`, `PerchAttackTime` | 0.5, 0.5 s | attacking from a perch |
+| `FlyingAttackChance` | 0.75 | the flying pass |
+
+Each chance is mapped into the global range of its `fCombat…ChanceMin/Max` setting
+(`0x1408dc070`), so 0 and 1 mean the range's ends, not never and always. A style
+with zero ground attack and zero perch never lands to fight (`csDragonNoLanding`);
+one with only a flying attack always passes (`MQ301OdahviingCombatStyle`).
+
+### 3.4 Movement types and the `iState` names
+
+One `MOVT` per flight posture, named through `iState_<MNAM>` variables in the root
+behaviour graph (`docs/speed-data.md` §4.5). The dragon has three:
+
+    iState_DragonFlying   -> MNAM "DragonFlying"   forward walk 2000, run 7400, rotate 90°/s
+    iState_DragonHovering -> MNAM "DragonHovering" no translation, rotate 45°/s
+    iState_DragonPerching -> MNAM "DragonPerching" nothing
+
+The flight path follower plans with these speeds, and the turn-rate reader
+(`0x140673210`) takes the larger of the movement type's two rotation speeds before
+it would ever fall back to `fFlyingActorDefaultTurningSpeed`. So the creature's
+cruise speed and how tightly it turns are here, not in any setting. The graph sets
+`iState` on entering each posture (`iState = iState_DragonFlying` in the flight
+machine's expressions).
+
+### 3.5 The idle records
+
+The AI requests five actions and the idle tree turns each into a graph event. A
+new race needs its own roots under the same five actions, with race conditions so
+the dragon's roots do not fire for it, sending whatever event names its graph uses:
+
+    ActionFlyStart   root: GetFlyingState == 2 -> cruise entry, == 3 -> hover entry,
+                     == 5 -> launch from perch, otherwise take-off (vertical variant by condition)
+    ActionFlyStop    root: GetIsCrashLandRequest, GetIsHastyLandRequest, GetIsInjured,
+                     IsFurnitureAnimType -> the landing variants; otherwise the default landing
+    ActionHoverStart root: hover entry (and a "safe" variant)
+    ActionHoverStop  root: hover exit
+    ActionLand       is the ground creature's landing after a jump; dragons do not use it
+    path-end turn:   under the turn actions, GetFlyingState == 3 and GetPathingTargetAngleOffset
+
+The set of actions is fixed by the executable; the names, the conditions and how
+many variants exist are the plugin's. A creature with one take-off and one landing
+needs two idles under each root.
+
+### 3.6 The graph
+
+The contract the executable holds the graph to:
+
+- **Declare the fly state from state entries.** The six response-file names,
+  `FlightTakeOff`, `FlightCruising`, `FlightHovering`, `FlightLanding`,
+  `FlightLanded`, `FlightPerching`, as enter events of the states that are those
+  things, and `FlightAction` / `FlightActionEnd` around any grab. The engine learns
+  the state only this way; a graph that flies without sending them leaves the
+  controller under gravity.
+- **Accept the inbound events** the idles of §3.5 send, as transitions out of the
+  ground state (take-off), out of flight (hover entry, landings), out of hover
+  (exit), and from a perch (launch).
+- **Read the inputs it wants.** `TargetSpeed`, `Pitch`, `PitchDelta`, `TurnDelta`,
+  `Speed`, `Direction`, `DistToGoal`, `Injured`, the tween set
+  (`TweenPosition`, `TweenRotation`, `TweenEntryDirection`, `TweenSpeed`,
+  `HasTweenSpeed`) and the landing four (`Land`, `bCrashLand`, `LandTypeIndex`,
+  `PerchFireNode`). None is mandatory; the dragon ignores `Roll`.
+- **Tween the take-off, the hover entry and the landing.** A `BSTweenerModifier` on
+  those states carries the actor to the engine's `TweenPosition` and
+  `TweenRotation`; without it the creature lands where its root motion says, not
+  where the path ends, and hovers beside its target rather than in front of it.
+- **Set `iState`** on entering each posture (§3.4).
+- **Own the wing model, or not.** The dragon integrates `Speed` from `TargetSpeed`
+  with `MaxAcc`, `MaxDec` and `Drag`, and chooses flap, glide or feather by
+  thresholds on the ratio (§2). A creature with one cruise clip needs none of it:
+  the movement type's speed is what the follower plans with either way. A creature
+  with several needs its own rule for choosing between them, and the dragon's
+  expressions are a template.
+- **Injury**, if wanted: `Injured` becomes the selector between default and hurt
+  clip families and the idle tree's `GetIsInjured` picks the injured landing.
+- **Perches**, if wanted: each perch type is a furniture, its marker a `.nif`
+  with the furniture's entry, the perch state enters with `idleChairSitting` beside
+  `FlightPerching`, and the idle tree keys the landing on `IsFurnitureAnimType`.
+- **Get-up**: `iGetUpType`, as for any creature.
+- **Do not send the jump.** `JumpBegin` hands the controller to gravity.
+
+### 3.7 Animations and the caches
+
+The clips are ordinary; the take-off and landing ones carry the `to_TakeOff_Flight`
+and `BeginLand` style triggers that move their own machines, and any `HitFrame`,
+`preHitFrame` and sound events as on the ground. After the project changes, the
+three caches have to say so: the animation set data must hold the new clips' hashes
+in the sets the movement and idle events name, or the clips silently do not play
+(`docs/animation-set-data.md`); the animation data cache carries the root motion;
+the speed data is not meaningful for a flyer, since the graph writes `Speed` back
+itself (`docs/speed-data.md`), which is how the shipped dragon is recorded.
+
+### 3.8 What the creature will be asked to do regardless
+
+- **The combat tree is one tree.** `CombatBehaviorTreeFlight` is chosen for any
+  flying actor and its nodes are dragon-shaped: take-off, orbit, hover, flying pass,
+  dive, perch attack, land and fight. The style of §3.3 weighs them; it cannot add
+  or remove one. A graph that answers every request with *some* state and reports
+  its fly state honestly does not break; it flies like a dragon that cannot dive.
+- **The requests come with targets.** A hover entry comes with a tween target in
+  front of the enemy, a landing with a spot found on the navmesh, an orbit with a
+  centre; the graph is told where, never asked.
+- **Landing without perches** gets the default, hasty and crash landings, chosen by
+  the pathing's own conditions; that is enough for a creature that lands on the
+  ground.
+
+### 3.9 What cannot be changed from data
+
+Five settings are single values for every flying actor: `fCombatFlightEffectiveDistance`,
+`fCombatFlightMinimumRange`, `fCombatDiveBombOffsetPercent`,
+`fCombatDiveBombSlowDownDistance` and `fHostileFlyingActorExteriorDistance`, plus
+the `Min/Max` ends of the chance ranges. A creature cannot have its own engagement
+distances or its own dive geometry. The choices are a plugin of code that changes
+the setting per actor, or a graph that does not use the engine's dive at all and
+animates its own pass from the flying-attack request. The path builders and the
+follower are likewise one implementation; a creature that should fly in a way the
+six path shapes cannot express (a straight-line darter, a hoverer that never
+cruises) can still ship, but it will be flown along those shapes.
 
 ## 4. The player
 
