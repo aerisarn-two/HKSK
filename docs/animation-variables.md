@@ -222,12 +222,20 @@ data); `MLh_SpellFire_Event`, `MRh_SpellFire_Event`, `Voice_SpellFire_Event`,
 `PairedKillTarget`, `TurnDynamic`, `fFlameProjectileLength`, `Imod`, `Rimod`,
 `Left` and `fIdleTimer` are in the table with no reader found in this pass.
 
-**Handlers registered by name.** Every event the game *acts on* has a class
-`<Name>Handler` implementing `IHandlerFunctor<Actor, BSFixedStringCI>`, registered
-through `AutoRegisterCreator` into a `BSTCreateFactoryManager` keyed on the event
-name, case-insensitive. The RTTI names every one -- **93 handlers** -- and that
-list is the complete set of events a clip trigger can send to the game. By what
-they do:
+**Handlers, and the response files that name them.** Every event the game *acts
+on* has a class `<Name>Handler` implementing `IHandlerFunctor<Actor,
+BSFixedStringCI>`, registered through `AutoRegisterCreator` into a
+`BSTCreateFactoryManager` under its class name. The RTTI names every one -- **93
+handlers**. What a clip fires is not that class name: the engine reads
+`meshes/responses/actorresponse.txt` (88 lines of `name : Handler`) and, for the
+player, `playercharacterresponse.txt` first (13 lines, chained to the actor file by
+`BackupResponse : ActorResponse`), and routes each name on the left to the handler
+on the right, case-insensitively. `ActorResponse` and `PlayerCharacterResponse` in
+the table above are those two files. So `weaponSwing` reaches
+`WeaponRightSwingHandler`, `preHitFrame` reaches `AnticipateAttackHandler`, and the
+string-table names of the previous paragraph are the same names seen from the
+other side. `docs/animation-events.md` has the full name-to-handler table and what
+each handler does. Grouped by what they do, by class name:
 
 | group | handlers (event name = class name without `Handler`) |
 | --- | --- |
@@ -247,7 +255,7 @@ Everything else a clip announces -- `SoundPlay.X`, `FootLeft`, `FootRight`,
 either handled by a different registry (sound and footstep payloads go to the
 audio and impact systems by their prefix) or is the graph's own business. A new
 creature may invent any event it likes for its own transitions; only the 93 above
-reach the actor, and only by these exact names.
+reach the actor, and only by the names the response files give them.
 
 ## 5. Authoring a creature's behaviour
 

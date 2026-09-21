@@ -18,6 +18,91 @@ ones that read it are marked below. The return value is almost always `true`; th
 that can return `false` (HitFrame, the spell casts and fires, the chair exit) do so to
 say the event did not apply, and nothing acts on it.
 
+**A clip does not send a handler's name.** The factory registers each handler under
+its class name (`0x1407bafd0(manager, "WeaponRightSwingHandler", creator)` in the
+initialiser at `0x1407b3ee0`), and the translation from what a clip fires to that key
+is a data file: `meshes/responses/actorresponse.txt`, 88 lines of `name : Handler`,
+read by `0x1407b2860` with `" : "` as the separator. The player character reads
+`playercharacterresponse.txt` first, whose `BackupResponse : ActorResponse` line
+chains to the actor file; the names `ActorResponse` and `PlayerCharacterResponse` in
+the engine's string table are these two files. Lookup is case-insensitive. The
+headings below keep the class names, because that is how the executable and the
+census name them; the table gives the name a clip fires. Several handlers have two
+names, two handlers are registered under an older name (`StopHorseCameraHandler`,
+`RemoveCharacterControllerHandler`), and the player file's nine entries are the only
+route to the player-only handlers. The last two columns count trigger sites in the
+shipped behaviours and annotations in the shipped animations, from a corpus that
+holds every behaviour file but only 1,308 of the character's clips.
+
+| clip fires | handler | file | triggers | annotations |
+| --- | --- | --- | --- | --- |
+| weaponSwing | WeaponRightSwing | actor | 333 | 256 |
+| weaponLeftSwing | WeaponLeftSwing | actor | 88 | 0 |
+| HitFrame | HitFrame | actor | 461 | 261 |
+| preHitFrame | AnticipateAttack | actor | 433 | 262 |
+| AttackWinStart, AttackWinStartLeft | AttackWinStart | actor | 210, 109 | 2, 1 |
+| AttackWinEnd, AttackWinEndLeft | AttackWinEnd | actor | 210, 109 | 2, 1 |
+| attackStop, bashStop | AttackStop | actor | 480, 16 | 0 |
+| recoilStop | RecoilStop | actor | 82 | 0 |
+| staggerStop | StaggeredStop | actor | 184 | 0 |
+| Decapitate | Decapitate | actor | 2 | 0 |
+| KillActor | KillActor | actor | 7 | 0 |
+| KillMoveStart, KillMoveEnd | KillMoveStart, KillMoveEnd | actor | 0 | 0 |
+| pairedStop | PairedStop | actor | 2 | 0 |
+| DeathEmote | DeathEmote | actor | 0 | 0 |
+| DeathStop | DeathStop | actor | 11 | 0 |
+| BeginWeaponDraw | WeaponBeginDrawRight | actor | 34 | 22 |
+| weaponDraw | RightHandWeaponDraw | actor | 31 | 48 |
+| BeginWeaponSheathe | WeaponBeginSheatheRight | actor | 36 | 14 |
+| weaponSheathe | RightHandWeaponSheathe | actor | 26 | 33 |
+| BowDrawn, BowRelease | BowDrawn, BowRelease | actor | 35, 1 | 0 |
+| BowZoomStart, BowZoomStop | BowZoomStart, BowZoomStop | player | 0 | 0, 8 |
+| arrowAttach | ArrowAttach | actor | 9 | 31 |
+| arrowDetach, bowReset | ArrowDetach | actor | 1, 0 | 0 |
+| arrowRelease | ArrowRelease | actor | 3 | 24 |
+| BeginCastLeft, BeginCastRight, BeginCastVoice | the three SpellCast | actor | 0, 0, 1 | 0 |
+| MLh_SpellFire_Event, MRh_SpellFire_Event, Voice_SpellFire_Event | the three SpellFire | actor | 35, 20, 49 | 22, 5, 15 |
+| InterruptCast | InterruptCast | actor | 0 | 0 |
+| summonStop | EndSummonAnimation | actor | 6 | 0 |
+| VampireFeedEnd | VampireFeedEnd | actor | 0 | 0 |
+| idleChairSitting, idleBedSleeping | ChairEnter, BedEnter; the Player pair in the player file | both | 9, 0 | 0 |
+| idleChairGetUp, idleBedGetUp, idleSleepGetUp | ChairFurnitureExit, BedFurnitureExit; PlayerFurnitureExit | both | 3, 10, 0 | 0 |
+| PickNewIdle | PickNewIdle | actor | 27 | 0 |
+| IdleDialogueLock, IdleDialogueUnlock | IdleDialogueEnter, IdleDialogueExit | actor | 0 | 0 |
+| ActivationDone | ActionActivateDone | actor | 5 | 0 |
+| NPCAttach, NPCDetach | NPCAttach, NPCDetach | actor | 0 | 0 |
+| ExitCartBegin, ExitCartEnd | ExitCartBegin, ExitCartEnd | actor | 0 | 0 |
+| MountEnd, DismountEnd | MountDismountEnd | actor | 0 | 0 |
+| StopHorseCamera | StopMountCamera | actor | 0 | 0 |
+| AnimObjLoad, AnimObjDraw | AnimationObjectLoad, AnimationObjectDraw | actor | 0, 34 | 5, 3 |
+| AddRagdollToWorld, RemoveRagdollFromWorld | AddRagdoll, RemoveRagdoll | actor | 0 | 0 |
+| RemoveCharacterControllerFromWorld | RagdollStart | actor | 0 | 0 |
+| GetUpStart, GetUpEnd | GetUpStart, GetUpEnd | actor | 0, 180 | 0 |
+| JumpBegin | JumpAnimEvent | actor | 6 | 0 |
+| FlightTakeOff, FlightCruising, FlightHovering, FlightLanding, FlightPerching, FlightLanded | the fly-state six | actor | 0 | 0 |
+| FlightLandEnd | FlightLandEnd | actor | 4 | 0 |
+| FlightAction, FlightActionEntryEnd, FlightActionEnd | FlightAction… | actor | 0, 5, 0 | 0 |
+| FlightActionGrab, FlightActionRelease | FlightActionGrab, FlightActionRelease | actor | 1, 1 | 0 |
+| FlightCrashLandStart | FlightCrashLandStart | actor | 0 | 1 |
+| StartMotionDriven, StartAnimationDriven, StartAllowRotation | MotionDriven, AnimationDriven, AllowRotation | actor | 0, 12, 0 | 0, 28, 0 |
+| MTState | MTState | actor | 0 | 0 |
+| EnableCharacterPitch, DisableCharacterPitch | the pitch pair | actor | 0 | 0 |
+| EnableBumper, DisableBumper | the bumper pair | actor | 0 | 0 |
+| HeadTrackingOn, HeadTrackingOff | HeadTrackingOn, HeadTrackingOff | actor | 17, 14 | 3, 1 |
+| ZeroOutCameraPitch | ZeroPitch | player | 0 | 0 |
+| PitchOverrideStart, PitchOverrideEnd | PitchOverrideStart, PitchOverrideEnd | player | 14, 14 | 0 |
+| StartAnimatedCamera, StartAnimatedCameraDelta | AnimatedCameraStart, AnimatedCameraDeltaStart | player | 0 | 0 |
+| EndAnimatedCamera, GraphDeleting | AnimatedCameraEnd | player | 0 | 0 |
+| CameraOverrideStart, CameraOverrideStop | CameraOverrideStart, CameraOverrideStop | actor | 0 | 0 |
+| CameraShake | CameraShake | actor | 0 | 118 |
+
+The flight, mount, cart and bumper names with no vanilla sender are sent by the
+engine or by graphs the corpus does not hold; a zero here is a lower bound, not an
+absence. What a clip sends that is in neither file (`NPCKillMoveStart`,
+`NPCPairedStop`, `PairEnd`, `IdleStop`, `CastOKStart`, `SoundPlay.*`, the feet) never
+reaches a handler: it is the graph's own transition event, or is read by another
+system.
+
 Many handlers begin with a call to `0x1406d1ee0`, a check on which thread the event
 arrived on. On the wrong thread the same work is queued on the task list at
 `0x1431993a0` and done later; on the right one it is done in place. Both paths do the
@@ -110,17 +195,17 @@ weapon in hand. A clip without a swing event makes no sound and never enters sta
 **HitFrame** (`0x1407b81b0`; reads the payload). If the actor's virtual `0x99` says
 no (`0x140674ed0`, called with 0), it resolves the hit: `0x1406b9460(actor, isLeft,
 true)`, where `isLeft` is the payload compared to the name-table entry `Left`
-(`0x1420f6370+0x5D0`). That function counts the hit on the high process (`+0x448`),
+(`0x1420f6370+0x5D0`). The shipped behaviours fire `HitFrame.Left` at 54 trigger
+sites, the left hooks and off-hand attacks in `0_master`, and plain `HitFrame` at
+407. That function counts the hit on the high process (`+0x448`),
 takes the weapon in the named hand, breaks invisibility and ethereal form
 (`0x1406c6d90`), evaluates perk entry points (`0x140385f30`) and applies the hit to
 each actor the swing has collected (`0x1406ba870`, twice). Afterwards the handler
 moves attack state 2 to 3 (hit) and returns `true`, or returns `false` if the state
 was not swing. That last check is why HitFrame after a missing swing does nothing.
 
-**preHitFrame** has no handler: it is one of the string-table names the combat code
-reads for a time (§4 of the variables document).
-
-**AnticipateAttack** (`0x1407b8240`; reads the payload as HitFrame does) records the
+**AnticipateAttack** (`0x1407b8240`; a clip fires it as `preHitFrame`; reads the
+payload as HitFrame does) records the
 named hand's current weapon-node position on the high process (`+0x2DC` left,
 `+0x2E8` right, via `0x1406e3ae0`), then finds the combat target (`0x1406b9a10`),
 checks it is close enough and facing (`0x140852c30`), and sends it a `BGSActionData`
@@ -229,7 +314,8 @@ above. It takes the weapon's enchantment (instance extra data, else the base rec
 virtual 6 with modifier 2); otherwise the shot is unenchanted. It then launches the
 projectile (`0x140286c90(weapon, actor, 0, enchantment, ammo-entry)`), sets attack
 state 12, and breaks invisibility and ethereal form (`0x1406c6d90(actor, -1)`). The
-`arrowRelease` string-table name is separate and read for its time.
+same name `arrowRelease` is also in the engine's string table, where the animation
+data code reads its time (`0x140537f20`); one annotation serves both.
 
 ## 5. Magic
 
@@ -251,9 +337,12 @@ shout meter (`0x140381010(level)`). If there is no spell to fire it clears the s
 `VoiceSpellFireHandler::executeHandler - MagicEventHelper::ReleaseCastForActor
 failed.`
 
-The `MLh_SpellFire_Event`, `MRh_SpellFire_Event` and `Voice_SpellFire_Event` names of
-the string table are different events, read by the magic code for their time; a cast
-clip carries both.
+A clip fires the casts as `BeginCastLeft`, `BeginCastRight` and `BeginCastVoice`,
+and the fires as `MLh_SpellFire_Event`, `MRh_SpellFire_Event` and
+`Voice_SpellFire_Event`; the three fire names are also in the engine's string table,
+where the animation data code reads their time (`0x140537f20`). The shipped
+behaviours fire the three fires 104 times and the casts once, so the cast handler is
+nearly always reached by the engine's own send rather than a clip.
 
 **InterruptCast** (`0x1407b95d0`) calls `InterruptCast(refund)` on all four casters at
 `Actor+0x1A8` (`0x1405bbfa0`), with `refund` true unless the actor is staggered (state
@@ -391,7 +480,9 @@ is over and its target may be taken.
 
 **FlightActionGrab, FlightActionRelease** (`0x1407b8db0`, `0x1407b8dd0`; pass the
 payload) tail-call `0x1407babc0(actor, payload, grab)` with `true` and `false`: the
-dragon's grab of an actor and its release, with the payload naming what is grabbed.
+dragon's grab of an actor and its release, with the payload naming the dragon's bone
+that holds it. The one vanilla sender is `CLIP_Flight_Grab` in `dragonbehavior`,
+which fires both with the payload `NPC RLegFoot`.
 
 **FlightLandEnd** (`0x1407b8ca0`) — `0x1406b9ed0(actor, false)`, which is
 `0x140715ae0(process, 0, actor)`: if the middle-high process holds a pending-kill
@@ -444,6 +535,13 @@ them.
 And `0x1407c2c10` is not a setter shared by the motion-mode three; it is the lookup
 of `IMovementMotionDrivenControl`, and each event calls a different method on it.
 
+The larger error is older and in `docs/animation-variables.md` §4, corrected there:
+the event a clip fires is not the class name without `Handler`. It is the left column
+of the response files, and the "string-table names the code compares for a time"
+(`HitFrame`, `weaponSwing`, `arrowRelease`, the three spell fires) are the same names
+seen from the other side: the animation data code reads their times, and the
+response file routes them to handlers.
+
 ## 11. Authoring consequences
 
 - **State is set by the clip, not the engine, for every "Stop" event.** RecoilStop,
@@ -458,10 +556,15 @@ of `IMovementMotionDrivenControl`, and each event calls a different method on it
   → ArrowRelease (12) → AttackWinStart (13) → AttackWinEnd (14), and ArrowRelease
   refuses below 9. A new ranged creature that is not a bow or crossbow by weapon type
   gets none of this.
-- **Payloads are the interface for five families.** `NPCAttach.<node>`,
-  `AnimObjectLoad.<editorId>`, `AnimObjectDraw.<editorId>`, `CameraShake.<number>`,
-  `AnimatedCameraStart.<name>`, and `HitFrame.Left` / `AnticipateAttack.Left` for the
-  off hand. Nothing else reads its payload.
+- **Payloads are the interface for six families.** `NPCAttach.<node>`,
+  `AnimObjLoad.<editorId>` and `AnimObjDraw.<editorId>`, `CameraShake.<number>`,
+  `StartAnimatedCamera.<name>`, `FlightActionGrab.<bone>` and
+  `FlightActionRelease.<bone>`, and `HitFrame.Left` / `preHitFrame.Left` for the off
+  hand. Nothing else reads its payload.
+- **The names come from the response files.** A new creature fires the left column
+  of `actorresponse.txt`, not the handler's class name; `RagdollStart` and
+  `StopMountCamera` reach nothing. A mod may ship its own response file to add
+  names, since the file is read by path, but the right column can only name the 93.
 - **Furniture, flight and get-up read the actor's own state first.** ChairEnter does
   nothing when the state is already 4, the fly-state setter ignores a repeat, and
   GetUpStart branches on `iGetUpType`. Set the graph variable before the event.
