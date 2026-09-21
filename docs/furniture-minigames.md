@@ -4,10 +4,10 @@ The question was whether a furniture interaction can carry a minigame, with a
 ballista the player sits at and shoots as the example. The answer is yes, from
 data alone, because the four things a minigame needs already exist as separate,
 composable pieces: a furniture puts the player into a state of its graph and
-locks a camera; the graph can hold any machine inside that state; the engine writes
-the player's aim into the graph every frame and the mounted-combat machine already
-turns it into a bow; and a script can fire a weapon's projectile from any reference
-on an animation event. What is missing is only the state, the clips and the script.
+locks a camera; the graph can hold any machine inside that state; a native
+modifier aims the bones it names at the camera and reports the aim to the engine,
+and the mounted-combat machine already turns that into a bow; and a script can fire
+a weapon's projectile from any reference on an animation event. What is missing is only the state, the clips and the script.
 Evidence: the masters through Mutagen (furniture, keywords, idles), the player's
 `mt_behavior` and `horsebehavior` through HKX2, and the executable (AE layout,
 addresses as in `docs/animation-events.md`).
