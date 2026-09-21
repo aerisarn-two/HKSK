@@ -581,7 +581,7 @@ absent block is the game's own answer there, the request unchanged.
 Read back through the game's lookup, the result holds 13,751 of the 16,930 shipped
 points on the shared blocks (81.2%). Each engine-side choice costs against that
 measure — the offset 171 points, the zero start 99, measured before the horse was
-read at its own numbers (§6.3) — and is kept, because the engine is the measure. 62,641 points, 524 KB, about seven seconds.
+read at its own numbers (§6.3) — and is kept, because the engine is the measure. 62,195 points, 520 KB, about five seconds.
 
 ## 9. Open
 
