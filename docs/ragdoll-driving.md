@@ -288,7 +288,20 @@ shared by all (none on the atronachs, the ice wraith, the chicken, the
 slaughterfish and the daedra, whose powered get-up therefore has no motor to
 drive). A humanoid driven ragdoll is 18 dynamic capsules and 17 ragdoll
 constraints solved every physics step, against one capsule for the controller.
-How many of those a scene affords is the one point that only a run settles.
+How many of those a scene affords is the one point that only a run settles, and
+the budget it has to fit is fixed by the `[HAVOK]` settings: the world is stepped
+at `fMaxTime` (1/60 s) up to `uMaxNumPhysicsStepsPerUpdate` (3) times per game
+update, or once at `fMaxTimeComplex` (1/30 s) while the *scene complex* counter
+(`0x1431871bc`, kept by `0x1403594e0` and recounted from the loaded references at
+`0x140649d40`) is nonzero (`0x140e85250`, from the main update at `0x140647330`).
+So a driven ragdoll's bodies are solved up to three times per frame, and a frame
+that runs past 50 ms does not slow the animation, it makes the physics fall behind
+real time. What separates a driven ragdoll from the corpses a battle leaves is
+that a corpse comes to rest and Havok deactivates it, while a driven body has its
+velocity set every step and never sleeps: twenty driven actors cost what twenty
+corpses cost in the second they are still falling, every frame. That is the
+number a run has to measure, frame time against the count of driven actors at
+three 1/60 s steps, and nothing read here bounds it further.
 
 **Gains for a trailing part** are a reading of Havok's own header
 (`hkaKeyFrameHierarchyUtility.h`, in the 2010.2 sources bundled with ck-cmd)
@@ -320,11 +333,12 @@ the per-graph virtuals the handlers use, the Papyrus natives, the sit-state's
 layer choice, the actor's 3D load, the collision filter's constructor, table
 initialiser, data-load override and pair test, the body wrapper's keyframe
 transition, the readers of race flag bit 18 and of the three INI settings, the
-ragdoll command dispatcher's jump table, and the knockdown, get-up and
-`GetUpEnd` paths, the `[RagdollAnim]` and `[Animation]` settings by their records
+ragdoll command dispatcher's jump table, the knockdown, get-up and `GetUpEnd`
+paths, the `[HAVOK]` step budget and the scene-complex counter that switches it,
+the `[RagdollAnim]` and `[Animation]` settings by their records
 and every reader of their values, `bhkRagdollController`'s construction and update,
 and the graph driver's `driveToPose`. The `COLL` records and the race flags were
 read from the five masters with Mutagen. The gain semantics are Havok's own
-comments in `hkaKeyFrameHierarchyUtility.h`. The 117 behaviour files and 45 skeletons of the corpus
-were swept with HKX2 for every driving modifier's control data and bone list and
+comments in `hkaKeyFrameHierarchyUtility.h`. The 117 behaviour files and 45
+skeletons of the corpus were swept with HKX2 for every driving modifier's control data and bone list and
 every ragdoll's body, constraint and motor counts.
