@@ -43,6 +43,41 @@ stepped only when one of the control modifiers has a nonzero weight this frame, 
 always with the setting on. So the driver is not a cost paid by every actor every
 frame; it runs when a modifier asks.
 
+**There is a second driver, and it is the engine's.** `bhkRagdollController`
+(vtable `0x1419e6c20`, source `bshavok\bhkragdollcontroller.cpp`) builds its own
+`hkaRagdollInstance` and its own `hkaRagdollRigidBodyController` for the actor
+(`0x140eb06a0`: `0x140f00b50` then the constructor `0x140bd4110`, which the graph's
+driver also calls at `0x140aaff50`), and fills the controller's palette from the
+`[RagdollAnim]` INI section rather than from any modifier:
+
+| setting | value | Havok default |
+| --- | --- | --- |
+| `fHierarchyGain`, `fVelocityDamping`, `fAccelerationGain`, `fVelocityGain`, `fPositionGain` | 0.17, 0, 1, 0.6, 0.05 | the same |
+| `fPositionMaxLinearVelocity`, `fPositionMaxAngularVelocity` | 14, 18 | 1.4, 1.8 |
+| `fSnapGain` | 0.1 | the same |
+| `fSnapMaxLinearVelocity`, `fSnapMaxAngularVelocity` | 3, 0.3 | 0.3, 0.3 |
+| `fSnapMaxLinearDistance`, `fSnapMaxAngularDistance` | 0.3, 1.0 | 0.03, 0.1 |
+
+The gains are Havok's defaults, that is the 39-project tuning, and the clamps are
+ten times looser. Its update (`0x140ea6ff0`) calls the same `driveToPose`
+(`0x140bd4540`) the graph's driver calls from `0x140aacbe0`, and is the pass that
+also hosts the engine's foot, grab and look IK and its pose matching, each behind
+its `[RagdollAnim]` boolean (`bFootIK`, `bGrabIK`, `bLookIK`, `bPoseMatching`, all
+1). `bRagdollAnim` (1) switches the whole pass, and the console toggle at
+`0x1401a1e80` flips it. The pass is skipped while a **hit feedback** is running:
+`bRagdollFeedback` (1) lets an impulse on the body (`fFeedbackImpulseMult` 500,
+`fImpulseLimit` 15) hold the drive off for `fFeedbackTimeMS` (10,000) with an
+on/off gain of `fFeedbackOnOffGain` 0.3 over `fFeedbackOnOffGainTimeMS` 1,000,
+which is what makes a driven body wobble after an arrow and settle.
+
+So a living driven ragdoll is pulled by two controllers with two gain sets: the
+graph's, per project, and the engine's, global. For the 39 default projects they
+agree except on the clamps; for the giant, the draugr, the vampire brute, the
+lurker and the netch the graph asks for ten times the position stiffness the
+engine asks for. Which of the two a body ends up following in a given frame is
+the order of the two updates, graph then physics, and only a run measures the
+blend; what is certain is that tuning a modifier tunes one driver of two.
+
 ## 2. What the shipped graphs do with them
 
 Every project, in the modifier list of its **root** modifier generator, active for
@@ -253,9 +288,26 @@ shared by all (none on the atronachs, the ice wraith, the chicken, the
 slaughterfish and the daedra, whose powered get-up therefore has no motor to
 drive). A humanoid driven ragdoll is 18 dynamic capsules and 17 ragdoll
 constraints solved every physics step, against one capsule for the controller.
-How many of those a scene affords is the one point that only a run settles, along
-with the gains for a trailing part, for which the heavy-body tuning above is the
-starting point.
+How many of those a scene affords is the one point that only a run settles.
+
+**Gains for a trailing part** are a reading of Havok's own header
+(`hkaKeyFrameHierarchyUtility.h`, in the 2010.2 sources bundled with ck-cmd)
+rather than a run. The controller matches acceleration, then velocity, then
+position, each difference scaled by its gain and applied as a velocity change,
+with position differences clamped; a final snap pass pulls a body that is within
+`snapMaxLinearDistance` to the keyframe at `snapGain`, weakening by the square root
+of the ratio beyond it. `hierarchyGain` blends the target between model space
+(0, stiff and stable) and the parent's space (1, softer, more natural);
+`positionGain` is the immediate stiffness and overshoots when high;
+`velocityGain` damps the position term, `accelerationGain` damps the velocity
+term; `velocityDamping` scales the body's velocity down every step before the
+controller runs. A part that should trail its animation therefore wants a low
+`positionGain`, a higher `hierarchyGain` so it follows its parent rather than
+the model, some `velocityDamping` so it does not ring, and a `snapGain` of zero
+so it is never pulled onto the keyframe: the opposite corner of the space from
+the heavy-body tuning, which raises `positionGain` to 0.5 and `accelerationGain`
+down to 0.2 with damping 0.1 to make a body that stays put. Both drivers above
+take the same twelve numbers, and only the graph's are per project.
 
 ## 7. How this was measured
 
@@ -269,7 +321,10 @@ layer choice, the actor's 3D load, the collision filter's constructor, table
 initialiser, data-load override and pair test, the body wrapper's keyframe
 transition, the readers of race flag bit 18 and of the three INI settings, the
 ragdoll command dispatcher's jump table, and the knockdown, get-up and
-`GetUpEnd` paths. The `COLL` records and the race flags were read from the five
-masters with Mutagen. The 117 behaviour files and 45 skeletons of the corpus
+`GetUpEnd` paths, the `[RagdollAnim]` and `[Animation]` settings by their records
+and every reader of their values, `bhkRagdollController`'s construction and update,
+and the graph driver's `driveToPose`. The `COLL` records and the race flags were
+read from the five masters with Mutagen. The gain semantics are Havok's own
+comments in `hkaKeyFrameHierarchyUtility.h`. The 117 behaviour files and 45 skeletons of the corpus
 were swept with HKX2 for every driving modifier's control data and bone list and
 every ragdoll's body, constraint and motor counts.
