@@ -80,16 +80,28 @@ executable adds it in five places:
   graph from `AnimateToRagdoll`, `KeyframeToRagdoll` and the kill-move states;
 - the **death code** (`0x1406972d0`, the function that logs who was killed by
   whom), for a death without the animation;
-- the **sit and sleep state** (`0x140711b60`): entering a furniture sets the
-  ragdoll's collision layer to `BIPED_NO_CC` (33) and adds the ragdoll
-  (`0x140655a00`); leaving sets it back to `BIPED` (8) and removes it. A seated or
-  sleeping actor is therefore a living actor whose ragdoll is in the world and
-  driven by the root's `DriveRagdollRB` toward the sit animation, on a layer that
-  does not collide with character controllers. This is the shipped proof that the
-  engine tolerates the driven mode on a living body;
-- the **3D load** of a placed reference whose model carries a ragdoll
-  (`0x1401d42f0`, `0x1401d46d0`, `0x140219ad0`), for dead bodies and animated
-  statics;
+- the **sit and sleep state** (`0x140711b60`, through `0x140718880`): entering
+  a furniture puts the ragdoll on the `BIPED_NO_CC` layer (33) with the
+  *furniture's* collision group (the mount's, when the furniture is an actor),
+  keyframed, and adds it (`0x140655a00`); the actor's own controller gets bit 15
+  of its filter word, which limits it to trigger volumes of other groups while
+  seated. Leaving puts the ragdoll back on `BIPED` (8) in the actor's own group
+  and removes it, unless the race allows ragdoll collision or
+  `bAddBipedWhenKeyframed:HAVOK` is set, in which case it stays on 33 and in the
+  world. A seated or sleeping actor is therefore a living actor whose ragdoll is
+  in the world and driven by the root's `DriveRagdollRB` toward the sit
+  animation. This is the shipped proof that the engine tolerates the driven mode
+  on a living body;
+- the **3D load** of an actor (`0x140687a80`): the ragdoll is added when the actor
+  is dead (`DEADBIP`, dynamic), seated (`BIPED_NO_CC`), or of a race flagged
+  **Allow Ragdoll Collision** (`BIPED_NO_CC`, keyframed); a standing actor of any
+  other race loads with its ragdoll out of the world. Twenty race records carry
+  the flag: every dragon (`DragonRace`, `AlduinRace`, `UndeadDragonRace`,
+  `DragonBlackRace`, `dlc2SpectralDragonRace` and their overrides), the swarms
+  (`SwarmRace`, `SprigganSwarmRace`), `WitchlightRace`, `IceWraithRace`,
+  `MagicAnomalyRace` and `DLC1SoulCairnSoulWispRace`. The placed-reference loads
+  (`0x1401d42f0`, `0x1401d46d0`, `0x140219ad0`) do the same for dead bodies and
+  animated statics;
 - the **Papyrus natives** `ForceAddRagdollToWorld` and `ForceRemoveRagdollFromWorld`
   (`0x140a2acd0`, "Object Reference cannot be found, cannot add/remove ragdoll to
   world"), which call the graph's add (`BShkbAnimationGraph` virtual 2,
@@ -109,9 +121,8 @@ living actor puts its ragdoll into the world, and the root's `DriveRagdollRB` an
 graph plays. What that buys: limbs that collide with clutter and doors, a body that
 props hit, arrows that stick where they land on a driven body, and impulses that
 deflect the pose within the gains and snap back. What it costs: a second physics
-body per actor, and a collision layer to choose, since the sit code picks
-`BIPED_NO_CC` to keep the ragdoll off the controllers and the script native leaves
-the layer as loaded.
+body per actor, and the collision layer of §5, which the race flag and the sit code
+set and the script native leaves as loaded.
 
 What a graph can add on top, all from the classes above:
 
@@ -136,16 +147,73 @@ ragdoll in the world and a subset of bones driven softly. Nothing found refuses 
 the death transition drives all bones, the sit drives all bones with the controller
 present, and the modifiers take bone lists.
 
-## 5. Open points
+## 5. The collision layer of a living ragdoll
 
-Only a run settles these: the right collision layer for a walking actor's driven
-ragdoll (the sit code's `BIPED_NO_CC` avoids controllers but a walking body also
-needs to avoid its own capsule); whether the get-up's pose matching is
-disturbed by a script-added ragdoll on an actor that is later knocked down; the
-gains for a trailing part, since the shipped ones are tuned to hold a dying body to
-its clip; and the cost per actor at scale.
+The layer is not a detail: it decides whether a keyframed body is allowed to exist
+in the world at all.
 
-## 6. How this was measured
+**The matrix comes from the masters.** `bhkCollisionFilter` (`0x140eb67c0`) starts
+with a hard-coded table (`0x140eb6fb0`) and then, at data load (`0x1403f6740`),
+overwrites one row per `COLL` record of the load order with that record's
+*collides with* list, and collects the records flagged *Trigger Volume* and
+*Sensor* into two masks (`+0x3d0`, `+0x3d8`). Skyrim.esm ships 55 of them, so the
+table below is Mutagen's reading of the records, not the executable's default:
+
+| layer | collides with |
+| --- | --- |
+| `L_BIPED` (8) | the world: static, terrain, ground, trees, water, anim-static, transparent, trap, trigger, spell, cone projectile, the picks. Not weapon, projectile, clutter, props, char controller, biped, dead biped |
+| `L_BIPED_NO_CC` (33) | weapon, clutter, spell, cone projectile, projectile, props, char controller. Nothing else: no world, no water, no biped, no dead biped |
+| `L_DEADBIP` (32) | the world, weapon, projectile, spell, clutter, props, debris, dead biped. Not biped, not char controller |
+| `L_CHARCONTROLLER` (30) | the world, clutter, props, weapon, projectile, spell, char controller, `L_BIPED_NO_CC`. Not biped, not dead biped |
+
+`BIPED_NO_CC` is therefore not "does not touch character controllers": it is the
+layer of a body that leaves the world to the actor's own capsule and takes only
+what a body should take, weapons, projectiles, spells, clutter, props, and other
+actors' capsules. `BIPED` is the opposite, a body that must land on the ground
+and is hit by nothing.
+
+**The pair test** (`0x140eb6c50`, on the two filter words: layer in bits 0-6,
+body part in bits 8-12, no-collision in bit 14, system group in bits 16-31):
+bit 14 on either side refuses; a group of zero on either side accepts; two
+different groups consult the row of the first layer, except that a controller
+with bit 15 set only meets trigger and sensor layers; the same group first needs
+the row, then refuses a controller outright, then, between two biped-layer bodies
+(8, 32, 33), consults a 29-part body-part table (`+0x50`), and between two bodies
+with bit 15 set refuses adjacent part numbers. **A body never collides with the
+capsule of its own group**, whatever the layers, which is what keeps a walking
+actor's driven ragdoll off its own controller: the ragdoll bodies and the
+controller are given the actor's group at load (`0x14067e120`).
+
+**A keyframed body leaves the world unless it is on 33.** The body wrapper's
+keyframe transition (`0x140e92840`, a virtual stored in two vtables) removes a
+body that has just become keyframed from the world when its layer is not
+`BIPED_NO_CC` and `bAddBipedWhenKeyframed:HAVOK` (default 0, `0x14202c6a9`) is
+off, and adds it back when it becomes dynamic. Since the root's
+`KeyframeLowerBody` keyframes the legs of every actor, a driven ragdoll on any
+other layer loses its keyframed bones the moment the driver runs. That is why the
+sit code, the race flag and the load code all choose 33, and why the INI setting
+has the name it has.
+
+So the answer to the open point: **a walking actor's driven ragdoll goes on
+`BIPED_NO_CC` in the actor's own group**, which is exactly what the race flag
+*Allow Ragdoll Collision* produces without a script: the ragdoll is added at 3D
+load, keyframed, on 33, and the root's `DriveRagdollRB` and `KeyframeLowerBody`
+take it from there. The dragons and the swarms have shipped that way since
+release, which is how a dragon's tail and wings take arrows. The flag is a race
+record field, so it is a plugin change and nothing else. `GetUpEnd`
+(`0x1407ba170`) is the one handler that moves a ragdoll back to `BIPED`, and only
+when `iGetUpType` is 0; a flagged race is put back on 33 by the sit code's exit
+path but not by a get-up, which is worth a run to check.
+
+## 6. Open points
+
+Only a run settles these: whether the get-up's pose matching is disturbed by a
+ragdoll that is in the world before the knockdown, and whether `GetUpEnd` leaves
+a flagged race's ragdoll on `BIPED`; the gains for a trailing part, since the
+shipped ones are tuned to hold a dying body to its clip; and the cost per actor
+at scale.
+
+## 7. How this was measured
 
 Six projects' graphs were dumped with HKX2 for every powered, rigid-body,
 keyframe and contact-listener modifier, its owning modifier list, its fields two
@@ -153,4 +221,7 @@ levels deep, and the states whose entry events touch the ragdoll or the
 controller. The skeletons were searched for constraint and motor classes. The
 executable was read for the callers of the queued add and remove of the ragdoll,
 the per-graph virtuals the handlers use, the Papyrus natives, the sit-state's
-layer choice, and the collision-layer names.
+layer choice, the actor's 3D load, the collision filter's constructor, table
+initialiser, data-load override and pair test, the body wrapper's keyframe
+transition, and the readers of race flag bit 18 and of the `HAVOK` setting. The
+`COLL` records and the race flags were read from the five masters with Mutagen.
