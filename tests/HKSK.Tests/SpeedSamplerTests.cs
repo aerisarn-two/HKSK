@@ -165,12 +165,12 @@ public sealed class SpeedSamplerTests
         Assert.Equal(996, arms);
         Assert.Equal(3420, rungs);
 
-        // A rung is allowed to stand still, and 101 of them do: a first-person
+        // A rung is allowed to stand still, and 100 of them do: a first-person
         // body clip does not translate because the camera does, and an in-place
         // attack like H2H_AttackLeft is a rung of the blend it interrupts. They
         // are resolved, not skipped -- a rung with no entry in the cache at all
         // is what SpeedLadder drops, and there are none of those here.
-        Assert.Equal(101, stationary);
+        Assert.Equal(100, stationary);
     }
 
     /// <summary>The tolerance a rebuilt curve has to hold, at every point.</summary>

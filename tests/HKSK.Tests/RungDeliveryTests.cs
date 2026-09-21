@@ -17,14 +17,14 @@ public sealed class RungDeliveryTests
     /// it travels at some speed of its own, and the two are meant to be the same
     /// number -- <c>docs/speed-data.md</c> §0 -- with the speed table existing to
     /// record where they are not. How near they actually are had not been measured,
-    /// and it turns out to be very near: <strong>32 of the 40 projects with a ladder
+    /// and it turns out to be very near: <strong>33 of the 40 projects with a ladder
     /// sit within 1% at the median</strong>, most of them exactly 1.
     /// </para>
     /// <para>
     /// That makes the outliers worth naming, because a creature whose clips do not
     /// deliver their own rung weights is either interesting or broken.
-    /// <c>HorseProject</c> is the extreme and it is broken: see
-    /// <see cref="TheHorseIsTheOutlierAndItsCacheIsWhy"/>.
+    /// <c>HorseProject</c> used to be the extreme, and was only misread: see
+    /// <see cref="TheHorsesMotionIsReadAtItsCachesOwnNumbers"/>.
     /// </para>
     /// </remarks>
     [CorpusFact]
@@ -33,56 +33,56 @@ public sealed class RungDeliveryTests
         var medians = Medians();
 
         Assert.Equal(40, medians.Count);
-        Assert.Equal(32, medians.Count(m => Math.Abs(m.Value - 1) <= 0.01));
-        Assert.Equal(33, medians.Count(m => Math.Abs(m.Value - 1) <= 0.05));
+        Assert.Equal(33, medians.Count(m => Math.Abs(m.Value - 1) <= 0.01));
+        Assert.Equal(34, medians.Count(m => Math.Abs(m.Value - 1) <= 0.05));
     }
 
     /// <summary>
-    /// The horse's clips claim to travel two and a half times their rung weights,
-    /// and three separate things say they do not.
+    /// The horse delivers its rung weights exactly, once its motion is read at the numbers
+    /// its cache gives its clips rather than at its character's.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Its forward ladder's rungs are 5, 125.112, 214, 303.906 and 450, and its
-    /// movement type asks for a forward walk of <strong>125.11</strong> and a run of
-    /// <strong>450</strong> -- the rungs are authored at the game's own numbers. The
-    /// shipped speed table then reads very nearly the identity: 121.46 at a goal
-    /// speed of 125, 312.57 at 324.5. So the graph and the masters and the table all
-    /// agree that the horse travels at about what it is asked for.
+    /// Its forward ladder's rungs are 5, 125.112, 214, 303.906 and 450, and its movement
+    /// type asks for a forward walk of <strong>125.11</strong> and a run of
+    /// <strong>450</strong>. The shipped speed table reads very nearly the identity:
+    /// 121.46 at a goal speed of 125, 312.57 at 324.5.
     /// </para>
     /// <para>
-    /// The animation cache does not. It records <c>WalkForward</c> as 182.344 units
-    /// in 0.6 seconds, which is 303.9 -- and every rung playing that animation is out
-    /// by the same 2.429, while every rung playing <c>TrotForward</c> is out by the
-    /// same 1.5387. A constant per animation, not per rung, so it is the recorded
-    /// motion and not the blend.
-    /// </para>
-    /// <para>
-    /// <strong>The horse's cache is independently known to be damaged.</strong>
-    /// <c>RunForward</c> is recorded as travelling zero and <c>SprintForward</c>
-    /// carries no motion block at all, so two of its four gaits are already missing.
-    /// The cache duration agrees with the animation's own for <c>WalkForward</c>, so
-    /// it is the displacement that is wrong rather than the span.
-    /// </para>
-    /// <para>
-    /// This is why <c>HorseProject</c> holds 0 of its 289 curve points and why no
-    /// correction here would help: nothing in the behaviour, the masters or the
-    /// animations disagrees with the shipped table. Only the cache does, and the
-    /// cache is the one input that cannot be checked against anything else.
+    /// This used to be the extreme outlier, at 2.4291, and the horse's cache was taken to
+    /// be damaged: <c>WalkForward</c> travelling 182.344 in 0.6 seconds, <c>RunForward</c>
+    /// travelling zero, <c>SprintForward</c> with no motion at all. <strong>It is not
+    /// damaged; it is numbered against another list.</strong> The cache gives the horse's
+    /// clips slots up to 88 and its character lists 51 animations, so reading a clip's
+    /// motion at the slot the character lists its animation at reads another animation's:
+    /// the 182.344 is <c>TrotForward</c>'s. At the cache's own numbers the walk travels
+    /// 137.62, the run 212.32 and the sprint 334.60, the walk's median ratio is 1.000, and
+    /// the rebuilt table holds all 289 of the horse's shipped points
+    /// (<see cref="ActorProject.MotionOf(HKX2.hkbClipGenerator)"/>).
     /// </para>
     /// </remarks>
     [CorpusFact]
-    public void TheHorseIsTheOutlierAndItsCacheIsWhy()
+    public void TheHorsesMotionIsReadAtItsCachesOwnNumbers()
     {
         var medians = Medians();
 
-        Assert.Equal(2.4291, medians["HorseProject"], 3);
-        Assert.All(medians.Where(m => m.Key != "HorseProject"), m => Assert.True(m.Value < 1.21));
+        Assert.Equal(1.0, medians["HorseProject"], 3);
+        Assert.All(medians, m => Assert.True(m.Value < 1.21));
 
         SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
         var horse = (ActorProject)cache.OpenActor("HorseProject")!;
 
-        Assert.Equal(0f, horse.Animation("RunForward")!.Motion!.Translations[^1].Value.Length());
+        Assert.Equal(51, horse.Character!.AnimationNames.Count);
+        Assert.Equal(88, horse.Data.Block.Clips.Max(c => c.CacheIndex));
+
+        float Travel(string clip) => horse.MotionOf(horse.Clip(clip)!.Entry)!.Travel;
+        Assert.Equal(137.62, Travel("WalkForward"), 2);
+        Assert.Equal(212.32, Travel("RunForward"), 2);
+        Assert.Equal(334.60, Travel("SprintForward"), 2);
+
+        // what the character's numbering finds instead: the trot's travel, and nothing
+        Assert.Equal(Travel("TrotForward"), horse.Animation("WalkForward")!.Motion!.Travel);
+        Assert.Equal(0f, horse.Animation("RunForward")!.Motion!.Travel);
         Assert.Null(horse.Animation("SprintForward")!.Motion);
     }
 

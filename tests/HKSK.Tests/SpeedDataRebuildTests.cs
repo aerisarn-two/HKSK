@@ -69,7 +69,7 @@ public sealed class SpeedDataRebuildTests
     /// Six writable keys get no block on purpose. Driven into their state, nothing
     /// sampler-fed is live beside them and the pose there carries no root motion --
     /// the rider on its saddle offset, the first-person camera -- or, for the horse's
-    /// own sprint, a clip whose motion block the cache does not hold. Nothing the
+    /// swim, a clip whose motion the cache records as no travel at all. Nothing the
     /// animation does there can be measured, and an absent block is the game's own
     /// answer: the request passes through unchanged.
     /// </para>
@@ -137,12 +137,12 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(6, routes["unread"]);
         Assert.Equal(
             [("DefaultFemale", 63), ("DefaultMale", 63),
-             ("FirstPerson", 1), ("FirstPerson", 61), ("FirstPerson", 63), ("HorseProject", 61)],
+             ("FirstPerson", 1), ("FirstPerson", 61), ("FirstPerson", 63), ("HorseProject", 63)],
             inferred.How.Where(h => h.Value == "unread").Select(h => h.Key).Order());
     }
 
     /// <summary>
-    /// Where a block was recovered, the curve is close: 87% of the shipped points.
+    /// Where a block was recovered, the curve is close: 89% of the shipped points.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -346,11 +346,11 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(1444, records);
         Assert.Equal(16930, points);
 
-        // 87%. The rate is held down by RieklingProject, in the denominator with
+        // 89%. The rate is held down by RieklingProject, in the denominator with
         // 1037 points and 138 of them right.
-        Assert.Equal(14807, pointsHeld);
-        Assert.Equal(1216, recordsHeld);
-        Assert.Equal(48, blocksHeld);
+        Assert.Equal(15109, pointsHeld);
+        Assert.Equal(1235, recordsHeld);
+        Assert.Equal(49, blocksHeld);
 
         // The spider centurion's arms play at a rate an expression computes from the
         // sampled speed, and the whole block follows from evaluating it.
@@ -359,7 +359,7 @@ public sealed class SpeedDataRebuildTests
         Assert.Equal(24, _declared);
         Assert.Equal(63, _sharedBlocks);
         Assert.Equal(13, _newBlocks);
-        Assert.Equal(12786, _sharedHeld);
+        Assert.Equal(13088, _sharedHeld);
 
         // On the 24 the graph declares, driving it into the declared state -- by
         // the events that enter it, the choosers on the way, what the transitions ask
@@ -429,15 +429,17 @@ public sealed class SpeedDataRebuildTests
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "rebuild-readback.txt"),
             $"unasked {unasked}\nrecords {records}\nrecordsHeld {recordsHeld}\npoints {points}\nheld {held}\n\n" + string.Join("\n", perBlock));
 
-        // 79.5% of the shipped points on the 76 blocks, read through the game's own
-        // lookup. Three choices made for the engine cost against the shipped file and
-        // are kept: no sampler offset (13,622 with it), every heading swept from zero
-        // where the shipped sweeps settle in from 0.5 (13,550 starting there), and a
-        // tolerance of 0.5 (13,288 at the game's 2).
+        // 81.2% of the shipped points on the 76 blocks, read through the game's own
+        // lookup; 79.5% before the horse's motion was read at the cache's own numbers,
+        // which alone accounts for 289 of the 300 gained. Three choices made for the
+        // engine cost against the shipped file and are kept, measured before that fix:
+        // no sampler offset (13,622 with it, against 13,451), every heading swept from
+        // zero where the shipped sweeps settle in from 0.5 (13,550 starting there), and
+        // a tolerance of 0.5 (13,288 at the game's 2).
         Assert.Equal(10, unasked);
         Assert.Equal(16930, points);
-        Assert.Equal(13451, held);
-        Assert.Equal(479, recordsHeld);
+        Assert.Equal(13751, held);
+        Assert.Equal(498, recordsHeld);
     }
 
     /// <summary>The inferred table writes back as a well-formed file.</summary>

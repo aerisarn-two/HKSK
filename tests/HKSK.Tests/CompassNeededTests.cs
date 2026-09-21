@@ -20,7 +20,7 @@ public sealed class CompassNeededTests
     /// what <see cref="SpeedSampler"/> does. Answering every heading with the
     /// forward arm instead asks whether that machinery is needed, and over the 5851
     /// points of the declared keys that have a compass the answer is emphatic:
-    /// <strong>the compass holds 5047 and the forward arm alone 1089.</strong>
+    /// <strong>the compass holds 5060 and the forward arm alone 1089.</strong>
     /// </para>
     /// <para>
     /// <strong>One block is the other way round, and completely so.</strong>
@@ -92,7 +92,7 @@ public sealed class CompassNeededTests
         }
 
         Assert.Equal(5851, all);
-        Assert.Equal(5047, compass);
+        Assert.Equal(5060, compass);
         Assert.Equal(1089, ahead);
 
         // Exactly one block does better without its compass, and it does perfectly.

@@ -174,7 +174,7 @@ public static class SetDataGenerator
 
         var travel = project.Clips
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Max(c => c.Slot?.Motion?.Travel ?? 0f), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.Key, g => g.Max(c => project.MotionOf(c)?.Travel ?? 0f), StringComparer.OrdinalIgnoreCase);
 
         // the engine's own gate: a reach of five units or less is no movement (§4.6)
         return reach.LocomotionClips().All(c => travel.GetValueOrDefault(c.m_name) <= 5f);

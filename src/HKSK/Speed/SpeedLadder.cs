@@ -235,8 +235,7 @@ public sealed class SpeedLadder
 
             if (clip?.m_animationName is not { } name || clip.m_playbackSpeed == 0f) continue;
 
-            AnimationSlot? slot = project.Animation(Path.GetFileNameWithoutExtension(name.Replace('\\', '/')));
-            ClipMovement? motion = slot?.Motion;
+            ClipMovement? motion = project.MotionOf(clip);
             if (motion is null || motion.Duration <= 0f || motion.Translations.Count == 0) continue;
 
             // A negative playback speed plays the animation backwards, so the clip

@@ -1150,7 +1150,10 @@ and the weights 3,864.** `VampireLord` falls from 223 of its 223 points to 7 and
 `BallistaCenturion` from 224 to 14, which is §0's whole claim made visible: the
 table exists because the two numbers differ.
 
-**Two creatures prefer the weights, and both have damaged root motion.**
+**Two creatures prefer the weights, and both have damaged root motion.** *(Corrected:
+the horse's was misread, not damaged -- §6.3. Read at its cache's own numbers the
+cache holds 5,349 and the weights 3,956, the horse all 289 of its points either way,
+and the werewolf 41 against 83.)*
 `HorseProject` goes from 0 to 213 and `WerewolfBeastProject` from 28 to 67. The
 werewolf is the horse's case again -- its forward clips deliver 0.9 and 197.15
 where the rungs say 5 and 303.04, a constant 5.55 and 1.537 per animation rather
@@ -1388,6 +1391,17 @@ between 0.0385 and 0.0400 with basins too narrow to hold 0.0417. Neither count o
 steps fits, so the twenty-fourths stay a property of goal speed zero.
 
 ### 6.3 The horse: the one creature whose cache is the problem
+
+> **Corrected 2026-09-21: the horse's cache is not damaged, and this section's
+> conclusion is wrong.** Its clips are numbered up to 88 against a character listing
+> 51 animations, and every measurement below read a clip's motion at the slot the
+> *character* lists its animation at -- another animation's. The 182.344 attributed
+> to `WalkForward` is `TrotForward`'s; at the cache's own numbers the walk travels
+> 137.62, the run 212.32 and the sprint 334.60, the median ratio is 1.000, and the
+> rebuilt table holds all 289 of the horse's points. `ActorProject.MotionOf` reads
+> them that way; `docs/speed-data.md` §6.3 and `RungDeliveryTests` state the
+> finding. The section is kept as it was written, because the trap it fell into is
+> the reason for the rule.
 
 A ladder child's weight is a position on the speed axis and the clip beneath it
 travels at some speed of its own. §0 says the two are meant to be the same number
@@ -1722,7 +1736,6 @@ ratio 1.000.
 Step 6 is one division per rung and catches the only failure mode. When the two drift
 the ratio is a recognisable playback rate:
 
-    HorseProject    Horse_Default_MT   ForwardWalk   125.11 vs 303.91   x2.429
     ChickenProject  Chicken_Default    ForwardRun    251.94 vs 403.10   x1.600
     BearProject     Bear_Default_MT    ForwardWalk    59.82 vs  89.74   x1.500
     DogProject      Dog_Default_MT     ForwardWalk    74.54 vs 104.36   x1.400
@@ -1843,7 +1856,8 @@ where the two disagree the shipped file is the one with the tool's habits in it:
   a half-unit grid. 62,641 points, 524 KB.
 
 Read back through the game's own lookup, the result holds 13,451 of the 16,930 shipped
-points on the 76 shared blocks (79.5%), and each of the three choices above costs
+points on the 76 shared blocks (79.5%) -- 13,751 (81.2%) once the horse is read at its
+cache's own numbers (§6.3) -- and each of the three choices above costs
 against that measure -- the offset 171 points, the start 99, the tolerance a whole
 record here and there -- and is kept because the engine, not the file, is what the
 table is for.
@@ -2355,8 +2369,9 @@ and §6 models one ladder per record.
 **Three creatures whose ladders do not describe their tables.** `HorseProject`'s rungs
 sit at 5, 125.112, 214, 303.906 and 450 but deliver 12.1, 303.9, 329.2, 467.6 and 0:
 the weight-to-delivery ratio is constant per clip (2.4291 for both walk rungs, 1.5385
-for both trot rungs) and `RunForward` has no travel in the cache at all, so the cache's
-duration for these clips is not the duration the blend uses. `HMDaedra`'s compass has
+for both trot rungs) and `RunForward` has no travel in the cache at all -- *which was
+the motion read at the wrong numbers (§6.3, corrected); at the cache's own they deliver
+their weights.* `HMDaedra`'s compass has
 nine arms at 0.05 and 0.95 rather than eight from 0, and one of its ladders is
 non-monotonic — `MT_BackwardRight_Blend` delivers 128 at weight 64 and 64 at weight 128.
 `DwarvenSpiderCenturionProject` has a sampler and a compass whose children are clips,

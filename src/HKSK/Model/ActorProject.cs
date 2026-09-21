@@ -332,6 +332,50 @@ public sealed partial class ActorProject : CacheProject
         return _slots.FirstOrDefault(s => string.Equals(s.FileStem, stem, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The root motion of the animation a clip plays.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The motion at the slot the character lists the clip's animation at -- unless the
+    /// cache numbers the clip past the end of that list. Then the cache was written against
+    /// another list, and its own number is the only one that finds the clip's motion: the
+    /// horse's walks are numbered 88 in a cache whose character lists 51 animations, and
+    /// slot 50, where the character puts <c>WalkForward.hkx</c>, holds another animation's
+    /// travel. Read that way, the horse's recorded motion looked damaged; read at the cache's
+    /// numbers, the shipped speed table follows it at every one of its 289 points.
+    /// </para>
+    /// <para>
+    /// Only then, because a clip is found by name and a name does not pin one clip down:
+    /// names repeat across a project's graphs, and <c>Crossbow_IdleHeld</c> and
+    /// <c>CrossBow_IdleHeld</c> are two of the humans'. Where the cache's number falls inside
+    /// the list, the character's slot is the one to trust.
+    /// </para>
+    /// </remarks>
+    public ClipMovement? MotionOf(HKX2.hkbClipGenerator generator)
+    {
+        ArgumentNullException.ThrowIfNull(generator);
+
+        if (Character is { } character
+            && Data.Block.Clips.FirstOrDefault(c => c.Name == generator.m_name) is { } cached
+            && cached.CacheIndex >= character.AnimationNames.Count)
+            return MotionOf(cached);
+
+        return generator.m_animationName is { Length: > 0 } animation
+            ? Animation(Path.GetFileNameWithoutExtension(animation.Replace('\\', '/')))?.Motion
+            : null;
+    }
+
+    /// <summary>The root motion at the number the cache gives a clip.</summary>
+    public ClipMovement? MotionOf(ClipGeneratorEntry clip) => Data.Movements?.For(clip.CacheIndex);
+
+    /// <summary>
+    /// The root motion of a cached clip: its slot's, or the cache's own when the cache numbers
+    /// it past the character's list (<see cref="MotionOf(HKX2.hkbClipGenerator)"/>).
+    /// </summary>
+    public ClipMovement? MotionOf(Clip clip) =>
+        clip.Slot is { } slot ? slot.Motion : MotionOf(clip.Entry);
+
     /// <summary>Every clip that plays a given slot.</summary>
     public IEnumerable<Clip> ClipsOf(AnimationSlot slot) =>
         _clips.Where(c => c.CacheIndex == slot.Index);

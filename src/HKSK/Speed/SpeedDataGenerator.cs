@@ -821,7 +821,7 @@ public static class SpeedDataGenerator
                 { headings = false; break; }
 
                 string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
-                if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion ||
+                if (actor.MotionOf(clip) is not { Duration: > 0f } motion ||
                     motion.Translations.Count == 0)
                 { headings = false; break; }
 
@@ -982,7 +982,7 @@ public static class SpeedDataGenerator
                 if (carried <= 0.001f || node.Motion < carried) continue;
 
                 string stem = Path.GetFileNameWithoutExtension(animation.Replace('\\', '/'));
-                if (actor.Animation(stem)?.Motion is not { Duration: > 0f } motion) continue;
+                if (actor.MotionOf(clip) is not { Duration: > 0f } motion) continue;
                 // A clip that does not travel makes a curve too, and it is zero.
                 // AtronachStormProject, WispProject and WitchlightProject each ship
                 // 38 points of exact zero while their movement types declare
