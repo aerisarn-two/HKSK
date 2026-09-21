@@ -313,7 +313,7 @@ public sealed class BlockSelectionTests
             {
                 string movement = constant["iState_".Length..];
                 string kind = !roles.TryGetValue(movement, out var used) ? "unnamed"
-                    : used.Contains("walk") ? "walk" : "elsewhere";
+                    : used.Contains(HKSK.Records.MovementRole.Walk) ? "walk" : "elsewhere";
                 if (kind == "elsewhere") offWalk.Add(movement);
 
                 var t = tally.GetValueOrDefault(kind);

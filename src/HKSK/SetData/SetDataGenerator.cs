@@ -7,6 +7,9 @@ namespace HKSK.SetData;
 /// <summary>
 /// The events the masters say the game can send, which the behaviour files cannot.
 /// </summary>
+/// <remarks>
+/// Read from the game's records by <see cref="Records.GameRecordRules.Events"/>.
+/// </remarks>
 /// <param name="Idle">
 /// Every idle record's animation event. The set lookup is only ever keyed on one of
 /// these: an idle chosen directly, or the idle an action resolves to
@@ -97,6 +100,10 @@ public static class SetDataGenerator
 
         return file;
     }
+
+    /// <summary>Builds the whole file, with the events taken from the game's records.</summary>
+    public static AnimationSetDataFile Generate(SkyrimCache cache, Records.IGameRecords records, double slack = DefaultSlack) =>
+        Generate(cache, Records.GameRecordRules.Events(records), slack);
 
     internal static ProjectAttackListBlock? Build(string meshes, ActorProject project, GameEvents events, double slack)
     {

@@ -1213,8 +1213,8 @@ the graph says the character is sprinting over that state:
   it is tried only after `WerewolfLeftPowerAttack[GetMovementSpeed <= 1]` has failed: it is the
   power attack for when the werewolf is running, stated by elimination, and flagged; the standing
   sibling is clear. The graph cannot show this -- both are one clip in a state behind an
-  unconditioned wildcard -- and the masters state it outright, so `setgen` reads it
-  (`MasterData.ChosenOnTheMove`) and the generator flags it. Movement *direction* is deliberately
+  unconditioned wildcard -- and the masters state it outright, so the idle tree is read for
+  it (`GameRecordRules.ChosenOnTheMove`) and the generator flags it. Movement *direction* is deliberately
   not counted: `GetMovementDirection == 1` chooses the player's forward lunge, whose travel is its
   own, and every directional power attack is clear.
 

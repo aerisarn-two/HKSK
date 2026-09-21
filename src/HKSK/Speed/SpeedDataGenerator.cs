@@ -53,6 +53,10 @@ public static class SpeedDataGenerator
         return Infer(cache, movements, tolerance).File;
     }
 
+    /// <summary>Builds the whole table, with the movement types taken from the game's records.</summary>
+    public static SpeedDataFile Generate(SkyrimCache cache, Records.IGameRecords records, float tolerance = DefaultTolerance) =>
+        Generate(cache, Records.GameRecordRules.MovementTypes(records), tolerance);
+
     /// <summary>
     /// How far a dropped point may sit from the line that replaces it, in units per
     /// second: a quarter of the game's own 2, which is coarse against the half-unit grid

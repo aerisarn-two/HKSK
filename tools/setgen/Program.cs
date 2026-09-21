@@ -3,7 +3,8 @@ using System.Globalization;
 using HKSK.Cache;
 using HKSK.Model;
 using HKSK.SetData;
-using HKSK.SetGen;
+using HKSK.Records;
+using HKSK.Tools;
 
 // setgen: writes animationsetdatasinglefile.txt from the game's other assets.
 //
@@ -52,8 +53,8 @@ data = Path.GetFullPath(data);
 
 if (!File.Exists(Path.Combine(meshes, SkyrimCache.AnimationDataFileName)))
     return Fail($"{meshes} has no {SkyrimCache.AnimationDataFileName}: pass the extracted meshes folder");
-if (!File.Exists(Path.Combine(data, MasterData.Order[0])))
-    return Fail($"{data} has no {MasterData.Order[0]}: pass the game's Data folder");
+if (!File.Exists(Path.Combine(data, MasterRecords.Order[0])))
+    return Fail($"{data} has no {MasterRecords.Order[0]}: pass the game's Data folder");
 
 output = Path.GetFullPath(output ?? SkyrimCache.AnimationSetDataFileName);
 if (Directory.Exists(output)) output = Path.Combine(output, SkyrimCache.AnimationSetDataFileName);
@@ -70,7 +71,7 @@ SkyrimCache cache = SkyrimCache.Load(meshes);
 cache.SetData.Projects.Clear();
 Console.WriteLine($"cache      {meshes}");
 
-GameEvents events = MasterData.Events(data);
+GameEvents events = GameRecordRules.Events(MasterRecords.Read(data));
 Console.WriteLine($"masters    {data}  ({events.Idle.Count} idle events, {events.Equip.Count} equip, {events.Attacks.Count} graphs with races)");
 
 AnimationSetDataFile file = SetDataGenerator.Generate(cache, events, slack);

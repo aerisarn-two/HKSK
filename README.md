@@ -300,12 +300,12 @@ A whole table can be generated from the game's other assets — the behaviour gr
 the animation cache and the masters' movement types — without reading a shipped one:
 
 ```csharp
-SpeedDataFile file = SpeedDataGenerator.Generate(cache, movementTypes, raceRoles);
+SpeedDataFile file = SpeedDataGenerator.Generate(cache, records);
 file.Save("speeddatasinglefile.txt");
 ```
 
-`tools/speedgen` does it from the command line, reading the masters with Mutagen,
-since this library does not open plugins. Against the shipped file it writes all 86
+`records` is the game's plugin data (see *The game's records* below). `tools/speedgen`
+does it from the command line. Against the shipped file it writes all 86
 blocks the game ships and 63 it does not, and read the way the game reads it holds
 82% of the shipped points within 2%. **`docs/speed-data.md`** is the specification —
 the layout, the nine invariants, the closed form for the curve, how to choose `MOVT`
@@ -315,7 +315,7 @@ The animation set data can be generated the same way, from the behaviour graphs,
 animation cache and the masters' idle records and races:
 
 ```csharp
-AnimationSetDataFile file = SetDataGenerator.Generate(cache, events);
+AnimationSetDataFile file = SetDataGenerator.Generate(cache, records);
 file.Save("animationsetdatasinglefile.txt");
 ```
 
@@ -325,6 +325,20 @@ set, bar 71 killmoves the characters do not list, and the idle keys the game sen
 80% of the files the shipped idle sets hold -- most of the rest belong to keys no
 transition in the behaviour takes any more. **`docs/animation-set-data.md`** §5
 is the method.
+
+## The game's records
+
+Three inputs to the caches are plugin records rather than Havok files: the movement
+types, the races, and the idle tree. This library does not open plugins. It states what
+it needs as `HKSK.Records.IGameRecords` -- plain records with opaque ids, already
+resolved to the load order's winners -- and a caller fills it. `SKAssets` does that with
+Mutagen; `GameRecords` is a list of each for a caller that builds them by hand.
+
+What the records *mean* is decided here, because those are the engine's rules rather
+than the plugin format's: `GameRecordRules.MovementTypes` names a movement type the way
+`iState_<MOVT>` does, `MovementRoles` says what the races use each one for, and `Events`
+reads the idle tree for the events the set data is keyed on -- which idles equip, and
+which attacks the tree only chooses on the move.
 
 ## Paired animations
 

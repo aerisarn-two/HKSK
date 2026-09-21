@@ -413,8 +413,9 @@ only between gaits (§6), which is the smallest table a creature can have.
   unique within it; the humanoids reserve 0–17 and 60–63, the shared quadrupeds
   ten per species alphabetically (bear 0, cow 10, deer 20, ... wolf 100).
 
-The `Skyrim.esm` records are read here through Mutagen (`tools/speedgen/MasterData`),
-and writing one is the same API in the other direction.
+The library takes the records as `HKSK.Records.IGameRecords` and does not open plugins;
+the tools read them through Mutagen (`tools/shared/MasterRecords.cs`), and writing one
+is the same API in the other direction.
 
 ### 7.4 `iState` and `iState_<MNAM>`: the protocol between a graph and the engine
 

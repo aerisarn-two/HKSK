@@ -16,9 +16,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/HKSK/HKSK.csproj" />
-    <!-- The masters are read the way the generator reads them. -->
-    <ProjectReference Include="../../tools/speedgen/speedgen.csproj" />
-    <ProjectReference Include="../../tools/setgen/setgen.csproj" />
   </ItemGroup>
 
   <!--
@@ -31,11 +28,13 @@
 
   <ItemGroup>
     <!--
-      The movement types are plugin records. HKSK reads Havok files and the
-      animation cache and does not open plugins; the rebuild needs MOVT as an
-      input, so the test supplies it the way se-cmd does.
+      The movement types, races and idles are plugin records. HKSK reads Havok
+      files and the animation cache and does not open plugins; it states what it
+      needs as IGameRecords, and the tests read the masters into it the way
+      SKAssets does for a caller.
     -->
     <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0" />
+    <Compile Include="../../tools/shared/MasterRecords.cs" Link="MasterRecords.cs" />
   </ItemGroup>
 
 </Project>

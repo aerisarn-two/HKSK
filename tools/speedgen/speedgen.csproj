@@ -16,4 +16,9 @@
     <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The masters' records, read the way SKAssets reads them for a library caller. -->
+    <Compile Include="../shared/MasterRecords.cs" Link="MasterRecords.cs" />
+  </ItemGroup>
+
 </Project>

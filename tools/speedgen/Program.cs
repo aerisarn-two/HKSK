@@ -3,7 +3,8 @@ using System.Globalization;
 using HKSK.Cache;
 using HKSK.Model;
 using HKSK.Speed;
-using HKSK.SpeedGen;
+using HKSK.Records;
+using HKSK.Tools;
 
 // speedgen: writes speeddatasinglefile.txt from the game's other assets.
 //
@@ -50,8 +51,8 @@ data = Path.GetFullPath(data);
 
 if (!File.Exists(Path.Combine(meshes, SkyrimCache.AnimationDataFileName)))
     return Fail($"{meshes} has no {SkyrimCache.AnimationDataFileName}: pass the extracted meshes folder");
-if (!File.Exists(Path.Combine(data, MasterData.Order[0])))
-    return Fail($"{data} has no {MasterData.Order[0]}: pass the game's Data folder");
+if (!File.Exists(Path.Combine(data, MasterRecords.Order[0])))
+    return Fail($"{data} has no {MasterRecords.Order[0]}: pass the game's Data folder");
 
 output = Path.GetFullPath(output ?? SpeedDataFile.FileName);
 if (Directory.Exists(output)) output = Path.Combine(output, SpeedDataFile.FileName);
@@ -68,7 +69,7 @@ SkyrimCache cache = SkyrimCache.Load(meshes);
 cache.SpeedData = null;
 Console.WriteLine($"cache      {meshes}");
 
-var movements = MasterData.MovementTypes(data);
+var movements = GameRecordRules.MovementTypes(MasterRecords.Read(data));
 Console.WriteLine($"masters    {data}  ({movements.Count} movement types)");
 
 SpeedDataFile file = SpeedDataGenerator.Generate(cache, movements, tolerance);

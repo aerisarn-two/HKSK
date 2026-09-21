@@ -234,7 +234,8 @@ from a shipped set-data file; `setgen` empties one before generating.
 
 ### 5.1 Inputs
 
-The behaviour graphs and the animation cache; from the masters, every idle record's
+The behaviour graphs and the animation cache; from the game's records
+(`HKSK.Records.IGameRecords`, read by the caller), every idle record's
 event (the only keys the lookup is given, §4.3), the equip events (the idles under
 the drawing and equipping roots, the one input picked by name), and each race's
 attack events for the graph it wears.
@@ -328,4 +329,5 @@ structure it walks rather than by any string. The recipes are
 - `HKSK.Cache.AnimationSetDataFile` — read, write, `HavokCrc`.
 - `HKSK.SetData.SetDataGenerator`, `GraphReach`, `StateGraph` — the rebuild (§5) and
   the flag (§6); `tools/setgen` runs it against the extracted meshes and the masters.
+- `HKSK.Records.GameRecordRules.Events` — the inputs of §5.1 from the records.
 - `SetDataRebuildTests`, `MasterCorpus` — the numbers above, as exact assertions.

@@ -33,7 +33,7 @@ public sealed class SetDataRebuildTests : IClassFixture<SetDataRebuildTests.Buil
 
             SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
             cache.SetData.Projects.Clear();
-            Made = SetDataGenerator.Generate(cache, HKSK.SetGen.MasterData.Events(Masters.DataFolder!));
+            Made = SetDataGenerator.Generate(cache, HKSK.Records.GameRecordRules.Events(Masters.Records));
         }
     }
 
