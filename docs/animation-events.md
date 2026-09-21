@@ -21,7 +21,7 @@ say the event did not apply, and nothing acts on it.
 **A clip does not send a handler's name.** The factory registers each handler under
 its class name (`0x1407bafd0(manager, "WeaponRightSwingHandler", creator)` in the
 initialiser at `0x1407b3ee0`), and the translation from what a clip fires to that key
-is a data file: `meshes/responses/actorresponse.txt`, 88 lines of `name : Handler`,
+is a data file: `meshes/responses/actorresponse.txt` in `Skyrim - Animations.bsa`, 88 lines of `name : Handler`,
 read by `0x1407b2860` with `" : "` as the separator. The player character reads
 `playercharacterresponse.txt` first, whose `BackupResponse : ActorResponse` line
 chains to the actor file; the names `ActorResponse` and `PlayerCharacterResponse` in
