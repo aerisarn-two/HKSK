@@ -515,6 +515,35 @@ melee reach ever connects:
 - the hover lasts the style's `HoverTime` mapped into `fCombatHoverTimeMin` and
   `Max` (`0x1408dc870`).
 
+The values. Only two of these settings exist as `GMST` records in the masters;
+the rest are the executable's built-in defaults, read from the setting objects:
+
+| setting | value | source |
+| --- | --- | --- |
+| `fCombatHoverAngleMin` | 0° | default |
+| `fCombatHoverAngleMax` | 20° | default |
+| `fCombatHoverAngleLimit` | 35° | default |
+| `iCombatHoverLocationCount` | 4 | default |
+| `fCombatHoverTimeMin` | 5.5 s | Skyrim.esm (default 7.5) |
+| `fCombatHoverTimeMax` | 15 s | default |
+| `fCombatHoverChanceMin` / `Max` | 0 / 1 | default |
+| `fCombatFlyingAttackChanceMin` / `Max` | 0 / 1 | default |
+| `fCombatDiveBombChanceMin` / `Max` | 0 / 1 | default |
+| `fCombatFlightEffectiveDistance` | 512 | default |
+| `fCombatFlightMinimumRange` | 1536 | default |
+| `fCombatFlyingAttackTargetDistanceThreshold` | 256 | default |
+| `fCombatDiveBombOffsetPercent` | 0.1 | default |
+| `fCombatDiveBombSlowDownDistance` | 4096 | default |
+| `fFlyingActorDefaultTurningSpeed` | 1.5708 rad/s | Skyrim.esm (same as default) |
+| `fHostileFlyingActorExteriorDistance` | 15000 | default |
+| `fCombatAreaStandardFlyingRadiusMult` | 2 | default |
+| `fCombatAnticipateTime` | 0.5 s | default |
+
+With four candidates and an angle between 0° and 20°, a hover sits at most
+radius × tan 20° = 0.36 × radius above the target, and the chance ranges are the
+full 0 to 1, so a style's chance is the chance. A plugin that adds the missing
+`GMST` records changes them for every flyer.
+
 So the reach does connect by construction, at the radius, and the height is
 where a small creature can be placed out of its own reach: with the shipped
 angles a hover sits above the target by radius × tan(angle). The angles, the
