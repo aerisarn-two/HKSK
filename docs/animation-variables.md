@@ -49,6 +49,47 @@ Written by the engine. A graph reads these and must not write them.
 | `bIsSynced`, `bSpeedSynced`, `bDisableInterp` | bool | paired-animation synchronisation and interpolation control |
 | `iSyncIdleLocomotion`, `iSyncTurnState`, `iSyncForwardState`, `iSyncStrafeState`, `iSyncSprintState` | int | the state ids the engine wants the locomotion machines to start in, consumed by machines in `START_STATE_MODE_SYNC` and written back by them -- §2.1 |
 
+#### 2.0 `iLeftHandType` and `iRightHandType`: where the value comes from
+
+The values the graphs switch on -- 0 hand-to-hand, 1 sword, 2 dagger, 3 axe, 4
+mace, 5 two-handed sword, 6 two-handed axe, 7 bow, 8 staff, 9 magic, 10 shield,
+11 torch, 12 crossbow -- are, for a weapon, **the `WEAP` record's animation type**:
+the `DNAM` field's enum is `HandToHandMelee` 0, `OneHandSword` 1, `OneHandDagger`
+2, `OneHandAxe` 3, `OneHandMace` 4, `TwoHandSword` 5, `TwoHandAxe` 6, `Bow` 7,
+`Staff` 8, `Crossbow` 9, and the first nine coincide with the graph's constants
+by value. That is why the weapon-selection machines bind their start state to the
+variable and the set data's hand ranges use the same numbers. The other four are
+not in any record: a spell, a shield and a torch have no animation type, and the
+`WEAP` crossbow is 9 in the record and 12 in the graph, so the engine assigns 9 to
+12 from the kind of object in the hand and remaps the crossbow so that 9 can mean
+magic.
+
+What the executable shows about the write, traced from the three sites that take
+the two slots (`+0x388`, `+0x390`):
+
+- **`0x1403e1b20`** (from `0x1403de860`) registers the two names with an initial
+  value of **0** among a table of variables when a graph is set up -- the actor
+  starts unarmed;
+- **`0x1405b31c0`** is a propagation, not the source. It is a per-hand channel
+  object (`+0xac` says which hand) that writes `bLeftHand` or `bRightHand` from
+  the hand index, then asks the actor's graph holder for the variable's **current
+  value** with the int getter (vtable `+0x88` into a local) and, when the read
+  succeeds, hands that value to `0x140bb6790` with the global at `0x143169770`
+  under a lock -- which pushes the same value to the actor's other graphs (first
+  and third person share one actor). So the int "writer" seen on this name is the
+  engine keeping the graphs in step;
+- **`0x14066b8a0`** (from `0x1407364b0`, with the string `WarHorseMode`) rewrites
+  both when mounted state changes.
+
+The function that computes the value from the equipped object -- the one that
+reads `DNAM` and yields 9 to 12 for the non-weapons -- sits above these on the
+equip path and was not reached in this pass; the record-to-value correspondence
+above is established by the enum identity and by the set data's hand ranges,
+which name the same numbers against the same weapons. For authoring, the
+consequence is fixed either way: **a graph must use the record's animation-type
+numbers for 0 to 8 and the engine's 9 to 12 for the rest**, and a new weapon kind
+cannot introduce a new number, because the engine, not the graph, decides it.
+
 #### 2.1 The `iSync*` variables: start-state synchronisation
 
 These deserve more than a row, because they are the one place the engine and the
