@@ -17,6 +17,9 @@ public enum Amendment
     /// <summary>The project's entry was rebuilt where it stood.</summary>
     Replaced,
 
+    /// <summary>The project's entry already said what it should.</summary>
+    Unchanged,
+
     /// <summary>The project had an entry it should not have, and it was taken out.</summary>
     Removed,
 }

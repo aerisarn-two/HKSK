@@ -78,23 +78,51 @@ merged file on every Dragonborn project; index from the merged file.
 
 ## 3. Producing it
 
-Every field is a restatement of a Havok file, and `HKSK.Model.ActorProject` rebuilds
-a project's block from them:
+Most fields restate a Havok file; two do not, and one part cannot be recovered from
+the files at all. `HKSK.AnimationData.AnimationDataGenerator` brings an entry up to
+date with its files and carries the rest:
 
-- the file list from the project's `hkbProjectStringData` and the character's
-  `hkbCharacterStringData`;
-- one clip entry per `hkbClipGenerator` reachable from the root graph across the
-  `hkbBehaviorReferenceGenerator` joins, with `m_name`, the index of
-  `m_animationName` in the character's list, `m_playbackSpeed`, `m_cropStartAmountLocalTime`
-  and `m_cropEndAmountLocalTime`, and the union of the clip's `m_triggers` and the
-  animation's annotations;
-- one movement per animation slot, from the animation's root bone track: the root's
-  translation and rotation at the end relative to the start (`HKSK.Fbx.AnimationExchange`
-  is the reader that takes a clip to and from FBX with the same numbers).
+- the **file list**: the root graph the character names, every graph it reaches
+  across the `hkbBehaviorReferenceGenerator` joins, the project's character files and
+  the rig -- and, for a prop, its animations after the rig, which all 247 shipped
+  props with animations list and no actor does. The **order** is the authoring tool's
+  and is not derivable: the humans' behaviours are listed neither depth nor breadth
+  first. A file is listed when an entry resolves to it, however spelled -- the bow's
+  character names `..\Bow\Behaviors\BowBehavior.hkx`, the list `Behaviors\BowBehavior.hkx`;
+- one **clip** per `hkbClipGenerator` reachable from the root graph, once per name,
+  matched exactly (`Crossbow_IdleHeld` and `CrossBow_IdleHeld` are two of the
+  humans'): `m_name`, `m_playbackSpeed`, `m_cropStartAmountLocalTime`,
+  `m_cropEndAmountLocalTime` -- all 10,556 shipped clips with a generator agree -- and
+  the **index** of `m_animationName` in the character's list, by path or, failing that,
+  by file name, since the female character lists `Animations\female\...` where her
+  graph's clips say `Animations\male\...`;
+- the **events**, derived from the animation's annotations and the clip's triggers:
+  annotation times clamped to the playing length `(duration - crops) / speed`, a
+  trigger relative to the end at that length plus its local time, an annotation's text
+  as the longest dotted prefix naming an event of the clip's own graph -- dropped when
+  none does -- an annotation restating a trigger counted once, and a trigger first on a
+  tie. That reproduces 9,973 of the 10,556 lists exactly; most of the rest is drift, the
+  dog's graph triggering `NPCFoxBreatheRun` that none of its lists carries;
+- the **root motion is not in any Havok file.** A Skyrim animation's root bone does not
+  move (§0), so the travel exists only here, set by importing an animation
+  (`HKSK.Fbx.AnimationExchange`) or `ActorProject.SetRootMotion`.
 
-A clip whose animation the character does not list has no slot and no motion; a
-clip generator edited after the cache was written shows as a mismatch in playback
-speed or crop, and the cache is what the game believes.
+So an entry is amended, not rebuilt: what the files state is made true, a new clip is
+added at the end with derived events, and a cached event list, a cached number and the
+root motion are kept. Amending all 429 shipped entries changes none of them, which is
+the property a caller relies on to amend everything after adding one creature. Three
+things the shipped file does that a generator must survive:
+
+- the horse's and the werewolf's clips are numbered against a different character list
+  -- 89 slots against 51 names, 104 against 99 -- and are left as they are rather than
+  renumbered under root motion that cannot be checked;
+- `SmallBird01` is listed twice, so the whole file is amended entry by entry;
+- five packfiles are called `moth.hkx`, and the one a name finds first is an effect's:
+  the project is the one whose folder resolves the files its entry already lists.
+
+Whether a new project is an actor or a prop is not in the Havok files either: 247 props
+have animations. An actor is a project a race wears, which the plugins say
+(`HKSK.Records.GameRecordRules.ActorProjects`).
 
 ## 4. The engine side
 
@@ -161,5 +189,7 @@ character one way and is measured another.
   `ClipMovement`, `SplitCache` -- the file and its split form, byte-exact.
 - `HKSK.Model.SkyrimCache`, `ActorProject`, `AnimationSlot` -- a project as one
   model: its clips joined to their slots, motions and files.
+- `HKSK.AnimationData.AnimationDataGenerator` -- an entry amended from its files, or a
+  new one added (§3).
 - `HKSK.Fbx.AnimationExchange` -- a clip to FBX and back with its root motion and
   events (`docs/paired-animations.md` for the paired case).

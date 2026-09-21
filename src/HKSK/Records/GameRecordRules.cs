@@ -62,6 +62,26 @@ public static class GameRecordRules
         return roles.ToDictionary(r => r.Key, r => (IReadOnlySet<MovementRole>)r.Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>The projects a race wears -- the actors -- by the stem of the graph it names.</summary>
+    /// <remarks>
+    /// This is what separates an actor from a prop, and the Havok files do not say it: 247 of the
+    /// game's props have animations as well. A race naming <c>Actors\Canine\WolfProject.hkx</c>
+    /// makes <c>WolfProject</c> an actor. The masters' races wear 48 of the 49 actors; the
+    /// 49th, <c>FirstPerson</c>, is the player's view, which the engine loads by itself.
+    /// </remarks>
+    public static IReadOnlySet<string> ActorProjects(IGameRecords records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+
+        var projects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (RaceRecord race in records.Races)
+            foreach (string? graph in new[] { race.MaleBehavior, race.FemaleBehavior })
+                if (!string.IsNullOrEmpty(graph))
+                    projects.Add(Path.GetFileNameWithoutExtension(graph.Replace('\\', '/')));
+
+        return projects;
+    }
+
     /// <summary>What the set data needs to know the game can send (<see cref="GameEvents"/>).</summary>
     public static GameEvents Events(IGameRecords records)
     {

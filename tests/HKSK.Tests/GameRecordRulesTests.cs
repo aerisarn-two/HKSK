@@ -138,4 +138,20 @@ public class GameRecordRulesTests
 
         Assert.Equal(2, GameRecordRules.Events(records).Idle.Count);
     }
+
+    /// <summary>
+    /// The projects the races wear are the cache's actors, which is what the Havok files
+    /// cannot say: 247 props have animations too. All but one: <c>FirstPerson</c>, the
+    /// player's view, which the engine loads without a record naming it.
+    /// </summary>
+    [MastersFact]
+    public void TheProjectsTheRacesWearAreTheActors()
+    {
+        IReadOnlySet<string> worn = GameRecordRules.ActorProjects(Masters.Records);
+        string[] actors = [.. HKSK.Model.SkyrimCache.Load(Corpus.Root!).Actors().Select(a => a.Name)];
+
+        Assert.Equal(48, worn.Count);
+        Assert.Equal(["FirstPerson"], actors.Except(worn, StringComparer.OrdinalIgnoreCase));
+        Assert.Empty(worn.Except(actors, StringComparer.OrdinalIgnoreCase));
+    }
 }
