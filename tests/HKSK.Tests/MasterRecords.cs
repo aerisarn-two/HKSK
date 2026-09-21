@@ -4,7 +4,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using ActionRecord = HKSK.Records.ActionRecord;
 
-namespace HKSK.Tools;
+namespace HKSK.Tests;
 
 /// <summary>
 /// The masters' records, read the way a caller of the library reads them.
@@ -12,9 +12,10 @@ namespace HKSK.Tools;
 /// <remarks>
 /// <para>
 /// <c>HKSK</c> does not open plugins; it states what it needs as <see cref="IGameRecords"/>
-/// and <c>SKAssets</c> supplies it from a load order. The tools and the tests sit beside
-/// the library and cannot reference <c>SKAssets</c>, which depends on it, so they share
-/// this reader instead. It reads records and decides nothing: what they mean is
+/// and <c>SKAssets</c> supplies it from a load order -- its <c>GameRecordReader</c>, which
+/// the <c>setgen</c> and <c>speedgen</c> tools there run on. The tests measure against the
+/// shipped game and cannot reference <c>SKAssets</c>, which depends on this library, so they
+/// read the masters here. It reads records and decides nothing: what they mean is
 /// <see cref="GameRecordRules"/>'.
 /// </para>
 /// <para>

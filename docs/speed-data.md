@@ -414,8 +414,8 @@ only between gaits (§6), which is the smallest table a creature can have.
   ten per species alphabetically (bear 0, cow 10, deer 20, ... wolf 100).
 
 The library takes the records as `HKSK.Records.IGameRecords` and does not open plugins;
-the tools read them through Mutagen (`tools/shared/MasterRecords.cs`), and writing one
-is the same API in the other direction.
+SKAssets reads them from a load order through Mutagen (`GameRecordReader`), and writing
+one is the same API in the other direction.
 
 ### 7.4 `iState` and `iState_<MNAM>`: the protocol between a graph and the engine
 
@@ -517,7 +517,7 @@ derive.
 
 ## 8. Generating the table
 
-`HKSK.Speed.SpeedDataGenerator` writes it, `tools/speedgen` runs it. It is written
+`HKSK.Speed.SpeedDataGenerator` writes it, SKAssets' `tools/speedgen` runs it. It is written
 for the engine that reads it, not to reproduce the shipped file:
 
     for each project with a BSSpeedSamplerModifier:                 /* §5.1 */
@@ -604,7 +604,7 @@ redistributable and is not in this repository; `tools/exe-re` holds the helpers.
 - `HKSK.Behavior.StateKeys` — the values a graph can put `iState` at, and by what.
 - `HKSK.Speed.SpeedSampler`, `SpeedLadder`, `Compass` — a project's ladders and the
   curve law.
-- `HKSK.Speed.SpeedDataGenerator` — the table (§8); `tools/speedgen` runs it. `Amend`
+- `HKSK.Speed.SpeedDataGenerator` — the table (§8); SKAssets' `tools/speedgen` runs it. `Amend`
   rebuilds one project's block in place and leaves the others byte for byte, which is
   how a new creature joins a table without the rest being re-swept.
 - `tools/hkmeasure` — runs a graph inside Havok's own runtime, for measured answers.

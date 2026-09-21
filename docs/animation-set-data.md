@@ -229,7 +229,7 @@ the flag itself is the byte at `+0x10` of the attack entry (§4.2), `atoi > 0`.
 
 ## 5. Rebuilding the file
 
-`HKSK.SetData.SetDataGenerator` writes it, `tools/setgen` runs it. Nothing is read
+`HKSK.SetData.SetDataGenerator` writes it, SKAssets' `tools/setgen` runs it. Nothing is read
 from a shipped set-data file; `setgen` empties one before generating.
 
 ### 5.1 Inputs
@@ -328,7 +328,7 @@ structure it walks rather than by any string. The recipes are
 
 - `HKSK.Cache.AnimationSetDataFile` — read, write, `HavokCrc`.
 - `HKSK.SetData.SetDataGenerator`, `GraphReach`, `StateGraph` — the rebuild (§5) and
-  the flag (§6); `tools/setgen` runs it against the extracted meshes and the masters.
+  the flag (§6); SKAssets' `tools/setgen` runs it against the extracted meshes and the masters.
 - `SetDataGenerator.Amend` — one project's sets, rebuilt in place, the others untouched.
 - `HKSK.Records.GameRecordRules.Events` — the inputs of §5.1 from the records.
 - `SetDataRebuildTests`, `MasterCorpus` — the numbers above, as exact assertions.

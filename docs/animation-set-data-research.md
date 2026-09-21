@@ -652,7 +652,7 @@ attacks with. The lookup's result is not checked: a clip the cache has no moveme
 
 ## 5. Rebuilding the file
 
-`HKSK.SetData.SetDataGenerator` writes the file from the other assets, and `tools/setgen`
+`HKSK.SetData.SetDataGenerator` writes the file from the other assets, and SKAssets' `tools/setgen`
 runs it with the masters. It does not try to reproduce the shipped file, which records how
 that file was edited (§3.3); it builds what the executable reads the file for (§4), and the
 shipped file is the check.

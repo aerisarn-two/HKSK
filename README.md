@@ -304,7 +304,7 @@ SpeedDataFile file = SpeedDataGenerator.Generate(cache, records);
 file.Save("speeddatasinglefile.txt");
 ```
 
-`records` is the game's plugin data (see *The game's records* below). `tools/speedgen`
+`records` is the game's plugin data (see *The game's records* below). SKAssets' `tools/speedgen`
 does it from the command line. `SpeedDataGenerator.Amend(cache, "MyCreatureProject", records)`
 rebuilds one project's block in place instead, and leaves every other one as it was;
 `SetDataGenerator.Amend` does the same for the set data. Against the shipped file it writes all 86
@@ -321,7 +321,7 @@ AnimationSetDataFile file = SetDataGenerator.Generate(cache, records);
 file.Save("animationsetdatasinglefile.txt");
 ```
 
-`tools/setgen` does it from the command line. It builds what the executable reads the
+SKAssets' `tools/setgen` does it from the command line. It builds what the executable reads the
 file for rather than a copy of the shipped one: every file the shipped data lists is in a
 set, bar 71 killmoves the characters do not list, and the idle keys the game sends load
 80% of the files the shipped idle sets hold -- most of the rest belong to keys no

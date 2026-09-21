@@ -8,7 +8,7 @@ namespace HKSK.Tests;
 /// </summary>
 /// <remarks>
 /// <c>HKSK</c> reads Havok files and the animation cache and has no business opening
-/// plugins: <c>tools/shared/MasterRecords.cs</c> reads them the way a caller would, and this is
+/// plugins: <see cref="MasterRecords"/> reads them the way a caller would, and this is
 /// the tests' way of finding the Data folder and asking the library what the records mean.
 ///
 /// Set <c>HKSK_MASTERS</c> to the game's Data folder. Tests needing it skip when
@@ -35,12 +35,12 @@ public static class Masters
 
     public static bool Available => DataFolder is not null;
 
-    internal static string[] Order => HKSK.Tools.MasterRecords.Order;
+    internal static string[] Order => MasterRecords.Order;
 
     private static GameRecords? _records;
 
     /// <summary>The masters' records, read once per run.</summary>
-    public static GameRecords Records => _records ??= HKSK.Tools.MasterRecords.Read(DataFolder!);
+    public static GameRecords Records => _records ??= MasterRecords.Read(DataFolder!);
 
     /// <summary>Every movement type the masters define, by name.</summary>
     public static IReadOnlyDictionary<string, MovementType> Read() => GameRecordRules.MovementTypes(Records);

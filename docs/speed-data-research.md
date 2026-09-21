@@ -1756,7 +1756,7 @@ it from the animations it describes and can violate I9.
 
 ## 8. Generating a table
 
-`HKSK.Speed.SpeedDataGenerator` writes one, and `tools/speedgen` runs it. It is
+`HKSK.Speed.SpeedDataGenerator` writes one, and SKAssets' `tools/speedgen` runs it. It is
 written for the engine that reads it (§4), not to reproduce the shipped file, and
 where the two disagree the shipped file is the one with the tool's habits in it:
 
@@ -2465,7 +2465,7 @@ name match, and it sits in `FamilyGuess` in the test suite under that name. A pr
 that knows the mapping supplies it, and should not have to route around a library that
 thinks it already knows.
 
-Generation (§8) is `SpeedDataGenerator`, and `tools/speedgen` runs it. It does not
+Generation (§8) is `SpeedDataGenerator`, and SKAssets' `tools/speedgen` runs it. It does not
 need `top(s)`: the sweep's bound is what the game can ask for, not what the shipped
 tool chose. `StateKeys.Writable` is the block set, by the engine's own reading (§4.5).
 

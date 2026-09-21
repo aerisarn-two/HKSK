@@ -34,7 +34,6 @@
       SKAssets does for a caller.
     -->
     <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0" />
-    <Compile Include="../../tools/shared/MasterRecords.cs" Link="MasterRecords.cs" />
   </ItemGroup>
 
 </Project>
