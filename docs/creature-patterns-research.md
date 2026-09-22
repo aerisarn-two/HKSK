@@ -242,7 +242,9 @@ The same three lines, forty times over. An attack state, from the chaurus:
   their own `*Stop`;
 - **a `BSIsActiveModifier` says what the engine may do meanwhile**: 120 attack
   states raise `bAllowRotation` (the AI may still turn the actor) or
-  `bAnimationDriven` (the clip's root motion moves the actor); 65 recoil and 42
+  `bAnimationDriven` (the clip's root motion moves the actor -- read from the
+  animation cache's movement block, never from the Havok file,
+  `docs/animation-data.md` §4.3); 65 recoil and 42
   stagger states raise `bAnimationDriven`; idle states raise it too, or
   `bHeadTrackingOn`;
 - **the clip is `mode` 0** (play once). 2081 of 4299 creature clips are once,

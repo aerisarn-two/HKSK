@@ -192,7 +192,7 @@ acts. Every one is a report: the graph decides, the engine follows.
 
 | variable | type | what the engine does with it |
 | --- | --- | --- |
-| `bAnimationDriven` | bool | polled with `bAllowRotation` at `0x140669760`; on a change the engine sends `StartAnimationDriven` (1, root motion moves the actor), `StartAllowRotation` (0 and rotation allowed) or `StartMotionDriven` (both 0). Raise it on a branch whose clip owns the movement -- a power attack, a get-up -- with a `BSIsActiveModifier` |
+| `bAnimationDriven` | bool | polled with `bAllowRotation` at `0x140669760`; on a change the engine sends `StartAnimationDriven` (1: `MovementTweenerAgentAnimationDriven` moves the actor by the animation cache's movement block, sampled at the clip's time each frame -- `docs/animation-data.md` §4.3), `StartAllowRotation` (0 and rotation allowed) or `StartMotionDriven` (both 0: the controller's velocity moves the actor and the block is ignored). Raise it on a branch whose clip owns the movement -- a power attack, a get-up -- with a `BSIsActiveModifier` |
 | `bAllowRotation` | bool | the actor may be turned by the controller while animation-driven |
 | `iState` | int | the movement type: the engine turns the value into the `iState_<MNAM>` suffix declared in the root graph and applies that record (`docs/speed-data.md` §4.5, §7.4); the speed sampler keys its table on it |
 | `SpeedSampled`, `HorseSpeedSampled` | float | the speed sampler's answer, copied to the actor each frame (`docs/speed-data.md` §4.5) |

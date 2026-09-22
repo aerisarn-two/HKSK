@@ -172,12 +172,16 @@ which flight is one machine of six states):
 
 The floor is five animations -- take-off, cruise, hover entry, hover idle,
 landing -- with the six enter events declared and a tweener on take-off, hover
-entry and landing. Without the tweeners the creature lands where its root motion
-says and hovers beside its target. The wing model (`MaxAcc`, `MaxDec`, `Drag`, the
-flap/glide/feather thresholds) is optional: with one cruise clip the movement
-type's speed is what the follower plans with (`docs/flight.md` §3.6). The speed
-table is not meaningful for a flyer, since the graph writes `Speed` back itself;
-the block is still written. The `iState` per posture (default, flying, hovering,
+entry and landing. Without the tweeners the creature lands where its own motion
+leaves it and hovers beside its target. **Flight is motion-driven**: no flight
+state raises `bAnimationDriven`, the cruise clips carry no root motion and only
+pose the creature while the follower's velocity moves it (`docs/flight.md` §2);
+the take-off, hover-entry and landing clips do carry travel in the cache, and the
+tweeners carry the actor to the engine's target. The wing model (`MaxAcc`,
+`MaxDec`, `Drag`, the flap/glide/feather thresholds) is optional: with one cruise
+clip the movement type's speed is what the follower plans with (`docs/flight.md`
+§3.6). The speed table is not meaningful for a flyer, since the graph writes
+`Speed` back itself; the block is still written. The `iState` per posture (default, flying, hovering,
 perching -- the dragon's four constants) is set on entering each state.
 
 ## 2. Inputs
@@ -369,6 +373,25 @@ unless the role says otherwise. Triggers by role:
 | idle variant | `IdleStop` at the end |
 | kill-move victim | the `2_` set of §1.5 at the animation's own times |
 | locomotion, idle loop | none (`FootLeft` / `FootRight` from the annotations if present) |
+
+**Which roles need a root track, and why it is not optional.** The engine moves an
+actor by root motion only in animation-driven mode, and then by the cache's
+movement block alone: `MovementTweenerAgentAnimationDriven` samples the block at
+the clip's time every frame and the Havok file's extracted motion is never read
+(`docs/animation-data.md` §4.3). In motion-driven mode the controller's velocity
+moves the actor and the block is ignored. So the root track an animation is
+imported with decides what its clip can do:
+
+| role | mode the state raises | root track |
+| --- | --- | --- |
+| walk, run, trot, sprint, swim, turn-in-place loops | motion-driven (the sampler's speed) | **required** -- not for movement but for the speed table and the ladder rungs, which are computed from it; a clip without one records a creature that cannot move |
+| attack, power attack, canned turn, bash, get-up, death, stagger, recoil, aggro, kill-move victim | `bAnimationDriven` (or `bAllowRotation` where the AI may still turn the actor) | **required where the clip should move the actor**; combat measures an attack's reach from it (`docs/animation-data.md` §4.3); a clip without one plays in place |
+| idle loop, idle variant, combat idle, equip, unequip, block, lay-down, feed | motion-driven at rest | none needed |
+| take-off, hover entry and exit, land, crash-land, perch launch | motion-driven under a tweener | as shipped: large travels in the cache (§1.7); the tween carries the actor, so the track's use there is not settled |
+| cruise, hover idle, hover turn | motion-driven by the flight follower | none: the dragon's carry none |
+
+`Plan` reports every role in the first two rows whose animation carries no root
+track, as a warning, and the cache row is still written.
 
 ### 4.3 The cache rows
 

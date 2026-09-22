@@ -226,7 +226,10 @@ to an arbitrary member of it — use the overload that takes a function.
 **In an animation, the root bone does not move.** Of 1,200 animations sampled
 from the game, 1,196 carry no extracted motion at all, and the root track of a
 run that travels 251 units sits at the origin for every frame. The travel is in
-the cache, and the game applies it.
+the cache, and the game applies it: in animation-driven mode the movement agent
+samples the cache's movement block at the clip's time every frame and moves the
+actor by the difference, and nothing else is consulted
+(`docs/animation-data.md` §4.3).
 
 FBX has nowhere to put that, so exporting drives the root bone with the cache's
 motion — an animator has to see the travel. Importing therefore finds it twice,
