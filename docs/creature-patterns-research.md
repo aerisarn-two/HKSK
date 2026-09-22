@@ -297,10 +297,12 @@ draugr, falmer, giant and dragon read in full):
   the `2_` prefix, which is the prefix of its bones' tracks in that file;
 - **the event that enters the state is the kill-move's name without `pa_`.** The
   human's graph enters its half on `pa_KillMoveBearA`, the bear's on
-  `KillMoveBearA`, on every one of the 277 pairs read. The `pa_` form is the
-  paired idle's own event; the partner is addressed by the bare name. The horse
-  and the dragon, where the creature is the one the mount idle is played on,
-  listen for the `pa_` form themselves;
+  `KillMoveBearA`, on every one of the 277 pairs read. The engine makes the
+  partner's name from the idle's by toggling the prefix
+  (`docs/paired-animations.md`, "How the partner is addressed"), so the actor an
+  idle is played on gets it as written and the other gets the opposite form. The
+  horse and the dragon, on whose side the mount idles are played, listen for the
+  `pa_` form themselves;
 - **the victim's triggers are all `2_`-prefixed** and the animation cache
   restates them as such: `2_KillActor` is what kills the creature
   (`docs/animation-events.md` §3, `KillActor` is "the paired-kill end for the
@@ -569,13 +571,11 @@ kill-move (§3.4). What remains is what the corpus cannot say:
 - **event-name case** is settled: the executable interns every name through a
   case-insensitive pool and matches events and variables by pointer
   (`docs/animation-events.md` §1, `docs/reverse-engineering.md` §4);
-- **the `pa_` convention.** §3.4 reads it off 277 pairs: the initiator's graph
-  listens for `pa_<name>`, the partner's for `<name>`. The executable tests the
-  prefix with `_strnicmp` in the player camera's action handling, which is a
-  reader of the convention and not the code that addresses the partner. Which
-  actor the engine treats as initiator for a given paired idle is a record and
-  engine question still, and the horse and dragon rows show it is not always
-  the humanoid;
+- **the `pa_` convention** is settled: the paired-animation manager computes the
+  partner's name from the idle's by toggling the prefix -- stripped if present,
+  prepended if not -- and starts the pair only if each graph declares its form
+  (`docs/paired-animations.md`, "How the partner is addressed"). Which actor an
+  idle is played on remains the idle manager's choice per record;
 - **the sync prefix at dispatch.** §3.4 infers that the engine strips `2_` (and
   `NPC`) from a synchronised clip's events before routing them, since no
   response line names a prefixed event and the victim demonstrably dies on

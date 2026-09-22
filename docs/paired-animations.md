@@ -79,6 +79,40 @@ folder, and `..\SharedKillMoves\<A>&<B>\` reaches sideways out of one actor's
 folder into the shared one. A human-on-human killmove has no partner project and
 lives in the human's own `Animations\` folder instead.
 
+## How the partner is addressed
+
+The two graphs listen for two names -- the humanoid's kill-move state is entered by
+`pa_KillMoveBearA`, the bear's by `KillMoveBearA` -- and the executable makes the
+second from the first. Read out of `SkyrimSE.exe` (`docs/reverse-engineering.md`):
+
+- the paired-animation manager (singleton `0x143137780`) keeps a **pair record**
+  with the initiating actor at `+0x8`, the partner at `+0x10`, the initiator's
+  event at `+0x28` and the partner's event at `+0x30`, empty until computed;
+- `0x140547bb0(manager, pair)` computes it. It first asks the initiator's graph
+  whether it declares the event at all (`0x1405481c0` → `0x1405490f0`, the same
+  pointer-keyed lookup as `docs/animation-events.md` §1, query only) and gives up
+  if not. Then, with the prefix held in a global `pa_` (`0x1420107f8`, length at
+  `0x14315cbb8`): if the name is longer than the prefix and
+  `_strnicmp(name, "pa_", 3)` matches, the partner's name is
+  `sprintf("%s", name + 3)` -- **the prefix stripped**; otherwise it is
+  `sprintf("%s%s", "pa_", name)` -- **the prefix added**. The result is interned and
+  kept only if the partner's graph declares it; it is stored at `+0x30`;
+- when the pair starts (`0x140547cf0`), `0x140545390` is called twice: once with
+  the initiator's handle and `+0x28`, once with the partner's handle and `+0x30`.
+  Each resolves its actor, takes its graph manager, and hands the name to
+  `0x140549300`, which finds the graph by the same lookup, copies the string and
+  queues it under the graph lock (`0x140bad6a0` → `0x140bbfe30`) rather than
+  raising it inline.
+
+So the rule is a **toggle**, not a strip: whichever actor the idle is played on
+gets the idle's event as written, and the partner gets the same name with `pa_`
+removed if it was there and prepended if it was not. That is why the horse and the
+dragon, on whose side the mount idles are played, listen for the `pa_` form while
+the rider's graph listens for the bare one, and why every kill-move victim listens
+for the bare name: the kill-move idles are played on the killer. Which actor the
+idle is played on is the idle manager's choice (`docs/animation-set-data.md` §4.3),
+and the graph on each side has to declare its form or the pair is not started.
+
 ## Which half is which
 
 Not from the folder name. `SharedKillMoves\Human&Falmer\` holds an animation

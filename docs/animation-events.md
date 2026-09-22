@@ -57,11 +57,11 @@ and `idleStop` intern to one entry, and **an event or variable name matches its 
 declaration regardless of case**, on the way in as on the way out. What must match is
 the spelling.
 
-The paired prefix is checked the same way: `_strnicmp(name, "pa_", 3)` at
-`0x14070b495`, inside the player camera's action handling (`0x14070b380`), which
-switches the camera for a paired action of the player's -- the `pa_` names are the
-paired idles' events, and this is one of their readers, not the one that addresses the
-partner.
+The paired prefix is checked the same way, in two places: `_strnicmp(name, "pa_", 3)`
+at `0x14070b495`, inside the player camera's action handling (`0x14070b380`), which
+switches the camera for a paired action of the player's; and at `0x140547c2e`, in the
+paired-animation manager, which makes the partner's event from the idle's by
+toggling the prefix (`docs/paired-animations.md`, "How the partner is addressed").
 
 | clip fires | handler | file | triggers | annotations |
 | --- | --- | --- | --- | --- |
