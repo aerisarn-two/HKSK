@@ -30,8 +30,10 @@ Measured over the 46 creatures (`docs/creature-patterns-research.md`):
 1. **A root machine** with one live state and the ragdoll shell: animate-to-ragdoll
    (36 creatures; plays the death clip, then `Ragdoll`), fully-ragdoll (45; powered
    ragdoll under two event-driven modifiers and a timer), get-up (44; `hkbGetUpModifier`,
-   a selector on `iGetUpType` between a reanimate blend and a get-up blend of one to
-   three pose-matched clips). Wildcards `Ragdoll` (45), `RagdollInstant` (37),
+   a selector on `iGetUpType` between a reanimate and a get-up
+   `hkbPoseMatchingGenerator` of one to three clips, all 97 of them set alike:
+   root and pelvis bone 0, any two other bones, `GetUpStart` to play, `Ragdoll` to
+   match). Wildcards `Ragdoll` (45), `RagdollInstant` (37),
    `DeathAnimation` (34), `staggerStart` (25). The shell's node lists are identical
    across projects and are written once.
 2. **A root modifier list**: keyframe bones and ragdoll drive (34 at the root, 45 in
@@ -127,6 +129,24 @@ toggling the prefix and starts the pair only if each graph declares its form; th
 side an idle is played on is the action's source actor -- the killer for kill-moves,
 the mount for mounts (`docs/paired-animations.md`).
 
+### 1.6 Water: a plan for the fish, a module for everyone else
+
+Twelve creatures swim, in two shapes (`docs/swimming.md` for the engine's side):
+
+- **the slaughterfish is never out of water**, so its default situation *is* a
+  swim: standing is an idle-swim with looping turn clips, moving is a **6-arm
+  parametric blend bound to `Direction` directly** (flags 48, no cyclic wrapper,
+  arms at F, FR45, BR45, B, BL45, FL45) whose arms are ladders on `Speed`; canned
+  swim turns beside it; the combat stance swaps the idle. That is plan E;
+- **everyone else has a swim state** beside the default situation, entered by
+  `swimStart` and left by `swimStop`, holding a `BSIsActiveModifier` that raises
+  `isSwimming` (or `bInSwimState`) and drops `bFootIKEnable`, setting `iState` to
+  the swim movement type (an expression on the horker, a tag on the horse), and
+  inside it one of three: a single looped swim-forward clip (bear, falmer, horse,
+  the minimum), a 4-arm swim compass with a tread-water idle (werewolf), or a whole
+  water sub-plan with idle, loop turns, canned turns, locomotion and a swim attack
+  (horker). The module's floor is one clip.
+
 ## 2. Inputs
 
 ### 2.1 Animations, each with a role
@@ -164,11 +184,25 @@ another role: the API reuses, it never copies.
 - the ragdoll packfile (`hkaRagdollInstance`, its `hkaSkeleton`, and the two
   `hkaSkeletonMapper`s between rig and ragdoll); its path is `ragdollName`. The
   shell's ragdoll modifiers, the keyframe-bones modifier and the get-up modifier
-  need nothing more than that the ragdoll loads; the pose-matching get-up
-  (`hkbPoseMatchingGenerator`, 97 in 47 creatures) needs bone indices and is not
-  generated -- a plain blend of the get-up clips is what most creatures ship;
-- the bones the modifiers name: the look-at modifier's head bone, and the foot-IK
-  chain if the module is wanted. Both optional.
+  need nothing more than that the ragdoll loads;
+- **bones, by name**, for the three modules that name bones. Measured over the
+  46 (`tests/HKSK.Tests/ZzNotCovered.cs`):
+
+  | module | what it names | shipped values |
+  | --- | --- | --- |
+  | get-up pose matcher (all 46) | root and pelvis: bone 0; `otherBone`, `anotherBone`: any two -- the shipped ones are template leftovers at indices 10 and 11 (a canine's shoulder blades, an atronach's fingers) | `blendSpeed` 1, `minSpeedToSwitch` 0.2, `minSwitchTimeNoError` 0.2, `minSwitchTimeFullError` 0, `mode` 0 |
+  | look-at (32) | the spine-to-head chain, three to five bones, each with a limit | `limitAngleDegrees` 60–65 (45 on the sabre cat, 90 on the canines), threshold 0 or 45, `onGain` 0.05–0.075, `offGain` 0.05, per-bone limit 180, no eye bones |
+  | foot IK (15: two legs on the frost atronach, benthic lurker, giant, riekling, falmer; four on bear, wolf, cow, deer, horse, mammoth, sabre cat, skeever, chaurus) | per leg: hip, knee, ankle bone; `kneeAxisLS` ±X or ±Z; `footPlantedAnkleHeightMS`, `footRaisedAnkleHeightMS`, `min`/`maxAnkleHeightMS`, knee angle range | the driver lives in **`hkbCharacterData.m_footIkDriverInfo`**, not the graph; `isQuadrupedNarrow` on the four-legged; raycast 32–192 up and down; the controls modifier at the root carries the gains (`onOff` 0.2, the rest 1, feedback and align 0) |
+
+  The ankle heights are the creature's rest pose -- the ankle's height above the
+  ground when planted and when raised -- so they are computable from the
+  skeleton's reference pose rather than asked for. Everything else is a bone
+  name plus the shipped constant;
+- **the character controller** is the same in all 46: capsule height 1.7, radius
+  0.4, filter 1 (the game scales it by the race). `modelForwardMS` is +X on 31
+  creatures and +Y on 15 with no relation to plan or rig -- the male and female
+  humanoid differ on the same skeleton -- so the engine does not depend on it;
+  +X is written.
 
 ### 2.3 The game side
 
@@ -256,10 +290,13 @@ Then the four layers of §1.1, from templates that are the shipped nodes with th
 clips substituted:
 
 - the root machine and the shell, verbatim from the chicken (no death) or the dog
-  (with death), the get-up selector on `iGetUpType`;
+  (with death), the get-up selector on `iGetUpType` over two pose matchers set
+  as §2.2 says, with the get-up clips as their children;
 - the root modifier list: keyframe bones, ragdoll drive, the speed sampler with
-  its four bindings, look-at if a head bone is given, get-up, the draw/sheathe
-  expressions if there is a stance;
+  its four bindings, look-at over the given chain with the shipped gains if a
+  chain is given, the foot-IK controls modifier with the shipped gains if legs
+  are given (and the driver written into the character file), get-up, the
+  draw/sheathe expressions if there is a stance;
 - the situation machine with `DefaultState` first and the modules after, wildcards
   `staggerStart`, `recoilStart`, `recoilLargeStart`, `bleedOutStart`,
   `aggroWarningStart`, `returnToDefault` as the modules require;
@@ -335,13 +372,23 @@ public sealed record CreatureSpec
     public required string SkeletonPath { get; init; }
     public required string RagdollPath { get; init; }
     public required IReadOnlyList<RoledAnimation> Animations { get; init; }
-    public string? HeadBone { get; init; }                  // look-at; null = no look-at
-    public IReadOnlyList<string> FootBones { get; init; } = [];   // foot IK; empty = none
+    public SkeletonRoles Bones { get; init; } = new();
     public IReadOnlyDictionary<MovementRole, MovementType>? Movements { get; init; }
     public IReadOnlyList<string> AttackEvents { get; init; } = [];   // the race's, or intended
     public IGameRecords? Records { get; init; }             // used where the two above are null
     public AssemblyConventions Conventions { get; init; } = AssemblyConventions.Shipped;
 }
+
+/// The bones the modules name, by name. Every member is optional; an absent one
+/// leaves its module out. Ankle heights are read from the skeleton's rest pose.
+public sealed record SkeletonRoles
+{
+    public (string Other, string Another)? PoseMatchBones { get; init; }   // default: two hip-side bones
+    public IReadOnlyList<string> LookAtChain { get; init; } = [];           // spine .. head; empty = no look-at
+    public IReadOnlyList<Leg> Legs { get; init; } = [];                     // empty = no foot IK
+}
+
+public sealed record Leg(string Hip, string Knee, string Ankle, Vector3 KneeAxis);
 
 /// The numbers the graph does not contain, with the shipped defaults.
 public sealed record AssemblyConventions
@@ -437,17 +484,32 @@ The corpus is the oracle, and the tests are the ones this repository already run
 
 ## 7. Not covered, and why
 
-- **Flyers and swimmers** have their own documents and their own state vocabulary
-  (`ST_Flight`, `ST_Hover`, the `Flight*` handlers); the plan enum reserves them and
-  the template does not exist yet.
+- **Flight.** The dragon's graph is its own vocabulary (`ST_Flight`, `ST_Hover`,
+  `ST_Perch`, the `Flight*` handlers, the tail and bank channels) and
+  `docs/flight.md` §3 is its authoring guide; the plan enum reserves nothing for it
+  and this API does not build it. The ice wraith, wisp and chaurus flyer are not
+  flyers to the engine: they are plan B creatures whose animations hover.
 - **The humanoid** (`0_master`, 1136 machines) is not a creature and is not a target.
-- **Foot IK and head tracking** are modules with bone inputs; the census counts
-  them (20 and 32 creatures) and the template can include the modifiers, but the
-  gains are per creature and are left at the shipped defaults.
-- **The pose-matched get-up** is not generated; a plain blend is what most
-  creatures ship and it needs no bone indices.
 - **Character properties** are not generated; nothing but the shared quadruped
   file uses them.
-- **A new movement type's record** (`MOVT`) and the race's attack data are the
-  caller's, in the plugin; the API writes the graph's side of both and reports the
-  names it used.
+- **The plugin side** is the caller's (§8); the API writes the graph's half and
+  reports the names it used.
+
+Everything the first draft of this section left out beside these -- the swim
+plan and module, the pose-matched get-up, the look-at chain, the foot-IK legs --
+is measured above and in the API.
+
+## 8. What the plugin has to say
+
+The records are not this library's to write (`HKSK.Records` reads them), but the
+graph is only half of each of these, and the halves have to agree:
+
+| record | what it names | the graph's half |
+| --- | --- | --- |
+| `RACE` | the behaviour graph path (`Actors\<group>\<name>\<name>project.hkx`), the movement types by role, the attack data | the project file at that path; `iState_<MNAM>` per movement type; a state per attack event |
+| `MOVT` | the eight speeds and the `MNAM` name per movement type | the ladder rungs, the speed block's entry, the `iState_<MNAM>` constant |
+| `IDLE` | one per event the creature is sent: the `Action*` idles for `moveStart`, `staggerStart`, `IdleStop` and the rest are the stock ones and need nothing; the creature's own idles (`idle<Name>Start`), its attacks' `attackStart_<name>` idles with their conditions, and any paired idle (`pa_<name>`, played on the initiator) | a state entered by each event, and for a paired idle the `2_`-prefixed victim state or the `pa_`-form initiator state (`docs/paired-animations.md`) |
+| the response file | nothing per creature: `actorresponse.txt` is global | the clips fire the names it maps (`HitFrame`, `attackStop`, ...) |
+
+`AssemblyPlan` reports the movement-type names, the attack events and the idle
+events it built states for, which is the list the plugin side has to create.

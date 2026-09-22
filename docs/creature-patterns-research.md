@@ -79,13 +79,22 @@ that has them (chicken, dog and draugr checked in full):
 | --- | --- | --- | --- |
 | `AnimateToRagdoll` | the death clip, `mode` once, firing `Ragdoll` at its end (42 clips) | `hkbKeyframeBonesModifier` (full ragdoll keyframed), `BSRagdollContactListenerModifier` | enter: `AddRagdollToWorld`; `on Ragdoll -> Fully Ragdoll` |
 | `Fully Ragdoll` | none, or the pose-matcher (see next) | `hkbEventDrivenModifier` "FullRagdoll" holding `hkbPoweredRagdollControlsModifier` (no matching); `hkbEventDrivenModifier` "TurnOnMatchingRagdoll" holding a second powered-ragdoll (matching) and `hkbTimerModifier` "GetUpTimerMod" | enter: `RemoveCharacterControllerFromWorld` (+ `InterruptCast` on casters); `on GetUpStart -> GetUpFromRagdoll` |
-| `GetUpFromRagdoll` | `hkbManualSelectorGenerator` on `iGetUpType` choosing between a **Reanimate** blend and a **Get Up** blend; each is a plain blend (flags 0, weights 1) of one to three get-up clips that the pose matcher picks between | `hkbGetUpModifier`, `BSIsActiveModifier` raising `bAnimationDriven`, and on quadrupeds the keyframe/ragdoll-drive pair again | `on GetUpEnd -> live state`; the get-up clips fire `GetUpEnd` (160), `AddCharacterControllerToWorld` (160), `Getup` (92), `Reanimated` (63) |
+| `GetUpFromRagdoll` | `hkbManualSelectorGenerator` on `iGetUpType` choosing between a **Reanimate** and a **Get Up** `hkbPoseMatchingGenerator` (a blender subclass: flags 0, weights 1), each holding one to three get-up clips the matcher picks between by the ragdoll's pose | `hkbGetUpModifier`, `BSIsActiveModifier` raising `bAnimationDriven`, and on quadrupeds the keyframe/ragdoll-drive pair again | `on GetUpEnd -> live state`; the get-up clips fire `GetUpEnd` (160), `AddCharacterControllerToWorld` (160), `Getup` (92), `Reanimated` (63) |
 
-The get-up blend is the one place the number of animations is a free choice: one
-clip (27 blends -- the atronachs use their idle), two (32 -- face up / face down,
-or left / right), or three (21 -- left, right, standing). The engine reads
-`iGetUpType` before it sends `GetUpStart` (`docs/animation-events.md` §7), which
-is why the selector is bound to it and why 45 of 46 declare it.
+The pose matchers are the 97 `hkbPoseMatchingGenerator`s of the census, two per
+creature (the wolf and the werewolf add swim variants), and they are all set the
+same way: `mode` 0, `blendSpeed` 1, `minSpeedToSwitch` 0.2,
+`minSwitchTimeNoError` 0.2, `minSwitchTimeFullError` 0, `startPlayingEvent` =
+`GetUpStart`, `startMatchingEvent` = `Ragdoll`, `rootBoneIndex` = `pelvisIndex` =
+0 (`NPC Root`). The two other bones the matcher's frame is built from are
+whatever sat at the template's indices when the creature was made -- bones 10 and
+11 are a canine's shoulder blades, the storm atronach's fingers and the sphere
+centurion's chassis lid -- so the matching evidently tolerates any pair, and a
+generator may pick two symmetric torso or hip bones. The number of clips is the
+one free choice: one (27 matchers -- the atronachs use their idle), two (32 -- face
+up / face down, or left / right), or three (21 -- left, right, standing). The
+engine reads `iGetUpType` before it sends `GetUpStart` (`docs/animation-events.md`
+§7), which is why the selector is bound to it and why 45 of 46 declare it.
 
 ### 2.2 The root modifier list
 
