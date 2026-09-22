@@ -147,6 +147,39 @@ Twelve creatures swim, in two shapes (`docs/swimming.md` for the engine's side):
   water sub-plan with idle, loop turns, canned turns, locomotion and a swim attack
   (horker). The module's floor is one clip.
 
+### 1.7 Air: the flight plan
+
+One creature flies, and `docs/flight.md` is its document; what an assembler needs
+of it fits in a page. The engine's side is a fly state it learns **only from the
+graph's state-entry events**, six paths it flies every flyer along, and requests
+that come with targets. The graph's side, read off the dragon (66 machines, of
+which flight is one machine of six states):
+
+    ST_Ground  --TakeOff, TakeOff_Vertical-->  ST_TakeOff  --TakeOff_to_WingState-->  ST_Flight
+    ST_Flight  [enter: FlightCruising]   --HoverStart-->  ST_Hover [enter: FlightHovering]
+               --FlyStop*-->  ST_Land [enter: FlightLanding]  --LandEnd-->  ST_Ground
+               --PerchLandEnd-->  ST_Perch [enter: FlightPerching, idleChairSitting]
+    ST_Flight_Kill_Grab [enter: FlightAction, exit: FlightActionEnd]
+    wildcards: FlyStartCruise -> ST_Flight, FlyStartHover -> ST_Hover
+
+| state | what it holds | slots at the floor | slots as shipped |
+| --- | --- | --- | --- |
+| take-off | `BSTweenerModifier` to the engine's tween target; one clip per launch kind | 1 (`TakeOff`) | 9: 45°, vertical, one per perch type, water exit |
+| flight | the cruise machine: flap / glide / feather chosen by the graph's own speed model, each a `TurnDeltaDamped` bank tri-blend (left, straight, right); climb and dive on `FlightPitchBlend`; a hurt family on `iInjured` | 1 (`Cruise`) | 28 |
+| hover | tweener to the target; `TweenEntryDirection` blend of five entries (straight, ±90, ±180); hover idle; hover turns; hover stagger | 2 (`HoverEnter`, `HoverIdle`) | 20 |
+| land | tweener; `TweenEntryDirection` blend of five approaches per landing kind (default, vertical, crash short, crash long, pounce), one per perch type | 1 (`Land`) | 47 |
+| perch | furniture: per perch type an idle, a launch, a stagger, the shouts | 0 (module) | 22 |
+
+The floor is five animations -- take-off, cruise, hover entry, hover idle,
+landing -- with the six enter events declared and a tweener on take-off, hover
+entry and landing. Without the tweeners the creature lands where its root motion
+says and hovers beside its target. The wing model (`MaxAcc`, `MaxDec`, `Drag`, the
+flap/glide/feather thresholds) is optional: with one cruise clip the movement
+type's speed is what the follower plans with (`docs/flight.md` §3.6). The speed
+table is not meaningful for a flyer, since the graph writes `Speed` back itself;
+the block is still written. The `iState` per posture (default, flying, hovering,
+perching -- the dragon's four constants) is set on entering each state.
+
 ## 2. Inputs
 
 ### 2.1 Animations, each with a role
@@ -160,7 +193,9 @@ position, so the API takes **roles**, not names. A role is a tuple:
               Stagger | Death | GetUp | Reanimate | AggroWarning | BleedOutEnter |
               BleedOutLoop | BleedOutExit | Bash | Block | BlockHit | Swim |
               SwimTurn | IdleVariant | Feed | LayDown | LayLoop | LayUp |
-              KillMoveVictim | Custom
+              KillMoveVictim | TakeOff | Cruise | HoverEnter | HoverIdle |
+              HoverTurn | Land | CrashLand | PerchIdle | PerchLaunch |
+              UpperBodyCast | Custom
     Heading   Forward | ForwardRight | Right | BackRight | Back | BackLeft |
               Left | ForwardLeft | None          (walk, run, trot, sprint, swim)
     Side      Left | Right | None                 (turns, side attacks, recoils)
@@ -229,6 +264,7 @@ The plan is chosen, not asked for, and the choice is a fixed reading of the role
 | forward walk with left and right variants, or a trot | C, quadruped |
 | forward walk only | D, forward only |
 | swim at any heading, no walk | E, swimmer (`docs/swimming.md` §3) |
+| take-off, cruise, hover entry, hover idle and land, beside a ground plan | the ground plan plus the flight module of §1.7 |
 
 Within the plan:
 
@@ -308,6 +344,15 @@ clips substituted:
   iState_<Name>Walk, iState_<Name>Run)` beside the `runStart` / `walkStart`
   expression.
 
+A **partial-body blend** -- casting or shouting over the locomotion, 18 creatures
+-- is an ordinary blend whose second child carries an `hkbBoneWeightArray`
+inline: one weight per bone, the upper body at 1 and the rest at 0. Every
+single-creature graph in the corpus inlines it (the falmer 22 times, the draugr,
+hagraven, dragon, storm atronach); only the shared quadruped file binds the
+array to a character property (`Tail`, `Body`, `Head`), because one file serves
+ten skeletons. So the module needs a bone mask, given as the list of bones the
+upper body starts at, and no character property.
+
 Clip generators are named by role in the shipped style (`WalkForward`,
 `RunForwardRight`, `TurnLeft90`, `Attack_<Name>`, `StaggerSmall`, `GetUpLeft`),
 `mode` loop for idles and locomotion, once for everything else, `playbackSpeed` 1
@@ -344,7 +389,9 @@ thing a front end shows the user before anything is written.
 public enum RoleKind { Idle, Walk, Run, Trot, Sprint, TurnInPlace, CannedTurn, CombatIdle,
     Equip, Unequip, Attack, PowerAttack, Recoil, Stagger, Death, GetUp, Reanimate,
     AggroWarning, BleedOutEnter, BleedOutLoop, BleedOutExit, Bash, Block, BlockHit,
-    Swim, SwimTurn, IdleVariant, Feed, LayDown, LayLoop, LayUp, KillMoveVictim, Custom }
+    Swim, SwimTurn, IdleVariant, Feed, LayDown, LayLoop, LayUp, KillMoveVictim,
+    TakeOff, Cruise, HoverEnter, HoverIdle, HoverTurn, Land, CrashLand, PerchIdle, PerchLaunch,
+    UpperBodyCast, Custom }
 
 public enum Heading { None, Forward, ForwardRight, Right, BackRight, Back, BackLeft, Left, ForwardLeft }
 public enum Side { None, Left, Right }
@@ -386,6 +433,7 @@ public sealed record SkeletonRoles
     public (string Other, string Another)? PoseMatchBones { get; init; }   // default: two hip-side bones
     public IReadOnlyList<string> LookAtChain { get; init; } = [];           // spine .. head; empty = no look-at
     public IReadOnlyList<Leg> Legs { get; init; } = [];                     // empty = no foot IK
+    public IReadOnlyList<string> UpperBodyRoots { get; init; } = [];        // bones whose subtrees are "upper body"; empty = no partial-body blends
 }
 
 public sealed record Leg(string Hip, string Knee, string Ankle, Vector3 KneeAxis);
@@ -407,7 +455,7 @@ public sealed record AssemblyConventions
 public enum LocomotionPlan { CompassBiped, FourArm, Quadruped, ForwardOnly, Swimmer }
 public enum Module { CombatStance, EquipTransitions, CannedTurns, Attacks, Recoil, Stagger,
     AnimatedDeath, GetUp, Reanimate, AggroWarning, BleedOut, Bash, Block, Swim, Sprint,
-    Idles, LayDown, Feed, KillMoveVictim }
+    Idles, LayDown, Feed, KillMoveVictim, Flight, Perch, UpperBody }
 
 /// What Assemble would do, before it does it.
 public sealed record AssemblyPlan(
@@ -482,22 +530,32 @@ The corpus is the oracle, and the tests are the ones this repository already run
   kill-move's without `pa_`, the generator's prefix is `2_`, and the humanoid's
   graph declares the `pa_` form.
 
-## 7. Not covered, and why
+## 7. Scope: what stays out, and what it would take
 
-- **Flight.** The dragon's graph is its own vocabulary (`ST_Flight`, `ST_Hover`,
-  `ST_Perch`, the `Flight*` handlers, the tail and bank channels) and
-  `docs/flight.md` §3 is its authoring guide; the plan enum reserves nothing for it
-  and this API does not build it. The ice wraith, wisp and chaurus flyer are not
-  flyers to the engine: they are plan B creatures whose animations hover.
-- **The humanoid** (`0_master`, 1136 machines) is not a creature and is not a target.
-- **Character properties** are not generated; nothing but the shared quadruped
-  file uses them.
-- **The plugin side** is the caller's (§8); the API writes the graph's half and
-  reports the names it used.
+Everything the first drafts of this section listed as not covered is now
+measured and in the API -- the swim plan and module (§1.6), the flight module
+(§1.7), the pose-matched get-up, the look-at chain and the foot-IK legs (§2.2),
+partial-body blends (§4.2). Two things stay out by decision:
 
-Everything the first draft of this section left out beside these -- the swim
-plan and module, the pose-matched get-up, the look-at chain, the foot-IK legs --
-is measured above and in the API.
+- **The humanoid.** `0_master` and its sixteen sibling files hold 3,152 clips and
+  1,136 machines, 222 of the clips synchronised. What makes it a different product
+  is not size but shape: the stance is repeated **per hand-type pair** under 69
+  manual selectors on `iRightHandType` and 66 on `iLeftHandType`, the sneak form
+  of every machine is a second copy synced on `iIsInSneak` (36 machines), the
+  first-person graph is chosen by `i1stPerson` (48 selectors), and the set data
+  and the engine's hand-type readers assume that layout
+  (`docs/animation-set-data.md` §4, `docs/animation-variables.md` §2.0). A
+  humanoid assembler would take roles crossed with a hand-type pair and a sneak
+  flag and replicate the compass-biped plan per cell; its floor is not seven
+  animations but a few hundred. The ice wraith, wisp and chaurus flyer are not in
+  this bracket: they are plan B creatures whose animations hover.
+- **The plugin records.** §8 lists them; `HKSK.Records` reads them and nothing here
+  writes them. The API reports every name the plugin has to create.
+
+Character properties turned out to need no decision: no single-creature graph
+uses one, and the two things they do in the shipped game -- pick a body in the
+shared quadruped file, hold that file's bone masks -- do not arise when each
+creature has its own file.
 
 ## 8. What the plugin has to say
 
