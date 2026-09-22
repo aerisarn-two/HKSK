@@ -127,6 +127,56 @@ as drift worth reporting. Nothing goes missing in the direction that would
 matter — every generator the behaviours define is in the cache. The 41 cached
 clips with no generator are clips from graphs shared with other projects.
 
+### Editing one
+
+`GraphEditor` is the writing side of the same reading: one behaviour file's events
+and variables, and the states, transitions, clips, blends and modifiers under its
+state machines.
+
+```csharp
+var editor = new GraphEditor(HavokFile.Load(@"behaviors\quadrupedbehavior.hkx"));
+
+var machine = editor.StateMachine("CatIdles", randomStartEvent: "catNextIdle");
+var lick = editor.State(machine, "Lick",
+    editor.Clip("Lick", @"Animations\Lick.hkx", triggers: ("catNextIdle", 0f, true)));
+
+editor.Transition(lick, "catNextIdle", scratch, editor.Effect("CatBlend", 0.2f));
+editor.Wildcard(machine, "idleStop", lick, condition: "Speed < 1");
+```
+
+What it writes is what a Bethesda graph holds, field for field, and those are not
+Havok's defaults: a transition with no condition carries the flag that disables its
+condition, a wildcard the local-wildcard flag, a clip a binding index of -1, a
+parametric blend the sync and parametric flags, a variable a role of nothing. A state
+added this way is indistinguishable from one the exporter wrote. Nothing is saved
+here; the caller saves the file, and `AnimationDataGenerator` brings the cache's clips
+up to date with what the graph now reaches.
+
+`m_animationBindingIndex` is `-1` on every generator in the game, which rules out
+the obvious alternative explanation for where the cache index comes from.
+
+### The event list is derived, not copied
+
+A clip's events come from two places at once — the animation's annotation track
+and the generator's triggers — merged in time order:
+
+- annotation times are kept as-is but **clamped to the clip's playing length**,
+  `(duration - crops) / playbackSpeed`. The bear's walk has a `FootBack`
+  annotation at 1.4 in an animation that, at speed 1.5, finishes at 1.1111 — and
+  the cache says 1.1111.
+- a trigger marked relative to the end of the clip lands at that same playing
+  length plus its local time (the chicken's `clipEnd` at `-0.009` becomes
+  6.65767).
+- an annotation's text is stored as **the longest prefix that names a behaviour
+  event**. The chicken keeps `SoundPlay.NPCChickenScratch` in full because that
+  is an event of its graph; the atronach's `SoundPlay.NPCAtronachFrostAttack` is
+  not, so it is stored as `SoundPlay`.
+
+Those rules reproduce 92% of the game's clips exactly. The remainder needs finer
+rules still, and some of it is drift. So event lists, like cache indices, are
+**preserved rather than regenerated** — the library will not overwrite generated
+data it cannot reproduce.
+
 ## The split files shipped with the game are stale
 
 `animationdatasinglefile.txt` is the source of truth. The per-project files under
