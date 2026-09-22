@@ -106,12 +106,42 @@ second from the first. Read out of `SkyrimSE.exe` (`docs/reverse-engineering.md`
 
 So the rule is a **toggle**, not a strip: whichever actor the idle is played on
 gets the idle's event as written, and the partner gets the same name with `pa_`
-removed if it was there and prepended if it was not. That is why the horse and the
-dragon, on whose side the mount idles are played, listen for the `pa_` form while
-the rider's graph listens for the bare one, and why every kill-move victim listens
-for the bare name: the kill-move idles are played on the killer. Which actor the
-idle is played on is the idle manager's choice (`docs/animation-set-data.md` §4.3),
-and the graph on each side has to declare its form or the pair is not started.
+removed if it was there and prepended if it was not. The graph on each side has to
+declare its form or the pair is not started.
+
+**Which actor the idle is played on** is not in the record. The pair record is the
+`TESActionData` of `docs/animation-set-data.md` §4.3 -- the source actor at `+0x8`,
+the target at `+0x10`, the event at `+0x28`, the partner's at `+0x30`, flags at
+`+0x58` -- and the initiator is simply its source actor, set by whoever built the
+action. The driver that takes it (`0x1406cd0d0`: resolve the event through the
+idle manager, compute the partner's name, start the pair) is reached from three
+places, and they are the three kinds of paired idle the game has:
+
+| reached from | who is the source | shipped pairs |
+| --- | --- | --- |
+| the hit processing that decides a kill-move (`0x1406b7bc0`, the function that also prints `UISneakAttack`), through two starters `0x14068cf30` / `0x14068cff0` | the killer | every `KillMove*` in the corpus: the humanoid declares `pa_KillMoveBearA`, the bear `KillMoveBearA` |
+| `ActorMediator`'s virtual at slot 1 (`0x1406cd390`) -- the general "play this idle on that actor with this target" route scripts and packages use | the actor the idle is played on | the mounts and the werewolf's spirit extraction; both directions occur (below) |
+| `SummonCreatureEffect`'s virtual at slot 4 (`0x1405d4b90` → `0x1406c5ae0`) | whichever actor the effect names; not read | the summon entrances |
+
+Read against the graphs, each shipped pair says which side it is started from by
+which form each graph declares:
+
+| pair | `pa_` form declared by | bare form declared by | so the idle is played on |
+| --- | --- | --- | --- |
+| kill-moves on creatures (277 rows) | the humanoid | the creature | the killer |
+| `HorseEnter` / `HorseExit` (+`Swim`) | the horse | the humanoid (`rootMotion` on, the rider is carried to the saddle) | the horse |
+| `DragonMountEnter` / `Exit`, `KillMove_Ground_Bite_Grapple` | the dragon | the humanoid | the dragon |
+| `Ground_Mount_Dragon` | the humanoid | the dragon | the rider |
+| `ExtractWerewolfSpirit` | the humanoid | the wolf | the humanoid |
+
+The humanoid also declares `pa_HorseEnter` and `pa_HorseExit` states of its own,
+with the horse's flags (`2_`, lead). No horse declares the bare form, so a pair
+started on the rider could never pass the declaration check; those states are dead
+in the shipped game and the mount is always started on the horse. For a generated
+creature the rule is therefore: declare the bare kill-move names, since kill-moves
+are started on the killer; and for a pair of its own, declare the form that matches
+the side the action will be played on, and make sure the partner's graph declares
+the other.
 
 ## Which half is which
 

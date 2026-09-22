@@ -575,7 +575,10 @@ kill-move (§3.4). What remains is what the corpus cannot say:
   partner's name from the idle's by toggling the prefix -- stripped if present,
   prepended if not -- and starts the pair only if each graph declares its form
   (`docs/paired-animations.md`, "How the partner is addressed"). Which actor an
-  idle is played on remains the idle manager's choice per record;
+  idle is played on is the source actor of the action that starts it, not
+  anything in the record: kill-moves are started on the killer by the hit
+  processing, mounts on the mount through the actor mediator, and each shipped
+  pair's direction is readable from which form each graph declares;
 - **the sync prefix at dispatch.** §3.4 infers that the engine strips `2_` (and
   `NPC`) from a synchronised clip's events before routing them, since no
   response line names a prefixed event and the victim demonstrably dies on
