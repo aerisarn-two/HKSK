@@ -6,7 +6,8 @@
               HKSK.Behavior.ProjectWalk; dumped per project by
               tests/HKSK.Tests/ZzCreatureCensus.cs (files, variables, events,
               character properties, the state tree with transitions, every clip
-              with its state path and triggers)
+              with its state path and triggers); the paired generators and the
+              speed blocks by tests/HKSK.Tests/ZzOpenPoints.cs
     Scope:    the 46 creatures. DefaultMale, DefaultFemale and FirstPerson share
               0_master (17 files, 1136 state machines) and are a different animal;
               they are cited only where the shell is the same
@@ -143,6 +144,38 @@ Which of them the engine originates is in `docs/animation-events.md`; the point
 here is only that **a generated creature declaring this core and nothing else has
 every hook the game will ever pull**, and adds names only for its own modules.
 
+### 2.4 The sync-mode machines
+
+55 machines in 31 creatures start in `START_STATE_MODE_SYNC`, reading their
+start state from a variable and writing their current state back into it
+(`docs/animation-variables.md` §2.1 for the mechanism and the engine's part in
+it). Read against the engine's list, the creatures' sync variables split cleanly:
+
+| variable | creatures | machines | what the ids mean | who else writes it |
+| --- | ---: | ---: | --- | --- |
+| `iSyncDefaultState` | 13 | 14 | the base machine: 0 non-combat, 1 combat (or equip), then unequip, stagger, kill-move, aggro, ambush | the machine alone in 11; an expression in the riekling and the vampire brute |
+| `currentDefaultState` | 8 | 8 | the same machine under the `MT_State` / `Weap_*_State` naming, ids up to 999 and 1000 for kill-move and summon on the draugr | an expression in 4 (`ReanimateSetCurrentDefaultState`, resetting it on a get-up: draugr ×2, falmer, troll) |
+| `iCombatStance` | 6 | 13 | the chaurus family's idle, turn and default machines, 0 non-combat, 1 melee, 2 spit | the draw/sheathe expressions in 3 |
+| `iAttackState` | 2 | 6 | the vampire lord's and werewolf's combat/non-combat pairs | expressions |
+| `iSyncIdleLocomotion` | 2 | 2 | 0 standing, 1 moving (falmer, riekling) | the engine, at bind time |
+| `iSyncSprintState` | 1 | 4 | the horse's locomotion, jump, fall and land: 0 plain, 1 sprint | the engine, every frame |
+| `iState` | 1 | 2 | the benthic lurker's walk/run machines, ids 0 and 1 | see below |
+| `currentState`, `iSyncWard`, `iCamera_Sync`, `iRightHandType` | 1 each | | the dragon priest, the vampire lord's camera, the wisp's idle by hand type | |
+
+Only the last four rows touch anything the engine writes, and they use it as
+the doc says: `iSyncSprintState` and `iSyncIdleLocomotion` with the engine's
+ids. Everything above them is the graph's own bookkeeping, and the pattern is
+one machine per creature holding the combat mode so that a stagger or a get-up
+returns it to the right stance. A generated creature needs exactly one such
+variable, initial value 0, on its base machine.
+
+The benthic lurker is the one to copy with care: its walk and run compasses are
+states 0 and 1 of a machine synced on **`iState` itself**, and its movement
+types are `iState_BenthicLurkerDefault = 0` and `iState_BenthicLurkerCombatRun
+= 1`. The machine's state id *is* the movement type, so the sync write is the
+`iState` write. It works because the ids were chosen to match; it is not a
+fourth way to set `iState` and should not be copied without the constants.
+
 **Character properties are a quadruped thing.** Only the shared quadruped file
 (and its boar and scrib copies) uses `hkbCharacterData` properties -- `IsBear`,
 `IsCanine`, `IsDeer`... and the `FootIKDisable_*` bone-weight arrays -- because
@@ -243,6 +276,49 @@ start event names, and its clips are the generators under it), so a generated
 creature should use `attackStart_` and `attackPowerStart_` and put each attack's
 clips in a state of their own.
 
+### 3.4 Being killed: the victim half of a paired kill-move
+
+23 creatures can be killed by a humanoid's kill-move, and the state that does it
+is the same in all 23 (277 victim-side generators counted; the bear, wolf,
+draugr, falmer, giant and dragon read in full):
+
+    S 'KillMoveState'                  entered by a wildcard on KillMoveBearA, KillMove2HMBearB ...
+     BSSynchronizedClipGenerator 'KillMoveBearA'
+        m_SyncAnimPrefix     "2_"
+        m_bLeadCharacter     true
+        m_bReorientSupportChar true
+        m_bApplyMotionFromRoot false
+        m_sAnimationBindingIndex -1
+       CLIP = ..\SharedKillMoves\Human&Bear\Paired_1HMKillMoveBearA.hkx
+         triggers: 2_KillMoveStart, 2_SoundPlay.*, 2_DeathEmote, 2_KillMoveEnd, 2_PairEnd, 2_KillActor (, 2_pairedStop)
+
+- **the animation is the same file the human plays**, listed in both character
+  files (`docs/paired-animations.md`); the victim's generator names its half by
+  the `2_` prefix, which is the prefix of its bones' tracks in that file;
+- **the event that enters the state is the kill-move's name without `pa_`.** The
+  human's graph enters its half on `pa_KillMoveBearA`, the bear's on
+  `KillMoveBearA`, on every one of the 277 pairs read. The `pa_` form is the
+  paired idle's own event; the partner is addressed by the bare name. The horse
+  and the dragon, where the creature is the one the mount idle is played on,
+  listen for the `pa_` form themselves;
+- **the victim's triggers are all `2_`-prefixed** and the animation cache
+  restates them as such: `2_KillActor` is what kills the creature
+  (`docs/animation-events.md` §3, `KillActor` is "the paired-kill end for the
+  victim"), `2_DeathEmote`, `2_KillMoveStart` / `End`, `2_PairEnd`. The response
+  file maps none of the `2_` names, so the engine strips the sync prefix when a
+  synchronised clip fires -- the human's half carries the same events prefixed
+  `NPC` (`NPCKillMoveStart`, `NPCHitFrame`, `NPCweaponSwing`, `NPCpairedStop`)
+  and the humanoid graph fires those unprefixed nowhere else either;
+- **the flags are the mirror of the human's**: the creature's generator is
+  `lead = true`, the human's `lead = false`; both `reorient = true`; root motion
+  from the paired root only on the mounts and the dragon's bite grapple.
+
+So a generated creature that should be killable by the stock kill-moves needs
+one such state per shared animation whose `2_` half fits its rig, entered by the
+bare kill-move name, declaring the `2_` event names its triggers use. Whether a
+kill-move is chosen at all is the killer's side's business -- the paired idle's
+conditions and the victim's set data -- and is not measured here.
+
 ## 4. The five locomotion plans
 
 The default situation is a standing/moving pair in every creature, and the moving
@@ -293,8 +369,13 @@ half is one of five constructions. Counted by node shape, not by name:
 
 A four-arm compass is the same with the diagonals missing: an animation set of
 four walks (F, R, B, L) is enough, and the engine's blend fills 45° headings
-from the neighbours. The chaurus family scales each arm's clip by a
-`speedMult*` expression instead of a ladder.
+from the neighbours. Its arms are speed ladders on `SpeedSampled` like the
+eight-arm ones, and the speed table holds a block for every creature -- the
+eight without a sampler included -- so the plan changes nothing on the table's
+side. One creature does it differently: the dwarven spider has no ladders and
+binds each arm's clip `playbackSpeed` to a `speedMult<Heading>` expression,
+`max(5, SpeedSampled) / speed<Heading>`; the chaurus, whose graph it was copied
+from, computes the same four multipliers and binds none of them.
 
 ### 4.2 The quadruped (C)
 
@@ -395,7 +476,24 @@ creatures) or waiting for the engine's idle events, an `IdleState` holding a
 **random-start machine** (`startStateMode` 2 -- 78 such machines across 25
 creatures) of once clips, returning on `idleStop` / `IdleStop`, and
 `PickNewIdle` raised on exit so the engine schedules the next one (declared by
-37). Feeding, laying, sitting and sleeping are the same machine again behind
+37).
+
+**`IdleStop` and `idleStop` are one event spelled two ways, and no creature uses
+both.** 23 creatures declare the capital form (the quadruped file, the draugr,
+giant, horse, netch, riekling, spriggan...), 17 the lower one (the atronachs,
+chaurus, chicken, hare, mudcrab, falmer, hagraven, troll, the centurions, the
+vampire lord, the werewolf), six neither. Within a project every idle state
+exits on the declared spelling and every once idle clip fires that same
+spelling as its last trigger, so the once idles are self-contained. The states
+that exit on it with **no clip firing it** are the looping ones -- the
+quadrupeds' sitting, laying and standing full-body idles, the bear's and boar's
+lay loop, the chicken's and hare's lay-down, the riekling's prayer -- and those
+can only be ended from outside, by the engine's `IdleStop` idle. The chicken's
+and the hare's loops exit on the *lower-case* name and the game does stop them,
+which says the graph-side lookup is case-insensitive like the handler side
+(`docs/animation-events.md` §1). That is inferred from the corpus and not yet
+read out of the executable; until it is, a generated creature should spell it
+`IdleStop`, the form 23 of the 40 use and the one the idle record sends. Feeding, laying, sitting and sleeping are the same machine again behind
 their own `idle*Start` events. A creature with one idle animation has a
 one-state random machine; every additional idle animation is one more state.
 
@@ -462,15 +560,20 @@ the AI asks of a non-combatant.
 
 ## 8. Open
 
-- the sync-mode machines (55 in the creatures, on `iSyncDefaultState`,
-  `currentDefaultState`, `iCombatStance`) restore a sub-state across a stagger
-  or get-up; which of them the engine writes back and which the graph keeps is
-  not checked here (`docs/animation-variables.md` §2.1 covers the humanoid set);
-- the four-arm creatures scale each arm's clip by `speedMult*` expressions
-  rather than a ladder; whether the speed table still needs a block for them is
-  a sampler question, not a shape one;
-- what the engine does with `IdleStop` versus `idleStop` (both exist, 23 and 17
-  creatures, and both end idle states) has not been traced;
-- the paired kill-move module has a fixed victim-side vocabulary (`2_KillMoveStart`,
-  `2_KillActor`, `2_PairEnd` in 20 creatures) that a generated creature must
-  declare to be *killed* by a humanoid, even with no kill-move of its own.
+Four questions were left open by the first pass and are answered above from the
+corpus: the sync-mode machines (§2.4), the four-arm creatures against the speed
+table (§4.1), the two spellings of the idle stop (§5) and the victim half of a
+kill-move (§3.4). What remains is what the corpus cannot say:
+
+- **event-name case.** §5 infers from the chicken's and hare's lay-down loops
+  that the graph-side event lookup is case-insensitive. The unpacked executable
+  is at hand (`docs/reverse-engineering.md`) and the check is recipe §3.10 on
+  the event path rather than the variable path; it has not been run;
+- **the `pa_` convention.** §3.4 reads it off 277 pairs: the initiator's graph
+  listens for `pa_<name>`, the partner's for `<name>`. Which actor the engine
+  treats as initiator for a given paired idle is a record and engine question,
+  and the horse and dragon rows show it is not always the humanoid;
+- **the sync prefix at dispatch.** §3.4 infers that the engine strips `2_` (and
+  `NPC`) from a synchronised clip's events before routing them, since no
+  response line names a prefixed event and the victim demonstrably dies on
+  `2_KillActor`. The code that does it has not been located.
