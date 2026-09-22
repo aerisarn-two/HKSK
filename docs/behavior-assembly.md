@@ -90,9 +90,18 @@ Measured over the 46 creatures (`docs/creature-patterns-research.md`):
 
 ### 1.3 What is not in the graph and has to be supplied
 
-- **The ladder rungs**: the movement type's walk and run speed per heading
-  (`MovementType`, eight numbers, `docs/speed-data.md`). The floor rung is the walk
-  clip at 5.
+- **The ladder rungs** are the movement type's walk and run speed per heading
+  (`MovementType`, eight numbers), and **the movement type is authored from the
+  clips, not the other way round** (`docs/speed-data.md` §7.2): walk on a heading
+  is the delivered speed of that heading's walk clip, `|travel| / (duration /
+  playbackSpeed)`, from the cache's root motion, and run is the run clip's --
+  `SpeedRung.Delivered` in the library. So the eight speeds are *derived* by the
+  assembler and reported, and the table written from them is the identity along
+  every rung. A caller may override them, at the cost of clips playing scaled.
+  The floor rung is the walk clip at 5. What the clips do not give is the record's
+  three rotation rates, which are gameplay constants by family (90/180/180 for a
+  biped, 180/270/360 for a bounding quadruped, §7.2) and its anim-change
+  thresholds, which are `FLT_MAX` on 88 of 106 shipped records (§7.5).
 - **The turn authority per gait** on the quadruped plan: walk ±75, trot ±112.5, run
   ±270 on the bear and boar; the horse ±135 throughout.
 - **The gait split thresholds** where a creature has two compasses (`runStart if
@@ -247,10 +256,11 @@ another role: the API reuses, it never copies.
 
 What the generators already take as `IGameRecords` (`HKSK.Records`):
 
-- the movement types the race uses, by role (walk, run, swim, sprint), each with
-  its eight speeds -- or, for a creature not yet in a plugin, the eight numbers
-  directly, from which the API writes `iState_<name>` constants and the caller adds
-  the `MOVT` afterwards;
+- the movement types, by role (walk, run, swim, sprint) -- but only their *names*
+  and which roles share one, since the eight speeds are derived from the clips
+  (§1.3) and reported for the `MOVT` the caller then writes; a caller that already
+  has a `MOVT` may pass its speeds as an override, and the rotation rates come from
+  the plan's family default unless given;
 - the race's attack events, or the list the caller intends to put in the race; the
   graph's attack states are entered by exactly these names;
 - the idle events the creature will be sent beyond the core (feeding, laying,
@@ -446,7 +456,11 @@ public sealed record CreatureSpec
     public required string RagdollPath { get; init; }
     public required IReadOnlyList<RoledAnimation> Animations { get; init; }
     public SkeletonRoles Bones { get; init; } = new();
-    public IReadOnlyDictionary<MovementRole, MovementType>? Movements { get; init; }
+    /// Movement types by role: a name per role, roles that share a name share a type. The
+    /// speeds are derived from the clips (§1.3) unless an override is given for a name.
+    public IReadOnlyDictionary<MovementRole, string> MovementNames { get; init; } =
+        new Dictionary<MovementRole, string> { [MovementRole.Walk] = "Default", [MovementRole.Run] = "Default" };
+    public IReadOnlyDictionary<string, MovementType>? MovementOverrides { get; init; }
     public IReadOnlyList<string> AttackEvents { get; init; } = [];   // the race's, or intended; the Attack roles' Names when empty
     public IGameRecords? Records { get; init; }             // used where the two above are null
     public AssemblyConventions Conventions { get; init; } = AssemblyConventions.Shipped;
@@ -474,6 +488,7 @@ public sealed record AssemblyConventions
     public float LadderFloor { get; init; } = 5f;
     public (float Walk, float Trot, float Run) TurnAuthority { get; init; } = (75f, 112.5f, 270f);
     public (float RunAbove, float WalkBelow)? GaitSplit { get; init; }   // null = one compass
+    public (float InPlaceWalk, float InPlaceRun, float WhileMoving)? TurnRates { get; init; }  // null = by plan: 90/180/180 biped, 180/270/360 quadruped
     public int FirstIStateId { get; init; } = 0;
     public bool IdleStopCapitalised { get; init; } = true;
 }
@@ -491,6 +506,7 @@ public sealed record AssemblyPlan(
     IReadOnlyList<string> Variables,
     IReadOnlyList<string> Events,
     IReadOnlyDictionary<string, int> IStates,     // iState_<name> -> id
+    IReadOnlyDictionary<string, MovementType> Movements,   // per name: the eight speeds read off the clips (or the override), the turn rates by convention -- the MOVT to write
     IReadOnlyList<string> Warnings,               // a slot filled by reuse, a module short of a clip
     IReadOnlyList<string> Errors);                // below the floor, an attack with no event
 
@@ -593,7 +609,7 @@ graph is only half of each of these, and the halves have to agree:
 | record | what it names | the graph's half |
 | --- | --- | --- |
 | `RACE` | the behaviour graph path (`Actors\<group>\<name>\<name>project.hkx`), the movement types by role, the attack data | the project file at that path; `iState_<MNAM>` per movement type; a state per attack event |
-| `MOVT` | the eight speeds and the `MNAM` name per movement type | the ladder rungs, the speed block's entry, the `iState_<MNAM>` constant |
+| `MOVT` | the `MNAM` name per movement type, the eight speeds **as the plan reports them** (read off the clips' travel, §1.3), the turn rates by family, `FLT_MAX` thresholds | the ladder rungs at those speeds, the speed block's entry, the `iState_<MNAM>` constant |
 | `IDLE` | one per event the creature is sent: the `Action*` idles for `moveStart`, `staggerStart`, `IdleStop` and the rest are the stock ones and need nothing; the creature's own idles (`idle<Name>Start`), its attacks' `attackStart_<name>` idles with their conditions, and any paired idle (`pa_<name>`, played on the initiator) | a state entered by each event, and for a paired idle the `2_`-prefixed victim state or the `pa_`-form initiator state (`docs/paired-animations.md`) |
 | the response file | nothing per creature: `actorresponse.txt` is global | the clips fire the names it maps (`HitFrame`, `attackStop`, ...) |
 
