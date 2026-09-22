@@ -10,20 +10,66 @@ namespace HKSK.Tests;
 /// </summary>
 public sealed class GraphEditorTests
 {
-    private static (SyntheticProject Project, string Behavior) Behavior()
+    /// <summary>
+    /// A behaviour packfile of its own: a graph with a name, four events and a generator.
+    /// </summary>
+    /// <remarks>
+    /// Not the whole synthetic project, which compresses its animations with Havok's own
+    /// codec -- a Windows binary. These tests have nothing to do with animations and should
+    /// run wherever the code does.
+    /// </remarks>
+    private sealed class Fixture : IDisposable
     {
-        SyntheticProject project = SyntheticProject.Build();
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
-        return (project, behavior);
+        private readonly string _folder = Path.Combine(Path.GetTempPath(), $"hksk-graph-{Guid.NewGuid():N}");
+
+        public Fixture()
+        {
+            Directory.CreateDirectory(_folder);
+            Path_ = Path.Combine(_folder, "testbehavior.hkx");
+
+            var graph = new hkbBehaviorGraph
+            {
+                m_name = "TestBehavior",
+                m_rootGenerator = new hkbManualSelectorGenerator { m_name = "Root" },
+                m_data = new hkbBehaviorGraphData
+                {
+                    m_stringData = new hkbBehaviorGraphStringData
+                    {
+                        m_eventNames = ["clipEnd", "runStop", "FootLeft", "FootRight"],
+                    },
+                },
+            };
+
+            var root = new hkRootLevelContainer
+            {
+                m_namedVariants =
+                [
+                    new hkRootLevelContainerNamedVariant
+                    {
+                        m_name = "hkbBehaviorGraph",
+                        m_className = "hkbBehaviorGraph",
+                        m_variant = graph,
+                    },
+                ],
+            };
+
+            using FileStream stream = File.Create(Path_);
+            Util.WriteHKX(root, HKXHeader.SkyrimSE(), stream);
+        }
+
+        public string Path_ { get; }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(_folder, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]
     public void AnEventIsAddedOnceAndKeepsItsIndex()
     {
-        using SyntheticProject project = Behavior().Project;
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
+        using var fixture = new Fixture();
+        string behavior = fixture.Path_;
 
         var editor = new GraphEditor(HavokFile.Load(behavior));
         int before = editor.Strings.m_eventNames.Count;
@@ -45,9 +91,8 @@ public sealed class GraphEditorTests
     [Fact]
     public void AVariableIsDeclaredWithItsTypeAndInitialValue()
     {
-        using SyntheticProject project = Behavior().Project;
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
+        using var fixture = new Fixture();
+        string behavior = fixture.Path_;
 
         var editor = new GraphEditor(HavokFile.Load(behavior));
 
@@ -74,9 +119,8 @@ public sealed class GraphEditorTests
     [Fact]
     public void AStateAndItsTransitionsSurviveTheFile()
     {
-        using SyntheticProject project = Behavior().Project;
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
+        using var fixture = new Fixture();
+        string behavior = fixture.Path_;
 
         var file = HavokFile.Load(behavior);
         var editor = new GraphEditor(file);
@@ -131,9 +175,8 @@ public sealed class GraphEditorTests
     [Fact]
     public void RemovingAStateTakesTheTransitionsIntoItWithIt()
     {
-        using SyntheticProject project = Behavior().Project;
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
+        using var fixture = new Fixture();
+        string behavior = fixture.Path_;
 
         var editor = new GraphEditor(HavokFile.Load(behavior));
         var machine = editor.StateMachine("CatModes");
@@ -156,9 +199,8 @@ public sealed class GraphEditorTests
     [Fact]
     public void ABlendIsParametricAndBoundToItsVariable()
     {
-        using SyntheticProject project = Behavior().Project;
-        string behavior = Directory.EnumerateFiles(project.ProjectFolder, "*.hkx", SearchOption.AllDirectories)
-            .First(f => f.Contains("behaviors", StringComparison.OrdinalIgnoreCase));
+        using var fixture = new Fixture();
+        string behavior = fixture.Path_;
 
         var editor = new GraphEditor(HavokFile.Load(behavior));
         var blend = editor.Blend("TurnBlend", "TurnDeltaDamped",
