@@ -490,10 +490,11 @@ quadrupeds' sitting, laying and standing full-body idles, the bear's and boar's
 lay loop, the chicken's and hare's lay-down, the riekling's prayer -- and those
 can only be ended from outside, by the engine's `IdleStop` idle. The chicken's
 and the hare's loops exit on the *lower-case* name and the game does stop them,
-which says the graph-side lookup is case-insensitive like the handler side
-(`docs/animation-events.md` §1). That is inferred from the corpus and not yet
-read out of the executable; until it is, a generated creature should spell it
-`IdleStop`, the form 23 of the 40 use and the one the idle record sends. Feeding, laying, sitting and sleeping are the same machine again behind
+and the executable says why: a name sent to a graph is interned through the
+case-insensitive string pool and matched to the graph's event by pointer
+(`docs/animation-events.md` §1), so the two spellings are one event. A generated
+creature may use either; `IdleStop` is the form 23 of the 40 use and the one the
+idle record sends. Feeding, laying, sitting and sleeping are the same machine again behind
 their own `idle*Start` events. A creature with one idle animation has a
 one-state random machine; every additional idle animation is one more state.
 
@@ -565,14 +566,16 @@ corpus: the sync-mode machines (§2.4), the four-arm creatures against the speed
 table (§4.1), the two spellings of the idle stop (§5) and the victim half of a
 kill-move (§3.4). What remains is what the corpus cannot say:
 
-- **event-name case.** §5 infers from the chicken's and hare's lay-down loops
-  that the graph-side event lookup is case-insensitive. The unpacked executable
-  is at hand (`docs/reverse-engineering.md`) and the check is recipe §3.10 on
-  the event path rather than the variable path; it has not been run;
+- **event-name case** is settled: the executable interns every name through a
+  case-insensitive pool and matches events and variables by pointer
+  (`docs/animation-events.md` §1, `docs/reverse-engineering.md` §4);
 - **the `pa_` convention.** §3.4 reads it off 277 pairs: the initiator's graph
-  listens for `pa_<name>`, the partner's for `<name>`. Which actor the engine
-  treats as initiator for a given paired idle is a record and engine question,
-  and the horse and dragon rows show it is not always the humanoid;
+  listens for `pa_<name>`, the partner's for `<name>`. The executable tests the
+  prefix with `_strnicmp` in the player camera's action handling, which is a
+  reader of the convention and not the code that addresses the partner. Which
+  actor the engine treats as initiator for a given paired idle is a record and
+  engine question still, and the horse and dragon rows show it is not always
+  the humanoid;
 - **the sync prefix at dispatch.** §3.4 infers that the engine strips `2_` (and
   `NPC`) from a synchronised clip's events before routing them, since no
   response line names a prefixed event and the victim demonstrably dies on

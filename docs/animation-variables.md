@@ -262,8 +262,10 @@ reach the actor, and only by the names the response files give them.
 **Declare what the engine writes, and only read it.** A graph needs `Speed`,
 `Direction` and `TurnDelta` to move at all, `iSyncIdleLocomotion`,
 `iSyncForwardState` and `iSyncTurnState` for its locomotion machines to start where
-the controller wants, and whichever of the rest its states use. Names must match
-exactly; an undeclared name is silently not written.
+the controller wants, and whichever of the rest its states use. Names must match in
+spelling but not in case -- the engine resolves a name through the string pool,
+which interns case-insensitively, and then compares pointers
+(`docs/animation-events.md` §1); an undeclared name is silently not written.
 
 **Report what the engine reads.** Set `iState` by one of the four writers
 (`docs/speed-data.md` §7.4); raise `bAnimationDriven` on the branches that carry

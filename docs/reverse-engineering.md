@@ -299,6 +299,20 @@ motion mode to match. It is a report from the animation to the game, not a comma
 game to the animation, which is why it explains nothing about values the game stores beside
 a clip (`docs/animation-set-data.md` §6).
 
+**Whether an event name is matched by case** (`docs/animation-events.md` §1). The
+names the graphs are sent (`moveStart`, `staggerStart`, `IdleStop`) are not in the
+executable at all -- they are the idle records' events -- so there was no literal to
+start from. The way in was a virtual slot: `IAnimationGraphManagerHolder`'s vftable
+(§3.2) has `NotifyAnimationGraph` at slot 1, and three hops of reading bodies reached
+the per-graph lookup, which hashes and compares the string's *pointer*. That made the
+question one about the string pool: the `BSFixedString` constructor's hash folds case
+and its lookup calls an import, named by `objdump -p` on the IAT slot (`_stricmp`);
+the pool's only other lookup is the wide one (`_wcsicmp`), and `strcmp`'s callers,
+found through its jump thunk rather than the import slot, are all elsewhere. Two
+things to keep from it: an import is reached by a thunk, so searching the IAT slot's
+address finds the thunk and not the callers; and a compare by pointer is a compare by
+whatever rule interned the pointer.
+
 **The attack flag** (`docs/animation-set-data.md` §4.6). The parser gave the entry layout
 and that the flag is stored as `atoi > 0`. The obvious leads -- the race's map, the combat
 settings for moving attacks -- led to combat code that never read the byte. The shape search

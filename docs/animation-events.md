@@ -34,6 +34,35 @@ route to the player-only handlers. The last two columns count trigger sites in t
 shipped behaviours and annotations in the shipped animations, from a corpus that
 holds every behaviour file but only 1,308 of the character's clips.
 
+**The other direction: how a name reaches the graph.** The engine's way in is the
+holder's `NotifyAnimationGraph` (slot 1 of `IAnimationGraphManagerHolder`'s vftable,
+`0x14054c450`), which fetches the graph manager and hands the `BSFixedString` to
+`0x140ba4260`; that loops over the manager's graphs (`+0x48`, count `+0x50`) and calls
+`0x140bb2c50` on each. That function is the lookup: it hashes the string's **pointer**
+(`0x140cc8460`, a CRC over the eight bytes of the pointer, not the characters) into
+a hash map on the graph's data object (`graph+0x200`, entries at `+0xc8`, capacity
+`+0xac`), walks the chain comparing **pointers** (`cmp %rcx,(%rax)`), takes the event
+id from the entry, builds an `hkbEvent` (`0x140ab0a60`) and raises it through slot
+`+0x30` of the behaviour graph at `graph+0x208`. The variable getters the holder
+exposes (`+0x80` is `0x14054c880`) reach `0x140bb69e0`, the same hash and the same
+pointer compare over another map.
+
+A pointer compare is a case rule, because the pointer is the string pool's. The
+`BSFixedString` constructor (`0x140cec5d0`) hashes the characters with `a`–`z` folded
+to upper case (`lea -0x61(%r9); cmp $0x19; cmova`), and the pool lookup it calls
+(`0x140cee1f0`) compares candidates with `_stricmp` (import `0x141750148`). The pool
+has one other lookup, `0x140cee310`, and it is the wide-character one (`_wcsicmp`);
+nothing in the pool reaches `strcmp`, whose 54 callers are elsewhere. So `IdleStop`
+and `idleStop` intern to one entry, and **an event or variable name matches its graph
+declaration regardless of case**, on the way in as on the way out. What must match is
+the spelling.
+
+The paired prefix is checked the same way: `_strnicmp(name, "pa_", 3)` at
+`0x14070b495`, inside the player camera's action handling (`0x14070b380`), which
+switches the camera for a paired action of the player's -- the `pa_` names are the
+paired idles' events, and this is one of their readers, not the one that addresses the
+partner.
+
 | clip fires | handler | file | triggers | annotations |
 | --- | --- | --- | --- | --- |
 | weaponSwing | WeaponRightSwing | actor | 333 | 256 |
