@@ -127,31 +127,6 @@ as drift worth reporting. Nothing goes missing in the direction that would
 matter — every generator the behaviours define is in the cache. The 41 cached
 clips with no generator are clips from graphs shared with other projects.
 
-`m_animationBindingIndex` is `-1` on every generator in the game, which rules out
-the obvious alternative explanation for where the cache index comes from.
-
-### The event list is derived, not copied
-
-A clip's events come from two places at once — the animation's annotation track
-and the generator's triggers — merged in time order:
-
-- annotation times are kept as-is but **clamped to the clip's playing length**,
-  `(duration - crops) / playbackSpeed`. The bear's walk has a `FootBack`
-  annotation at 1.4 in an animation that, at speed 1.5, finishes at 1.1111 — and
-  the cache says 1.1111.
-- a trigger marked relative to the end of the clip lands at that same playing
-  length plus its local time (the chicken's `clipEnd` at `-0.009` becomes
-  6.65767).
-- an annotation's text is stored as **the longest prefix that names a behaviour
-  event**. The chicken keeps `SoundPlay.NPCChickenScratch` in full because that
-  is an event of its graph; the atronach's `SoundPlay.NPCAtronachFrostAttack` is
-  not, so it is stored as `SoundPlay`.
-
-Those rules reproduce 92% of the game's clips exactly. The remainder needs finer
-rules still, and some of it is drift. So event lists, like cache indices, are
-**preserved rather than regenerated** — the library will not overwrite generated
-data it cannot reproduce.
-
 ## The split files shipped with the game are stale
 
 `animationdatasinglefile.txt` is the source of truth. The per-project files under
@@ -215,6 +190,23 @@ character file does not have, so `ConsistencyReport` reports an
 Importing **replaces** when the stored name matches an existing animation, which
 keeps the slot and therefore every clip and motion block already pointing at it.
 Otherwise it **appends**, for the same reason `AddAnimation` does.
+
+An animation is written over a template file, which is where everything a converter
+does not model comes from -- the binding, the reference frame, the annotations. The
+annotations are the animation's **events**, so which template it is matters: its own
+file, when a clip is being replaced, and its events are moved to the same fraction of
+the new clip's length, in the packfile and in the cache. A sabre cat's 1.83 second
+attack replaced by a 1.46 second one would otherwise keep an `attackStop` at 1.8,
+past the end, where it never fires and the actor never leaves its attack state. A
+template that is some *other* animation's file -- what an animation new to the
+project borrows -- brings that animation's events, a `HitFrame` on a walk, and they
+are dropped.
+
+The shape is the template's too, unless the template was bound to another creature's
+rig: a creature made from another keeps its animations as the files new ones are
+written over, and a 46-bone rig's clip written to a 64-track shape has the wrong bones
+under 46 of them. Where the scene holds exactly the project's rig, the rig is the
+shape.
 
 Batches report per file rather than throwing, so eighty imports with three bad
 files still import seventy-seven and name the three. `StoredName` and `ClipName`

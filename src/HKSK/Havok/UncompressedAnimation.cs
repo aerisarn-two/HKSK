@@ -62,7 +62,7 @@ public static class UncompressedAnimation
             m_numberOfTransformTracks = animation.TrackCount,
             m_numberOfFloatTracks = floatTracks,
             m_extractedMotion = null,
-            m_annotationTracks = old.m_annotationTracks,
+            m_annotationTracks = AnnotationTracksFor(old, animation.TrackCount),
             m_transforms = [.. animation.Transforms.Select(ToQs)],
             m_floats = [.. animation.Floats],
         };
@@ -76,6 +76,30 @@ public static class UncompressedAnimation
 
         using FileStream stream = File.Create(output);
         Util.WriteHKX(root, HKXHeader.SkyrimSE(), stream);
+    }
+
+    /// <summary>
+    /// The template's annotation tracks, one per transform track as the game's
+    /// files keep them, cut or padded to the track count being written.
+    /// </summary>
+    /// <remarks>
+    /// The game writes an annotation track per bone and puts the events on the
+    /// first; a template bound to another rig has another count. The first
+    /// track's events go with it whatever the count, since that is where
+    /// <c>WriteAnnotations</c> writes them back.
+    /// </remarks>
+    private static IList<hkaAnnotationTrack> AnnotationTracksFor(hkaAnimation old, int tracks)
+    {
+        if (old.m_annotationTracks.Count == tracks || old.m_annotationTracks.Count != old.m_numberOfTransformTracks)
+            return old.m_annotationTracks;
+
+        var kept = new List<hkaAnnotationTrack>(tracks);
+        for (int i = 0; i < tracks; i++)
+            kept.Add(i < old.m_annotationTracks.Count
+                ? old.m_annotationTracks[i]
+                : new hkaAnnotationTrack { m_trackName = "", m_annotations = [] });
+
+        return kept;
     }
 
     /// <summary>

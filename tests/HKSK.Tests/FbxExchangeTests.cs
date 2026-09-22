@@ -2,6 +2,7 @@ using HKFBX.Codec;
 using HKFBX.Fbx;
 using HKFBX.Hkx;
 using HKFBX.Model;
+using HKSK.Havok;
 using HKSK.Cache;
 using HKSK.Fbx;
 using HKSK.Model;
@@ -190,6 +191,104 @@ public class FbxExchangeTests
 
         Assert.True(worstTranslation < 1e-1, $"translation drifted {worstTranslation} at {worst}");
         Assert.True(worstRotation < 1e-2, $"rotation drifted {worstRotation} at {worst}");
+    }
+
+    /// <summary>
+    /// A template bound to another creature's rig gives the written animation
+    /// the project's own rig's shape, not the template's.
+    /// </summary>
+    /// <remarks>
+    /// A creature made from another keeps the template's animations as the
+    /// files new ones are built over, and those carry the template's track
+    /// count. The chicken's clip, written over a sabre cat file, must come back
+    /// with the chicken's 33 tracks in the chicken's bone order and one
+    /// annotation track per transform track -- not 64 of either.
+    /// </remarks>
+    [FbxFact]
+    public void AnAnimationImportedOverAnotherRigsTemplateTakesTheRigsShape()
+    {
+        using var work = new Workspace();
+        ActorProject project = work.Chicken();
+
+        AnimationSlot slot = project.Animation("Idle_Sitd1") ?? project.Animations[0];
+        var codec = new MopperAnimationCodec();
+        SampledAnimation before = Decoded(project.AnimationPath(slot)!, codec);
+
+        var exchange = new AnimationExchange(codec);
+        string fbx = Path.Combine(work.Folder, "clip.fbx");
+        Assert.True(exchange.Export(project, slot, fbx).Succeeded);
+
+        string foreign = Directory.EnumerateFiles(Corpus.Path_("actors", "sabrecat"), "*.hkx", SearchOption.AllDirectories)
+            .First(f => Path.GetFileName(f).Equals("mt_idle.hkx", StringComparison.OrdinalIgnoreCase));
+
+        ExchangeResult imported = exchange.Import(
+            project, fbx, new ImportOptions { StoredName = slot.StoredName, TemplatePath = foreign });
+        Assert.True(imported.Succeeded, imported.Problem);
+
+        SampledAnimation after = UncompressedAnimation.Read(imported.Path!)!;
+        Assert.Equal(before.TrackCount, after.TrackCount);
+
+        var root = (HKX2.hkRootLevelContainer)HKX2.Util.ReadHKX(imported.Path!);
+        HKX2.hkaAnimation written = root.m_namedVariants.Select(v => v?.m_variant)
+            .OfType<HKX2.hkaAnimationContainer>().First().m_animations[0];
+        Assert.Equal(before.TrackCount, written.m_annotationTracks.Count);
+
+        double worst = 0;
+        for (int frame = 0; frame < before.FrameCount; frame++)
+        for (int track = 0; track < before.TrackCount; track++)
+            worst = Math.Max(worst, (before[frame, track].Translation - after[frame, track].Translation).Length());
+
+        Assert.True(worst < 1e-1, $"the bones came back in another order: translation drifted {worst}");
+    }
+
+    /// <summary>
+    /// A clip replaced by one of another length keeps its events at the same place in
+    /// it, in the packfile and in the cache; a new animation built over another's file
+    /// keeps none of that file's.
+    /// </summary>
+    [FbxFact]
+    public void EventsFollowTheClipTheyBelongTo()
+    {
+        using var work = new Workspace();
+        ActorProject project = work.Chicken();
+        var exchange = new AnimationExchange(new MopperAnimationCodec());
+
+        // Two of the chicken's animations of different lengths, the second with events.
+        var withEvents = project.Animations
+            .Where(a => project.AnimationPath(a) is { } p && UncompressedAnimation.Events(p).Annotations.Any(t => t.Events.Count > 0))
+            .ToList();
+        AnimationSlot replaced = withEvents.First(a => project.ClipsOf(a).Any(c => c.Entry.Events.Count > 0));
+        var (oldDuration, oldTracks) = UncompressedAnimation.Events(project.AnimationPath(replaced)!);
+        AnimationSlot source = project.Animations.First(a => project.AnimationPath(a) is { } p
+            && MathF.Abs(UncompressedAnimation.Events(p).Duration - oldDuration) > 0.2f);
+
+        string fbx = Path.Combine(work.Folder, "source.fbx");
+        Assert.True(exchange.Export(project, source, fbx).Succeeded);
+        float newDuration = UncompressedAnimation.Events(project.AnimationPath(source)!).Duration;
+        float scale = newDuration / oldDuration;
+        List<ClipEvent> cachedBefore = [.. project.ClipsOf(replaced).First(c => c.Entry.Events.Count > 0).Entry.Events];
+
+        ExchangeResult result = exchange.Import(project, fbx,
+            new ImportOptions { StoredName = replaced.StoredName, ImportEvents = false });
+        Assert.True(result.Succeeded, result.Problem);
+
+        var (written, tracks) = UncompressedAnimation.Events(result.Path!);
+        Assert.Equal(newDuration, written, 2);
+        var before = oldTracks.SelectMany(t => t.Events).ToList();
+        var after = tracks.SelectMany(t => t.Events).ToList();
+        Assert.Equal(before.Select(e => e.Text), after.Select(e => e.Text));
+        foreach (var (b, a) in before.Zip(after))
+            Assert.Equal(Math.Min(b.Time * scale, newDuration), a.Time, 3);
+
+        var cachedAfter = project.ClipsOf(replaced).First(c => c.Entry.Events.Count > 0).Entry.Events;
+        foreach (var (b, a) in cachedBefore.Zip(cachedAfter))
+            Assert.Equal(Math.Min(b.Time * scale, newDuration), a.Time, 3);
+
+        // New to the project: the file it is built over is some other animation's.
+        ExchangeResult fresh = exchange.Import(project, fbx,
+            new ImportOptions { StoredName = @"Animations\BrandNew.hkx", ImportEvents = false });
+        Assert.True(fresh.Succeeded, fresh.Problem);
+        Assert.All(UncompressedAnimation.Events(fresh.Path!).Annotations, t => Assert.Empty(t.Events));
     }
 
     /// <summary>An animation packfile as frames of bone transforms.</summary>

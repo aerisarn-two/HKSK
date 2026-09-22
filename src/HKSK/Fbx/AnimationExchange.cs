@@ -318,6 +318,11 @@ public sealed partial class AnimationExchange
             if (File.Exists(target) && !options.Overwrite)
                 throw new IOException($"'{target}' already exists and Overwrite is off");
 
+            // Whether the file written over is this animation's own. Its events then carry
+            // over; another animation's -- a borrowed template -- are that animation's.
+            bool own = options.TemplatePath is null && File.Exists(target);
+            float ownDuration = own ? UncompressedAnimation.Events(target).Duration : 0f;
+
             string template = options.TemplatePath
                 ?? (File.Exists(target) ? target : null)
                 ?? TemplateFrom(project, slot)
@@ -350,7 +355,7 @@ public sealed partial class AnimationExchange
             // its collision bodies among the bones -- and an animation has as many
             // tracks as the file being rewritten, not as many as the scene.
             HkFbx.Skeleton rig = Rig(project) ?? skeleton;
-            HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, ShapeOf(template));
+            HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, ShapeFor(template, skeleton, rig));
 
             // The travel belongs to the cache, not to the animation, so it comes
             // off the root bone before the animation is stored. Always --
@@ -367,15 +372,13 @@ public sealed partial class AnimationExchange
                 UncompressedAnimation.Write(template, flat, target);
             ClearExtractedMotion(target);
 
-            if (options.ImportEvents)
-            {
-                IReadOnlyList<HkFbx.AnnotationTrack> events =
-                    FbxAnimationReader.ReadEvents(document, takeName);
+            IReadOnlyList<HkFbx.AnnotationTrack> given =
+                options.ImportEvents ? FbxAnimationReader.ReadEvents(document, takeName) : [];
 
-                // Rewrites the whole file from itself, so it has to follow the
-                // animation write rather than share a template with it.
-                if (events.Count > 0) HkxAnimationFile.WriteAnnotations(target, events, target);
-            }
+            // Rewrites the whole file from itself, so it has to follow the
+            // animation write rather than share a template with it.
+            if (given.Count > 0) HkxAnimationFile.WriteAnnotations(target, given, target);
+            else KeepOwnEvents(project, slot, target, own, ownDuration, flat.Duration);
 
             // Whether it moves, not whether it has keys. A Skyrim clip's root
             // track exists on every animation and sits still on almost all of
@@ -397,6 +400,57 @@ public sealed partial class AnimationExchange
         {
             return new ExchangeResult(name, null, false, e.Message);
         }
+    }
+
+    /// <summary>
+    /// The events an animation keeps when the scene brought none: its own, at the same
+    /// place in a clip of another length, or none at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A packfile is written over a template, and its annotations come along with the
+    /// rest. When the template is the animation's own file -- a clip replaced -- those
+    /// are its events, but timed for the clip that was there. A creature made from
+    /// another replaces a 1.83 second attack with a 1.46 second one, and an
+    /// <c>attackStop</c> at 1.8 then lies past the end: the clip ends, the event never
+    /// fires, and the actor stays in its attack state. So they are moved to the same
+    /// fraction of the new clip, and so are the cache's lists of every clip over the
+    /// slot, which record the same events.
+    /// </para>
+    /// <para>
+    /// When the template is another animation's file -- an animation new to the
+    /// project borrows the first one it has -- its events are that animation's, a
+    /// <c>HitFrame</c> on a walk, and they are dropped.
+    /// </para>
+    /// </remarks>
+    private static void KeepOwnEvents(
+        ActorProject project, AnimationSlot slot, string target, bool own, float ownDuration, float duration)
+    {
+        if (!own)
+        {
+            if (UncompressedAnimation.Events(target).Annotations.Any(t => t.Events.Count > 0))
+                HkxAnimationFile.WriteAnnotations(target, [], target);
+            return;
+        }
+
+        if (ownDuration <= 0f || duration <= 0f || Math.Abs(ownDuration - duration) < 1e-4f) return;
+
+        float scale = duration / ownDuration;
+        var (_, tracks) = UncompressedAnimation.Events(target);
+
+        if (tracks.Any(t => t.Events.Count > 0))
+            HkxAnimationFile.WriteAnnotations(target,
+                // Only the tracks that hold events: the game's are unnamed, and the writer
+                // finds a track by name, so an empty one would land on the first and clear it.
+                [.. tracks.Where(t => t.Events.Count > 0).Select(t => new HkFbx.AnnotationTrack
+                {
+                    Name = t.Name,
+                    Events = [.. t.Events.Select(e => new HkFbx.AnimationEvent(Math.Min(e.Time * scale, duration), e.Text))],
+                })],
+                target);
+
+        foreach (Clip clip in project.ClipsOf(slot).ToList())
+            project.SetEvents(clip, clip.Entry.Events.Select(e => e with { Time = Math.Min(e.Time * scale, duration) }));
     }
 
     /// <summary>Imports every FBX in a folder.</summary>
@@ -537,6 +591,32 @@ public sealed partial class AnimationExchange
             return UncompressedAnimation.Shape(template);
         }
         catch (Exception e) when (e is not OutOfMemoryException) { return ([], 0); }
+    }
+
+    /// <summary>
+    /// The shape the written file takes: the template's, unless the template was
+    /// bound to another rig, in which case the rig's own.
+    /// </summary>
+    /// <remarks>
+    /// A creature made from another keeps the template's animations as files to
+    /// build new ones over, and those are bound to the template's rig -- the
+    /// sabre cat's 64 tracks, one per bone, with no binding written because the
+    /// order is the rig's. An animation for a 46-bone rig written to that shape
+    /// would have 64 tracks and the wrong bones under 46 of them. So when the
+    /// template's track count is not the rig's and the scene holds exactly the
+    /// rig, the rig is the shape: one track per bone, in bone order. A paired
+    /// animation, whose scene holds two actors, is not this case and keeps the
+    /// template's shape as before.
+    /// </remarks>
+    private static (IReadOnlyList<short> Binding, int Tracks) ShapeFor(
+        string template, HkFbx.Skeleton read, HkFbx.Skeleton rig)
+    {
+        (IReadOnlyList<short> binding, int tracks) = ShapeOf(template);
+
+        if (rig.Count > 0 && tracks != rig.Count && binding.Count == 0 && read.Count == rig.Count)
+            return ([], rig.Count);
+
+        return (binding, tracks);
     }
 
     /// <summary>
