@@ -432,8 +432,11 @@ public sealed record AnimationRole(
     string? Name = null,          // attack event, kill-move name, custom idle event
     bool Mirror = false);
 
-/// An animation and what it is. Path is a Havok file on disk, or an FBX to import.
+/// An animation and what it is. Path is a Havok file on disk, or an FBX to import;
+/// an FBX holds one stack per clip, and Stack names the one meant. Assemble imports
+/// in the order the list gives, because that order is every clip's cache index.
 public sealed record RoledAnimation(string Path, IReadOnlyList<AnimationRole> Roles,
+    string? Stack = null,
     IReadOnlyList<ClipEvent>? Events = null);   // HitFrame and friends, in seconds
 
 public sealed record CreatureSpec
@@ -444,7 +447,7 @@ public sealed record CreatureSpec
     public required IReadOnlyList<RoledAnimation> Animations { get; init; }
     public SkeletonRoles Bones { get; init; } = new();
     public IReadOnlyDictionary<MovementRole, MovementType>? Movements { get; init; }
-    public IReadOnlyList<string> AttackEvents { get; init; } = [];   // the race's, or intended
+    public IReadOnlyList<string> AttackEvents { get; init; } = [];   // the race's, or intended; the Attack roles' Names when empty
     public IGameRecords? Records { get; init; }             // used where the two above are null
     public AssemblyConventions Conventions { get; init; } = AssemblyConventions.Shipped;
 }
@@ -524,11 +527,13 @@ public sealed record AssemblyOptions
 }
 ```
 
-`Assemble` is the composition of what exists: `AnimationExchange.Import` for each
-FBX (uncompressed, root motion and events derived), `CharacterFile.Create` for the
-character, a template writer for the graph (new), a project block plus
-`SkyrimCache.PromoteToActor` and the edit surface for the cache rows,
-`CacheGeneration.Amend` for the two generated files. The one new piece is the template writer, and it is a function from
+`Assemble` is the composition of what exists, in an order that is not free:
+`CharacterFile.Create` for an empty character and the project block, so the actor
+exists; then, **in the order the animations were given**, `AnimationExchange.Import`
+for each FBX stack (uncompressed, root motion and events derived) or `AddAnimation`
+for a Havok file, since each append is that clip's cache index; then the template
+writer for the graph over the finished list (new); then the edit surface for the
+clip rows and `CacheGeneration.Amend` for the two generated files. The one new piece is the template writer, and it is a function from
 `AssemblyPlan` to an `hkbBehaviorGraph`.
 
 ## 6. Verification
