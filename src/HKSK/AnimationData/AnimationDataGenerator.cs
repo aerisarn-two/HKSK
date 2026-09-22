@@ -353,8 +353,8 @@ public static class AnimationDataGenerator
             float? length = null;
             if (inputs.AnimationPath(slot) is { } animation && File.Exists(animation))
             {
-                var (spline, _, _, tracks) = HkxAnimationFile.ReadAnimationWithEvents(animation);
-                length = (spline.Duration - generator.m_cropStartAmountLocalTime - generator.m_cropEndAmountLocalTime) / speed;
+                var (duration, tracks) = UncompressedAnimation.Events(animation);
+                length = (duration - generator.m_cropStartAmountLocalTime - generator.m_cropEndAmountLocalTime) / speed;
 
                 HashSet<string> known = EventNames(inputs.Tables.GetValueOrDefault(file));
                 foreach (var track in tracks)

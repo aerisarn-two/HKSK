@@ -193,13 +193,7 @@ public class FbxExchangeTests
     }
 
     /// <summary>An animation packfile as frames of bone transforms.</summary>
-    private static SampledAnimation Decoded(string path, IAnimationCodec codec)
-    {
-        (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
-            HkxAnimationFile.ReadAnimation(path);
-
-        return codec.Decompress(spline) with { TrackToBone = trackToBone };
-    }
+    private static SampledAnimation Decoded(string path, IAnimationCodec codec) => Samples.Of(path, codec);
 
     /// <summary>
     /// The same import, from a scene already in hand and from one named stack

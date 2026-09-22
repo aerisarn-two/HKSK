@@ -251,9 +251,16 @@ Two more things worth knowing:
   frame. The displacement is unchanged — a chicken turn of exactly π/2 comes back
   as π/2 — but the file grows.
 
-Conversion needs `mopper.exe`, because Havok's spline *encoder* is proprietary
-and this is the only credible implementation of it. It is a Win32 binary and runs
-under Wine off Windows.
+**An import is written uncompressed** by default, as `hkaInterleavedUncompressedAnimation`:
+the imported samples exactly, written and read back with nothing but the packfile
+serialiser (`HKSK.Havok.UncompressedAnimation`). `ImportOptions.Compression =
+AnimationCompression.Spline` compresses as the game's own animations are, smaller and
+lossy. Everything that reads an animation -- the export, the event derivation, a
+template's track layout -- reads either.
+
+Exporting a game animation still needs `mopper.exe`, and so does a spline import,
+because Havok's spline codec is proprietary and this is the only credible
+implementation of it. It is a Win32 binary and runs under Wine off Windows.
 
 ## The third cache file
 

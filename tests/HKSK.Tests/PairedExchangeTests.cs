@@ -137,8 +137,8 @@ public class PairedExchangeTests : IDisposable
         Assert.Equal(before.PartnerTracks.Count, after.PartnerTracks.Count);
 
         var codec = new MopperAnimationCodec();
-        HkFbx.SampledAnimation original = codec.Decompress(HkxAnimationFile.ReadAnimation(source).Animation);
-        HkFbx.SampledAnimation copy = codec.Decompress(HkxAnimationFile.ReadAnimation(rewritten).Animation);
+        HkFbx.SampledAnimation original = Samples.Of(source, codec);
+        HkFbx.SampledAnimation copy = Samples.Of(rewritten, codec);
 
         Assert.Equal(original.TrackCount, copy.TrackCount);
         Assert.Equal(original.FrameCount, copy.FrameCount);

@@ -1,3 +1,4 @@
+using HKSK.Havok;
 namespace HKSK.Fbx;
 
 /// <summary>Which events go into an exported FBX.</summary>
@@ -91,6 +92,13 @@ public sealed record ImportOptions
     /// Whether to take the FBX's root motion into the cache for the slot.
     /// </summary>
     public bool ImportRootMotion { get; init; } = true;
+
+    /// <summary>
+    /// How the animation is stored. Uncompressed by default: exact, and written without
+    /// Havok's codec, which off Windows needs Wine. <see cref="AnimationCompression.Spline"/>
+    /// compresses as the game's own animations are, lossily and several times smaller.
+    /// </summary>
+    public AnimationCompression Compression { get; init; } = AnimationCompression.Uncompressed;
 
     /// <summary>
     /// Whether to write the FBX's events into the animation's annotation track.

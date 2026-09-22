@@ -109,13 +109,15 @@ public sealed partial class AnimationExchange
             // order its skeleton describes.
             HkFbx.SampledAnimation flat = WithoutRootMotion(animation, skeleton, motion);
 
-            SplineAnimationData spline = _codec.Compress(
-                InTrackOrder(flat, skeleton, PairedAnimation.Read(template).Tracks));
+            HkFbx.SampledAnimation ordered = InTrackOrder(flat, skeleton, PairedAnimation.Read(template).Tracks);
 
             string? folder = Path.GetDirectoryName(animationPath);
             if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
 
-            HkxAnimationFile.WriteAnimation(template, spline, animationPath);
+            if (options.Compression == AnimationCompression.Spline)
+                HkxAnimationFile.WriteAnimation(template, _codec.Compress(ordered), animationPath);
+            else
+                UncompressedAnimation.Write(template, ordered, animationPath);
             ClearExtractedMotion(animationPath);
 
             if (options.ImportEvents)

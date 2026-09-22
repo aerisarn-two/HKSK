@@ -350,10 +350,7 @@ public class SyntheticProjectTests
     /// <summary>How far the root bone strays from the origin, over the whole clip.</summary>
     private static float RootExcursion(ActorProject project, AnimationSlot slot)
     {
-        (HKFBX.Codec.SplineAnimationData spline, _, _) =
-            HKFBX.Hkx.HkxAnimationFile.ReadAnimation(project.AnimationPath(slot)!);
-
-        HKFBX.Model.SampledAnimation sampled = new HKFBX.Codec.MopperAnimationCodec().Decompress(spline);
+        HKFBX.Model.SampledAnimation sampled = Samples.Of(project.AnimationPath(slot)!);
 
         float worst = 0f;
         for (int frame = 0; frame < sampled.FrameCount; frame++)

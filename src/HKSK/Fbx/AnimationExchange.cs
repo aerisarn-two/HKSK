@@ -80,12 +80,26 @@ public sealed partial class AnimationExchange
                 ?? throw new FileNotFoundException(
                     $"'{slot.StoredName}' was not found under {project.Folder}");
 
-            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, string? boundSkeleton,
-             IReadOnlyList<HkFbx.AnnotationTrack> annotations) =
-                HkxAnimationFile.ReadAnimationWithEvents(animationPath);
+            // An uncompressed animation is its own samples; a compressed one is Havok's
+            // codec's to read.
+            HkFbx.SampledAnimation sampled;
+            IReadOnlyList<short> trackToBone;
+            string? boundSkeleton;
+            IReadOnlyList<HkFbx.AnnotationTrack> annotations;
+
+            if (UncompressedAnimation.Read(animationPath) is { } raw)
+            {
+                (sampled, trackToBone, annotations) = (raw, raw.TrackToBone, raw.Annotations);
+                boundSkeleton = UncompressedAnimation.SkeletonNameOf(animationPath);
+            }
+            else
+            {
+                (SplineAnimationData spline, trackToBone, boundSkeleton, annotations) =
+                    HkxAnimationFile.ReadAnimationWithEvents(animationPath);
+                sampled = _codec.Decompress(spline);
+            }
 
             HkFbx.Skeleton own = HkxAnimationFile.ReadSkeleton(skeletonPath);
-            HkFbx.SampledAnimation sampled = _codec.Decompress(spline);
 
             // Two cheap signals, because reading the bone names means parsing the
             // packfile a second time and most animations are not paired. Usually
@@ -339,15 +353,18 @@ public sealed partial class AnimationExchange
             HkFbx.SampledAnimation animation = InOrderOf(read, skeleton, rig, ShapeOf(template));
 
             // The travel belongs to the cache, not to the animation, so it comes
-            // off the root bone before the animation is compressed. Always --
+            // off the root bone before the animation is stored. Always --
             // ImportRootMotion decides whether the cache is updated, not whether
             // the animation is left carrying motion it should not have.
-            SplineAnimationData spline = _codec.Compress(WithoutRootMotion(animation, rig, motion));
+            HkFbx.SampledAnimation flat = WithoutRootMotion(animation, rig, motion);
 
             string? folder = Path.GetDirectoryName(target);
             if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
 
-            HkxAnimationFile.WriteAnimation(template, spline, target);
+            if (options.Compression == AnimationCompression.Spline)
+                HkxAnimationFile.WriteAnimation(template, _codec.Compress(flat), target);
+            else
+                UncompressedAnimation.Write(template, flat, target);
             ClearExtractedMotion(target);
 
             if (options.ImportEvents)
@@ -517,10 +534,7 @@ public sealed partial class AnimationExchange
     {
         try
         {
-            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
-                HkxAnimationFile.ReadAnimation(template);
-
-            return (trackToBone, spline.TransformTrackCount);
+            return UncompressedAnimation.Shape(template);
         }
         catch (Exception e) when (e is not OutOfMemoryException) { return ([], 0); }
     }
