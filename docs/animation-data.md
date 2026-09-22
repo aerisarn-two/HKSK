@@ -160,9 +160,37 @@ the `HitFrame` event, and the hit frame's time -- the movement block and the eve
 list of this file, joined on the clip's slot. With the moving-attack flag clear
 the end translation's length is the attack's reach and the hit-frame translation
 places the blow; the sampler that wrote the speed table read the same travel and
-duration. So a clip's root motion in this cache is what the game believes the
-animation does, and an animation edited without regenerating the cache moves the
-character one way and is measured another.
+duration.
+
+**The movement itself reads the same blocks, every frame.** The animation data
+manager's singleton (`0x143138d50`) has fourteen readers; beside the loader and
+the combat query above, three of them ask the actor's graph which clips are active
+(`0x140ba4d40`, `0x140ba4e30`) and then the cache for their movement:
+
+- `0x140540990` is the per-frame root-motion delta. For each active clip it takes
+  the clip's local time and weight, samples the clip's movement block at the time
+  and at the time less the frame's advance (`0x140538240`, which returns zero for a
+  block with no keys and otherwise interpolates the keys linearly by time in
+  `0x140538390`), and accumulates the difference scaled by the weight. Its one
+  caller is slot 3 of **`MovementTweenerAgentAnimationDriven`** (`0x140797ed0`,
+  vftable `0x1418b43b8`), which rotates the delta into the world by the actor's
+  heading and hands it to the controller. That agent is what `AnimationDriven`
+  installs (`docs/animation-events.md` §2), so **a clip in animation-driven mode
+  moves the actor by this file's movement block and by nothing else** -- the Havok
+  animation's `extractedMotion` is null on every shipped clip and is never
+  consulted;
+- `0x14053fd20`, `0x140540680` and their wrappers (`0x14053fa70`, `0x14053fbe0`)
+  are end-of-clip queries -- the travel a clip will have made -- used by callers
+  this pass did not name (`0x140783020`, `0x1407c51c0`, `0x1403b2230`, the
+  `0x1407f9480` cluster, and the actor update `0x1406972d0`).
+
+So a clip's root motion in this cache is what the game believes the animation does
+*and* what moves the actor when the graph says the animation owns the movement; an
+animation edited without regenerating the cache moves the character one way and is
+measured another. In motion-driven mode -- the controller's velocity from the
+movement type or, for the dragon in the air, from the flight follower
+(`docs/flight.md` §2) -- the block is not applied, and the shipped cruise clips
+accordingly carry none.
 
 ## 5. Authoring
 

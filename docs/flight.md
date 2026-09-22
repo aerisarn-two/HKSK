@@ -251,6 +251,34 @@ fast it actually goes, banks by `TurnDeltaDamped` on every cruise blend, pitches
 `Speed` is written back into the same variable the engine wrote, which is why the
 engine's own speed sampling of the dragon is meaningless (`docs/speed-data.md`).
 
+**Where the flight's movement comes from.** Not from the cruise clips. Read against
+the animation cache (`tests/HKSK.Tests/ZzFlightMotion.cs`) and the graph:
+
+| state | clips | with a movement block | travelling | `bAnimationDriven` |
+| --- | ---: | ---: | ---: | --- |
+| `ST_Flight` (cruise) | 32 | 18 | 3 (the two glides, 2048 over 1.33 s) | never raised |
+| `ST_Hover` | 21 | 14 | 12 (the entries and exits, 2048–4096) | never raised |
+| `ST_TakeOff` | 11 | 11 | 11 (2048–4580) | never raised |
+| `ST_Land` | 52 | 42 | 42 (2896–8447) | never raised |
+| `ST_Flight_Kill_Grab` | 7 | 7 | 7 | never raised |
+| `ST_Ground` | 36 | 11 | 5 | raised on the ground attacks |
+
+The flap, feather and bank clips carry no root motion at all, and no flight state
+raises `bAnimationDriven`: the root modifier list computes
+`bFullyMotionDriven = !bAnimationDriven && !bIsSynced`, every flight expression is
+enabled by it, and in the air it is always true. So cruising is **motion-driven**:
+the controller's velocity, which the flight follower sets from `TargetSpeed`, moves
+the dragon, and the clips only pose it -- which is why the graph can integrate its
+own `Speed` and write it back. The transitions are different: take-off, hover entry
+and exit, landing and the grab all carry large travels in the cache, and each of
+those states holds a `BSTweenerModifier` bound to `TweenPosition` / `TweenRotation`.
+The tweener carries the actor to the engine's target. What the engine does with
+those states' cached travel was not traced past the cache's readers
+(`docs/animation-data.md` §4.3): the per-frame root-motion delta is applied only in
+animation-driven mode, which these states are not in, and the end-of-clip travel
+queries have callers this pass did not name. What is certain is that none of it is
+read from the Havok file, whose `extractedMotion` is null on every shipped clip.
+
 **Injury** is the graph's too: `Injured` (engine-written) becomes `iInjured`, a
 manual-selector index on every flight clip family (default versus hurt), and
 `InjuredScaleCurrent` lowers `MaxSpeedCurrent`; `IsAllowedToFly` reads `Injured`
@@ -606,9 +634,14 @@ turned inward:
   flag and no permission bit on this path. The machine's own entry event is
   whatever name the graph defines, so Papyrus starts and stops flight with
   `SendAnimationEvent`.
-- **Movement is root motion.** The flight states set `bAnimationDriven`; the engine
-  answers with `StartAnimationDriven` and hands movement to the `Animation Driven`
-  agent, and the clips carry the player. The dragon's cruise clips are this shape.
+- **Movement is root motion, on this route.** A flight machine for the player would
+  set `bAnimationDriven`; the engine answers with `StartAnimationDriven`, the
+  per-frame delta is read from the animation cache's movement blocks
+  (`docs/animation-data.md` §4.3), and the clips carry the player. The dragon does
+  it the other way (§2): its cruise clips carry no root motion and its flight is
+  motion-driven by the follower's velocity, which a player without a follower does
+  not have. So the player's cruise clips must be authored *with* travel, and the
+  cache regenerated to hold it.
 - **Steering is the variables the engine already writes for the player.**
   `Direction` and `Speed` from the movement keys, `TurnDelta` from the turn,
   `Pitch` from the per-frame writer (`0x14069dac0`, shared by PlayerCharacter),
