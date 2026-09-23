@@ -56,6 +56,6 @@ public sealed class ZzFromState
                 foreach (var t in st.m_transitions?.m_transitions ?? []) Show(st.m_name, t);
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/fromstate.txt", string.Join("\n", L.Distinct().OrderBy(x => x.Substring(4))));
+        File.WriteAllText("/tmp/hksk-dumps/fromstate.txt", string.Join("\n", L.Distinct().OrderBy(x => x.Substring(4))));
     }
 }

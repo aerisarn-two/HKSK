@@ -69,7 +69,7 @@ public sealed class ZzHover
             bool footIk = actor.Character?.Data.m_footIkDriverInfo is not null;
             L.Add($"{p.Stem,-30} {flagged,3}/{attacks.Count,-4} {blends,11} {maxTravel,13:0} {(footIk ? "Y" : "-"),6}  {raceFlags.GetValueOrDefault(p.Stem, "?")}");
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/hover.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/hover.txt", string.Join("\n", L));
         foreach (var m in mods) m.Dispose();
     }
 }

@@ -89,6 +89,6 @@ public sealed class ZzMoving4
         }
         var L = new List<string> { "features of the entered state: flag 1 / flag 0 (distinct attack events per project)" };
         foreach (var (k, v) in table.OrderByDescending(x => x.Value.On + x.Value.Off)) { L.Add($"  {k,-70} {v.On,4} / {v.Off,4}"); L.Add($"      on:  {string.Join(" ", v.ExOn)}"); L.Add($"      off: {string.Join(" ", v.ExOff)}"); }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/moving4.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/moving4.txt", string.Join("\n", L));
     }
 }

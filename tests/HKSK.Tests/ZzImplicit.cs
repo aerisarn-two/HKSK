@@ -47,6 +47,6 @@ public sealed class ZzImplicit
             }
             L.Add($"   references to '{named}': " + string.Join(" | ", carriers.Select(kv => $"{kv.Value}x {kv.Key}")));
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/implicit.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/implicit.txt", string.Join("\n", L));
     }
 }

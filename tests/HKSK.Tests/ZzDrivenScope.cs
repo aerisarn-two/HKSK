@@ -198,6 +198,6 @@ public sealed class ZzDrivenScope
         L.Add("attacks where bAllowRotation is raised:");
         foreach (var r in table.Where(r => r.R).OrderByDescending(r => r.Flag).ThenBy(r => r.Project))
             L.Add($"   [{(r.Flag ? 1 : 0)}] A={r.A,-5} {r.Project,-24} {r.Event}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/drivenscope.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/drivenscope.txt", string.Join("\n", L));
     }
 }

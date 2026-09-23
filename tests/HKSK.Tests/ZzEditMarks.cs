@@ -54,6 +54,6 @@ public sealed class ZzEditMarks
         L.Add("");
         L.Add($"mean tool-named share: the six {sixAvg:0.0}%, the other {rows.Count(r => !r.Flag)} {restAvg:0.0}%");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/editmarks.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/editmarks.txt", string.Join("\n", L));
     }
 }

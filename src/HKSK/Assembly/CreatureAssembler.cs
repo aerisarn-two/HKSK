@@ -82,6 +82,15 @@ public static class CreatureAssembler
         string behaviour = Path.Combine("behaviors", spec.Name + "Behavior.hkx");
         string rig = Path.Combine("character assets", "skeleton.hkx");
 
+        // A file that is already where it is being put. Assembling into a folder that already
+        // holds the skeleton is the ordinary case when the skeleton was built there first, and
+        // copying a file onto itself is an error rather than nothing happening.
+        static void Copy(string from, string to)
+        {
+            if (Path.GetFullPath(from) == Path.GetFullPath(to)) return;
+            File.Copy(from, to, overwrite: true);
+        }
+
         void Write(string relative, Action<string> write)
         {
             string path = Path.Combine(outputFolder, relative);
@@ -91,12 +100,12 @@ public static class CreatureAssembler
         }
 
         // ---- the skeleton, copied as it is: every animation is bound to it
-        Write(rig, to => File.Copy(spec.SkeletonPath, to, overwrite: true));
+        Write(rig, to => Copy(spec.SkeletonPath, to));
         string ragdoll = rig;
         if (spec.RagdollPath is { Length: > 0 } source)
         {
             ragdoll = Path.Combine("character assets", spec.Name + "_ragdoll.hkx");
-            Write(ragdoll, to => File.Copy(source, to, overwrite: true));
+            Write(ragdoll, to => Copy(source, to));
         }
         else notes.Add("no ragdoll was given, so the skeleton answers for both");
 
@@ -125,7 +134,7 @@ public static class CreatureAssembler
         {
             string relative = Path.Combine("animations", animation.Stem + ".hkx");
             if (stored.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
-            Write(relative, to => File.Copy(animation.Path, to, overwrite: true));
+            Write(relative, to => Copy(animation.Path, to));
             stored.Add(relative);
         }
 

@@ -55,6 +55,6 @@ public sealed class ZzWhoFlags
             rows.Add($"{p.Stem,-30} {flagged,4} {attacks,4} {actor.Clips.Count,6} {moving,6} {max,9:0} {(dlc ? "DLC" : "base"),4}  {has}");
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/whoflags.txt", string.Join("\n", rows));
+        File.WriteAllText("/tmp/hksk-dumps/whoflags.txt", string.Join("\n", rows));
     }
 }

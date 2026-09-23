@@ -144,6 +144,6 @@ public sealed class ZzMovingRule
         foreach (var r in rows.Where(r => r.Flag == 0 && r.Travels).OrderBy(r => r.Project))
             L.Add($"   {r.Project,-28} {r.Event,-34} {r.Clips} clips, max travel {r.Max:0.0}");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/movingrule.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/movingrule.txt", string.Join("\n", L));
     }
 }

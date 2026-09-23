@@ -43,7 +43,7 @@ public sealed class ZzMirror2
             var off = p.Sets.Sets.SelectMany(s => s.Attacks.Attacks).Where(a => a.Mirrored == 0).Select(a => a.EventName).Distinct().ToList();
             if (on.Count > 0) L.Add($"  {p.Stem}: on {string.Join(",", on)} | off {string.Join(",", off.Take(10))}");
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/mirror2.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/mirror2.txt", string.Join("\n", L));
         foreach (var m in mods) m.Dispose();
     }
 }

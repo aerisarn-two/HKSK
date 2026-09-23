@@ -18,6 +18,6 @@ public sealed class ZzClipPath
         foreach (var a in actor.Character!.AnimationNames)
             if (a.Contains("chair_idlebasevar1", StringComparison.OrdinalIgnoreCase)) L.Add("character: " + a);
         L.Add("character list size " + actor.Character.AnimationNames.Count + ", clips with no '\\\\' " + walk.Steps.Count(s => s.Node is hkbClipGenerator c && !c.m_animationName.Contains('\\')));
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/clippath.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/clippath.txt", string.Join("\n", L));
     }
 }

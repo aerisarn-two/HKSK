@@ -141,9 +141,9 @@ public sealed class ZzIdleConditions
             L.Add("");
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idleconditions.txt", string.Join("\n", L));
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idlesummary.tsv", string.Join("\n", summary));
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idleverdicts.tsv", string.Join("\n", verdicts));
+        File.WriteAllText("/tmp/hksk-dumps/idleconditions.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/idlesummary.tsv", string.Join("\n", summary));
+        File.WriteAllText("/tmp/hksk-dumps/idleverdicts.tsv", string.Join("\n", verdicts));
         foreach (var m in mods) m.Dispose();
     }
 }

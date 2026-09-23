@@ -40,7 +40,7 @@ public sealed class ZzRaceAttacks
             L.Add($"{p.Stem,-32} shipped {shipped.Count,3} race {race.Count,3} both {shipped.Intersect(race, StringComparer.OrdinalIgnoreCase).Count(),3} | only shipped: {string.Join(",", os)} | only race: {string.Join(",", or)} | races: {string.Join(",", racesOf.GetValueOrDefault(p.Stem) ?? [])}");
         }
         L.Insert(0, $"distinct events per project: both {both}, only in the set data {onlyShipped}, only in race attack data {onlyRace}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/raceattacks.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/raceattacks.txt", string.Join("\n", L));
         foreach (var m in mods) m.Dispose();
     }
 }

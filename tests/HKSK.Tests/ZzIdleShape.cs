@@ -18,6 +18,6 @@ public sealed class ZzIdleShape
         {
             L.Add($"--- {i.EditorID}  event {i.AnimationEvent}  filename '{i.Filename}'  related {string.Join(",", i.RelatedIdles.Select(r => r.FormKey.ToString()))}");
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idleshape.txt", string.Join("\n", L.Distinct()));
+        File.WriteAllText("/tmp/hksk-dumps/idleshape.txt", string.Join("\n", L.Distinct()));
     }
 }

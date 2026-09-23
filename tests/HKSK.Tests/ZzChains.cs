@@ -138,7 +138,7 @@ public sealed class ZzChains
         foreach (string m in allMods.Where(x => x.Value == perClip.Count).Select(x => x.Key)) L.Add($"   {m}");
         if (!allMods.Any(x => x.Value == perClip.Count)) L.Add("   (none)");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/chains.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/chains.txt", string.Join("\n", L));
 
         static string Short(IHavokObject n) => n.GetType().Name;
     }

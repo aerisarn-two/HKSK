@@ -34,7 +34,7 @@ public sealed class ZzIdles
         L.Add("== roots");
         foreach (var i in idles.Values.Where(i => i.RelatedIdles.Count == 0 || i.RelatedIdles[0].IsNull))
             L.Add($"{i.EditorID} ({i.AnimationEvent}) flags={i.Flags}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idles.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/idles.txt", string.Join("\n", L));
         foreach (var m in mods) m.Dispose();
     }
 }

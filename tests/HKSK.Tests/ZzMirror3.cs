@@ -75,6 +75,6 @@ public sealed class ZzMirror3
         L.Add("most anti:");
         foreach (var kv in with.OrderByDescending(k => (double)k.Value.Off / off - (double)k.Value.On / on).Take(10))
             L.Add($"  +{kv.Value.On,4}/{on}  {kv.Value.Off,4}/{off}  {kv.Key}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/mirror3.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/mirror3.txt", string.Join("\n", L));
     }
 }

@@ -53,6 +53,6 @@ public sealed class ZzQuad
             L.Add($"   writers : {(writers.Count == 0 ? "(none)" : string.Join("; ", writers.Distinct()))}");
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/quad.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/quad.txt", string.Join("\n", L));
     }
 }

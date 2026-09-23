@@ -70,6 +70,6 @@ public sealed class ZzIdleSets
             }
         }
         L.Insert(0, $"event-keyed sets {n}: exact {exact}, built ⊇ shipped {superset}, built ⊂ shipped {subset}, no transition {noEvent}, other {other}");
-        System.IO.File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idlesets" + (whole ? "-whole" : "") + (Environment.GetEnvironmentVariable("CHAIN") is null ? "" : "-chain") + ".txt", string.Join("\n", L));
+        System.IO.File.WriteAllText("/tmp/hksk-dumps/idlesets" + (whole ? "-whole" : "") + (Environment.GetEnvironmentVariable("CHAIN") is null ? "" : "-chain") + ".txt", string.Join("\n", L));
     }
 }

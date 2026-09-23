@@ -199,6 +199,6 @@ public sealed class ZzParents
         foreach (var r in rows.Where(r => r.OnePath != r.AnyPath || r.AnyPath != r.AllPaths).OrderBy(r => r.Project))
             L.Add($"   [{r.Flag}] {r.Project,-24} {r.Event,-34} one={r.OnePath,-5} any={r.AnyPath,-5} all={r.AllPaths}");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/parents.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/parents.txt", string.Join("\n", L));
     }
 }

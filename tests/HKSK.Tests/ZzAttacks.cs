@@ -149,6 +149,6 @@ public sealed class ZzAttacks
                 }
         }
         L.Insert(0, $"attacks {attacks}: exact {exact}, built is a superset {superset}, built is a subset {subset}, event has no transition {eventMissing}, other {attacks - exact - superset - subset - eventMissing}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/attacks-" + mode + ".txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/attacks-" + mode + ".txt", string.Join("\n", L));
     }
 }

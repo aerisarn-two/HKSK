@@ -39,6 +39,6 @@ public sealed class ZzMirror
         }
         var L = new List<string>();
         foreach (var kv in table.OrderBy(k => k.Key)) { L.Add($"{kv.Value,5}  {kv.Key}"); L.AddRange(ex[kv.Key].Select(x => "         " + x)); }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/mirror.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/mirror.txt", string.Join("\n", L));
     }
 }

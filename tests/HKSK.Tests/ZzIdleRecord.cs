@@ -23,6 +23,6 @@ public sealed class ZzIdleRecord
             }
         }
         L.Add($"idle records {total}, with a filename {withFile}; filenames: {string.Join(", ", filenames.OrderByDescending(k => k.Value).Take(15).Select(k => $"{k.Key} x{k.Value}"))}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idlerecord.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/idlerecord.txt", string.Join("\n", L));
     }
 }

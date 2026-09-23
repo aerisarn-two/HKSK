@@ -131,6 +131,6 @@ public sealed class ZzInside
             foreach (var line in best.Values.Select(v => v.Line).OrderBy(x => x, StringComparer.Ordinal)) L.Add("  " + line);
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/inside.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/inside.txt", string.Join("\n", L));
     }
 }

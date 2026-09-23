@@ -811,4 +811,61 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Equal(files.Count, files.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.StartsWith(@"behaviors\", files[0], StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// A skeleton already sitting where the project puts it is left alone rather than copied
+    /// onto itself, which is what assembling into a folder the skeleton was built in first
+    /// does -- and copying a file onto itself is an error, not nothing happening.
+    /// </summary>
+    [Fact]
+    public void ASkeletonAlreadyInPlaceIsNotCopiedOntoItself()
+    {
+        string folder = Path.Combine(_folder, "in place");
+        string rig = Path.Combine(folder, "character assets", "skeleton.hkx");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(rig)!);
+        File.WriteAllText(rig, "a skeleton, as far as this test is concerned");
+
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                rig,
+                [
+                    new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                ]),
+            folder);
+
+        Assert.Contains(Path.Combine("character assets", "skeleton.hkx"), made.Files);
+        Assert.Equal("a skeleton, as far as this test is concerned", File.ReadAllText(rig));
+    }
+
+    /// <summary>
+    /// The same for the animations, which a route that wrote them into the project's folder
+    /// before assembling it has already put where the project puts them.
+    /// </summary>
+    [Fact]
+    public void AnimationsAlreadyInPlaceAreNotCopiedOntoThemselves()
+    {
+        string folder = Path.Combine(_folder, "clips in place");
+        string clips = Path.Combine(folder, "animations");
+        Directory.CreateDirectory(clips);
+
+        foreach (string name in new[] { "Idle", "Walk" })
+            File.WriteAllText(Path.Combine(clips, name + ".hkx"), $"the {name}, as far as this test is concerned");
+
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                Placeholder("skeleton.hkx"),
+                [
+                    new RoledAnimation(Path.Combine(clips, "Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Path.Combine(clips, "Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                ]),
+            folder);
+
+        Assert.Equal("the Idle, as far as this test is concerned", File.ReadAllText(Path.Combine(clips, "Idle.hkx")));
+        Assert.Equal("the Walk, as far as this test is concerned", File.ReadAllText(Path.Combine(clips, "Walk.hkx")));
+        Assert.Contains(Path.Combine("animations", "Idle.hkx"), made.Files);
+    }
 }

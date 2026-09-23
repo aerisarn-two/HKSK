@@ -148,6 +148,6 @@ public sealed class ZzOverLoco
         L.Add("clear, over locomotion:");
         foreach (var r in rows.Where(r => r.Flag == 0 && r.Over).OrderBy(r => r.Project).Take(60)) L.Add($"   {r.Project,-26} {r.Event}");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/overloco.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/overloco.txt", string.Join("\n", L));
     }
 }

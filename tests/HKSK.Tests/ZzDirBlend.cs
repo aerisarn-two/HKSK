@@ -155,6 +155,6 @@ public sealed class ZzDirBlend
         foreach (var r in rows.Where(r => r.Flag == 0 && r.Depth >= 0).OrderBy(r => r.Depth).ThenBy(r => r.Project))
             L.Add($"   {r.Project,-24} {r.Event,-34} at {r.Depth}  {r.Who}");
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/dirblend.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/dirblend.txt", string.Join("\n", L));
     }
 }

@@ -12,6 +12,6 @@ public sealed class ZzIdleList
             using var mod = SkyrimMod.CreateFromBinaryOverlay(Path.Combine(Masters.DataFolder!, m), SkyrimRelease.SkyrimSE);
             foreach (var i in mod.IdleAnimations) if (!string.IsNullOrEmpty(i.AnimationEvent)) ev.Add(i.AnimationEvent);
         }
-        File.WriteAllLines("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/idle-events.txt", ev.OrderBy(e => e));
+        File.WriteAllLines("/tmp/hksk-dumps/idle-events.txt", ev.OrderBy(e => e));
     }
 }

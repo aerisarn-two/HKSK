@@ -226,6 +226,6 @@ public sealed class ZzAttacks2
         }
         L.Insert(0, $"attacks {attacks}: exact {exact}, built ⊇ shipped {superset}, built ⊂ shipped {subset}, no transition {missing}, other {attacks - exact - superset - subset - missing}");
         L.InsertRange(1, perProject);
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/attacks2" + (conditions ? "-cond" : "") + (Environment.GetEnvironmentVariable("ENGINE") is null ? "" : "-engine") + (Environment.GetEnvironmentVariable("ALLBOUND") is null ? "" : "-allbound") + (Environment.GetEnvironmentVariable("BLENDS") is null ? "" : "-blends") + ".txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/attacks2" + (conditions ? "-cond" : "") + (Environment.GetEnvironmentVariable("ENGINE") is null ? "" : "-engine") + (Environment.GetEnvironmentVariable("ALLBOUND") is null ? "" : "-allbound") + (Environment.GetEnvironmentVariable("BLENDS") is null ? "" : "-blends") + ".txt", string.Join("\n", L));
     }
 }

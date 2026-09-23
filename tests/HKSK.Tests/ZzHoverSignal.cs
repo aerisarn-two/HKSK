@@ -54,6 +54,6 @@ public sealed class ZzHoverSignal
             int flagged = p.Sets.Sets.SelectMany(s => s.Attacks.Attacks).Where(a => a.MovingAttack != 0).Select(a => a.EventName).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             if (speed == 0 || dirMax < 50) L.Add($"{p.Stem,-30} {speed,11} {dir,9} {dirClips,8} {dirMax,12:0} {param,11}  {flagged}/{attacks}");
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/hoversignal.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/hoversignal.txt", string.Join("\n", L));
     }
 }

@@ -62,6 +62,6 @@ public sealed class ZzMoving
         }
         var L = new List<string> { "feature: flag 1 / flag 0 (distinct attacks per project)" };
         foreach (var (k, v) in table) L.Add($"  {k,-40} {v.On,4} / {v.Off,4}   e.g. {string.Join(" ", v.Ex)}");
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/moving.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/moving.txt", string.Join("\n", L));
     }
 }

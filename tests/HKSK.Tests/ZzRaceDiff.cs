@@ -61,7 +61,7 @@ public sealed class ZzRaceDiff
                   $"{string.Join(" ", angles),24}  {string.Join(" | ", af)}");
         }
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/racediff.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/racediff.txt", string.Join("\n", L));
         foreach (var mod in mods) mod.Dispose();
     }
 }

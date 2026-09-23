@@ -33,6 +33,6 @@ public sealed class ZzDump
             if (a.Node is hkbClipGenerator cg) extra += $" flags={cg.m_flags} anim={cg.m_animationName}";
             L.Add($"{a.Node.GetType().Name} '{(a.Node as hkbNode)?.m_name}' via {a.Member}[{a.Index}] ({a.FileName}){extra}");
         }
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/dump.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/dump.txt", string.Join("\n", L));
     }
 }

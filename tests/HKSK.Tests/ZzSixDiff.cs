@@ -71,6 +71,6 @@ public sealed class ZzSixDiff
         Compare("character properties", v => v.Props);
         Compare("node classes used", v => v.Kinds);
 
-        File.WriteAllText("/tmp/claude-1000/-home-ecanepa-Dev-SKAssets/db8ab7eb-aee0-4d86-8209-2ec7ecaa14cd/scratchpad/asd/sixdiff.txt", string.Join("\n", L));
+        File.WriteAllText("/tmp/hksk-dumps/sixdiff.txt", string.Join("\n", L));
     }
 }
