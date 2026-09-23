@@ -426,8 +426,15 @@ shipped ones are leftovers of whatever template each creature was copied from.
 Two ways up, chosen by `iGetUpType`: getting up from a knock-down and being
 reanimated by a spell, and where a creature has only one the one answers for both.
 
+**Built.** The turn in place, made where it was not given. The plan says a turn is
+being synthesised (§3.1); the assembler then puts the idle's animation into two
+more slots called `TurnLeft` and `TurnRight`, hands each a one-second loop turning
+at the chosen rate one way and the other, and builds a state for each entered by
+`turnLeft` and `turnRight` and left on `turnStop`. Those two slots are appended
+after the animations the caller gave, since the order is the numbering.
+
 The rest of the modules of §1.1 are next: the combat stance and its equip
-transitions, the turn-in-place state, and the canned turns.
+transitions, and the canned turns.
 
 ### 4.1 Files
 

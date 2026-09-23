@@ -76,8 +76,11 @@ public sealed class CreatureAssemblerTests : IDisposable
         CharacterFile character = CharacterFile.Load(
             Path.Combine(Path.GetDirectoryName(made.ProjectPath)!, "characters", "Bonewalker.hkx"));
 
+        // The ones given come first and in order, because that order is their numbering.
+        // The two after them are the turn nobody animated, made from the idle.
         Assert.Equal(
-            [@"animations\Idle.hkx", @"animations\Walk.hkx", @"animations\Run.hkx"],
+            [@"animations\Idle.hkx", @"animations\Walk.hkx", @"animations\Run.hkx",
+             @"animations\TurnLeft.hkx", @"animations\TurnRight.hkx"],
             character.AnimationNames, StringComparer.OrdinalIgnoreCase);
 
         foreach (string animation in character.AnimationNames)
@@ -306,7 +309,9 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Contains("BonewalkerProject", cache.ProjectNames);
 
         ActorProject actor = Assert.IsType<ActorProject>(cache.OpenActor("BonewalkerProject"));
-        Assert.Equal(2, actor.Animations.Count);
+
+        // The two given, and the turn each way that was made from the idle.
+        Assert.Equal(4, actor.Animations.Count);
         Assert.Contains(actor.Clips, c => c.Name == "Idle");
         Assert.Contains(actor.Clips, c => c.Name == "WalkForward");
 
@@ -465,6 +470,49 @@ public sealed class CreatureAssemblerTests : IDisposable
             .Select(t => editor.EventName(t.m_event.m_id)).ToList();
         Assert.Contains("GetUpEnd", raised);
         Assert.Contains("AddCharacterControllerToWorld", raised);
+    }
+
+    /// <summary>
+    /// A creature nobody animated a turn for gets one: the idle in a slot of its own
+    /// with a turn on it, since root motion belongs to a slot and not to an animation.
+    /// </summary>
+    [Fact]
+    public void ACreatureWithNoTurnClipIsGivenOneEachWay()
+    {
+        string meshes = Path.Combine(_folder, "Meshes");
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 100f),
+            ],
+            ClipDurations: new Dictionary<string, float> { ["Walk"] = 1f },
+            TurnRate: 90f),
+            Path.Combine(meshes, "actors", "bonewalker"));
+
+        Assert.Contains(made.Plan.Synthesised, t => t.Contains("turn in place", StringComparison.Ordinal));
+        Assert.Contains(made.Notes, n => n.Contains("90 degrees a second", StringComparison.Ordinal));
+
+        // The engine asks for a turn by name and gets one.
+        string[] Clips(params string[] events) =>
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of(events))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+
+        Assert.Contains("TurnLeft", Clips("turnLeft"));
+        Assert.Contains("TurnRight", Clips("turnRight"));
+
+        // Each turn is the idle's animation in a slot of its own, going nowhere and
+        // turning, one way each.
+        CreatureInstaller.Install(made, meshes);
+        ActorProject actor = SkyrimCache.Load(meshes).OpenActor("BonewalkerProject")!;
+
+        HKSK.Cache.ClipMovement left = actor.Animations.Single(a => a.StoredName.Contains("TurnLeft")).Motion!;
+        HKSK.Cache.ClipMovement right = actor.Animations.Single(a => a.StoredName.Contains("TurnRight")).Motion!;
+
+        Assert.Equal(0f, left.Travel, 3);
+        Assert.Equal(90f, left.Turn * 180f / MathF.PI, 1);
+        Assert.Equal(left.Turn, right.Turn, 3);
+        Assert.True(left.Rotations[^1].Value.Z * right.Rotations[^1].Value.Z < 0, "they turn opposite ways");
     }
 
     [Fact]

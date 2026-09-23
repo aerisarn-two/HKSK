@@ -100,9 +100,28 @@ public static class CreatureAssembler
         }
         else notes.Add("no ragdoll was given, so the skeleton answers for both");
 
+        // ---- a turn in place, where nobody animated one. Root motion belongs to a
+        // slot and not to an animation, so the idle in a second slot with a turn on it
+        // is a creature that turns: the feet do not shuffle and everything else does.
+        var animations = spec.Animations.ToList();
+        if (plan.Synthesised.Count > 0 && animations.FirstOrDefault(a => a.Roles.Any(r => r.Kind == RoleKind.Idle)) is { } still)
+        {
+            float rate = spec.TurnRate ?? SyntheticMotion.ReasonableTurnRate(0f);
+
+            foreach ((string name, Side side, float degrees) in
+                     new[] { ("TurnLeft", Side.Left, rate), ("TurnRight", Side.Right, -rate) })
+                animations.Add(new RoledAnimation(
+                    still.Path,
+                    [new AnimationRole(RoleKind.TurnInPlace, Side: side)],
+                    Stack: name,
+                    TurnDegrees: degrees));
+
+            notes.Add($"a turn in place each way, made from the idle at {rate:F0} degrees a second");
+        }
+
         // ---- the animations, in the order given, which is their numbering
         var stored = new List<string>();
-        foreach (RoledAnimation animation in spec.Animations)
+        foreach (RoledAnimation animation in animations)
         {
             string relative = Path.Combine("animations", animation.Stem + ".hkx");
             if (stored.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
@@ -111,6 +130,7 @@ public static class CreatureAssembler
         }
 
         notes.Add($"{stored.Count} animations, numbered in the order they were given");
+        spec = spec with { Animations = animations };
 
         // ---- the behaviour
         var clips = new List<HKSK.Cache.ClipGeneratorEntry>();
@@ -178,6 +198,17 @@ public static class CreatureAssembler
 
         foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Stagger).Take(1))
             Once("Stagger", animation, "staggerStart", "staggerStop", "IsStaggering");
+
+        // ---- turning on the spot, which the engine asks for by name and leaves the
+        // same way. A creature without it turns by walking, which reads as a slide.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.TurnInPlace))
+        {
+            string which = role.Side == Side.Right ? "Right" : "Left";
+            hkbClipGenerator clip = Clip($"Turn{which}", animation, ClipMode.Looping);
+            var state = editor.State(situations, $"Turn{which}State", clip);
+            editor.Wildcard(situations, $"turn{which}", state, editor.Effect($"ToTurn{which}", BlendDefault));
+            editor.Transition(state, "turnStop", idle, editor.Effect($"FromTurn{which}", BlendDefault));
+        }
 
         // ---- getting back up. A knocked-down creature is lying in whatever pose its
         // ragdoll settled in, and the get-up clips each start from a different one, so
@@ -397,7 +428,13 @@ public static class CreatureAssembler
                 string.Equals(Path.GetFileNameWithoutExtension(animations[index]), a.Stem, StringComparison.OrdinalIgnoreCase));
             if (animation is null) continue;
 
-            float? seconds = spec.ClipDurations?.GetValueOrDefault(animation.Stem);
+            // A missing key gives zero rather than nothing, since a duration is a number,
+            // so the absence has to be asked about rather than defaulted through.
+            float? seconds = spec.ClipDurations?.TryGetValue(animation.Stem, out float given) == true ? given : null;
+
+            // A turn made rather than given is a loop of one second, so its degrees are
+            // the rate somebody chose.
+            seconds ??= animation.Roles.Any(r => r.Kind == RoleKind.TurnInPlace) ? 1f : null;
             if (animation.Speed is not { } speed && animation.TurnDegrees is not { } _) continue;
             if (seconds is not { } duration || duration <= 0)
             {
