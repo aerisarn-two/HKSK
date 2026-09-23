@@ -165,7 +165,9 @@ public static class CreatureAssembler
     private static void Situations(
         GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
         hkbStateMachine situations, hkbStateMachineStateInfo idle,
-        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip, List<string> notes)
+        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip,
+        Func<RoledAnimation, int> IndexOf,
+        List<HKSK.Cache.ClipGeneratorEntry> clips, List<string> notes)
     {
         var byRole = spec.Animations.SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r))).ToList();
 
@@ -228,6 +230,33 @@ public static class CreatureAssembler
             var state = editor.State(situations, $"Turn{which}State", clip);
             editor.Wildcard(situations, $"turn{which}", state, editor.Effect($"ToTurn{which}", BlendDefault));
             editor.Transition(state, "turnStop", idle, editor.Effect($"FromTurn{which}", BlendDefault));
+        }
+
+        // ---- the canned turns, which are a manoeuvre the AI asks for by name rather
+        // than a rate it asks for: turn ninety degrees left, turn about. Where a
+        // creature has none the events fall on the floor, as the witchlight's do.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.CannedTurn))
+        {
+            Side[] sides = role.Mirror
+                ? [Side.Left, Side.Right]
+                : [role.Side == Side.Right ? Side.Right : Side.Left];
+
+            foreach (Side side in sides)
+            {
+                int angle = role.Angle > 0 ? role.Angle : 90;
+                string name = $"CannedTurn{side}{angle}";
+                bool mirrored = role.Mirror && side != role.Side && role.Side != Side.None;
+
+                hkbClipGenerator clip = editor.Clip(
+                    name, System.IO.Path.Combine("Animations", animation.Stem + ".hkx"),
+                    ClipMode.SinglePlay, mirrored: mirrored);
+                editor.AddTrigger(clip, "cannedTurnStop");
+                clips.Add(new HKSK.Cache.ClipGeneratorEntry { Name = name, CacheIndex = IndexOf(animation) });
+
+                var state = editor.State(situations, $"{name}State", clip);
+                editor.Wildcard(situations, $"cannedTurn{side}{angle}", state, editor.Effect($"To{name}", BlendFast));
+                editor.Transition(state, "cannedTurnStop", idle, editor.Effect($"From{name}", BlendDefault));
+            }
         }
 
         // ---- getting back up. A knocked-down creature is lying in whatever pose its
@@ -632,13 +661,16 @@ public static class CreatureAssembler
             return editor.Clip(name, System.IO.Path.Combine("Animations", animation.Stem + ".hkx"), mode);
         }
 
+        int Index(RoledAnimation animation) => animations.ToList().FindIndex(a =>
+            string.Equals(a, System.IO.Path.Combine("animations", animation.Stem + ".hkx"), StringComparison.OrdinalIgnoreCase));
+
         // ---- the fourth layer first, because the ones above it hold it
         hkbGenerator locomotion = Locomotion(editor, spec, plan, Clip);
 
         // ---- the situation machine: what the creature is doing
         hkbStateMachine situations = editor.StateMachine(spec.Name + "SituationBehavior");
         var idling = editor.State(situations, "DefaultState", locomotion);
-        Situations(editor, spec, plan, situations, idling, Clip, notes);
+        Situations(editor, spec, plan, situations, idling, Clip, Index, clips, notes);
         editor.Graph.m_rootGenerator = Root(editor, spec, situations);
 
         return file;

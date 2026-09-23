@@ -443,7 +443,13 @@ copied, which is what a creature with a combat idle and nothing else gets.
 `weaponDraw` and `weaponSheathe` raising `weapEquipOut` and `weapUnequipOut`,
 which is what the engine waits for before it lets the creature attack.
 
-The canned turns are next, and then the quadruped and swimmer plans.
+**Built.** The canned turns, which are a manoeuvre the AI asks for by name -- turn
+ninety left, turn about -- rather than a rate it asks for. A clip marked to mirror
+serves both sides from one animation, the right being the left played mirrored,
+and a side given without a mirror gets that side only. Where a creature has none
+the events fall on the floor, as the witchlight's do.
+
+The quadruped and swimmer plans are next.
 
 ### 4.1 Files
 

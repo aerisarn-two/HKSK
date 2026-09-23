@@ -559,6 +559,50 @@ public sealed class CreatureAssemblerTests : IDisposable
             editor.EventName(editor.Require<hkbClipGenerator>("Equip").m_triggers!.m_triggers[0].m_event.m_id));
     }
 
+    /// <summary>
+    /// A canned turn is a manoeuvre the AI asks for by name -- turn ninety left, turn
+    /// about -- rather than a rate it asks for. One clip with a mirror serves both sides.
+    /// </summary>
+    [Fact]
+    public void OneCannedTurnClipCanServeBothSides()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                new RoledAnimation(Placeholder("Turn90.hkx"),
+                    [new AnimationRole(RoleKind.CannedTurn, Side: Side.Left, Angle: 90, Mirror: true)]),
+                new RoledAnimation(Placeholder("About.hkx"),
+                    [new AnimationRole(RoleKind.CannedTurn, Side: Side.Left, Angle: 180)]),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Contains(Module.CannedTurn, made.Plan.Modules);
+
+        string[] Clips(params string[] events) =>
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of(events))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+
+        Assert.Contains("CannedTurnLeft90", Clips("cannedTurnLeft90"));
+        Assert.Contains("CannedTurnRight90", Clips("cannedTurnRight90"));
+        Assert.Contains("CannedTurnLeft180", Clips("cannedTurnLeft180"));
+
+        // The right turn is the left one played mirrored, which is one clip serving two
+        // manoeuvres rather than two animations.
+        var editor = new GraphEditor(HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx")));
+
+        hkbClipGenerator left = editor.Require<hkbClipGenerator>("CannedTurnLeft90");
+        hkbClipGenerator right = editor.Require<hkbClipGenerator>("CannedTurnRight90");
+        Assert.Equal(left.m_animationName, right.m_animationName);
+        Assert.Equal(0, left.m_flags & 4);
+        Assert.Equal(4, right.m_flags & 4);
+
+        // The turn about was given for one side only, so only that side has one.
+        Assert.Empty(Clips("cannedTurnRight180").Where(c => c.StartsWith("CannedTurn", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {
