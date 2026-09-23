@@ -75,6 +75,23 @@ public sealed class RoleReaderTests
     [InlineData("")]
     public void ANameItDoesNotKnowGetsNoRole(string name) => Assert.Empty(RoleReader.Of(name).Roles);
 
+    /// <summary>
+    /// A side and a heading are two different questions, and only some roles are asked
+    /// the first. A walk to the left is a heading; a turn to the left is a side. A walk
+    /// given both reads as a quadruped's steering clip, which turns a strafing biped
+    /// into an animal that cannot strafe.
+    /// </summary>
+    [Fact]
+    public void AWalkToTheLeftHasAHeadingAndNoSide()
+    {
+        AnimationRole walk = One("WalkLeft");
+        Assert.Equal(Heading.Left, walk.Heading);
+        Assert.Equal(Side.None, walk.Side);
+
+        AnimationRole turn = One("TurnLeft90");
+        Assert.Equal(Side.Left, turn.Side);
+    }
+
     /// <summary>And it says which part of the name it read, for a person to check.</summary>
     [Fact]
     public void ItSaysWhatItRead()

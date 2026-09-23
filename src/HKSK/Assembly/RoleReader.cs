@@ -91,7 +91,15 @@ public static class RoleReader
         if (kind is not { } found) return new ReadRole([], "");
 
         Heading heading = Bearing(lower);
-        Side side = Which(lower);
+
+        // A side and a heading are two different questions, and only some roles are
+        // asked the first. A walk to the left is a heading; a turn to the left is a
+        // side; and a walk given both reads as a quadruped's steering clip, which turns
+        // a strafing biped into an animal that cannot strafe.
+        Side side = found is RoleKind.TurnInPlace or RoleKind.CannedTurn or RoleKind.Attack
+                        or RoleKind.PowerAttack or RoleKind.Recoil or RoleKind.Stagger
+            ? Which(lower)
+            : Side.None;
         int angle = found == RoleKind.CannedTurn ? Degrees(lower) : 0;
         Stance stance = lower.Contains("combat") || lower.Contains("sword") || lower.Contains("hold")
             ? Stance.Combat : Stance.Default;
