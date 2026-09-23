@@ -89,6 +89,17 @@ public sealed class ZzBuildSkeleton
 
             sb.AppendLine(done.ToString());
             foreach (WrittenClip clip in done.Clips) sb.AppendLine($"  {clip}");
+
+            sb.AppendLine();
+            sb.AppendLine("--- what each clip is, and whether its feet agree");
+            RoledClips read = ClipRoles.Of(done);
+            sb.AppendLine(read.ToString());
+            foreach (RoledClip clip in read.Clips)
+                sb.AppendLine($"  {clip.Clip.Name,-16} {clip.Animation.Roles.FirstOrDefault()?.ToString() ?? "(nothing)"}" +
+                              $"  speed={(clip.Animation.Speed is { } v ? $"{v:0.#}" : "-")}" +
+                              (clip.Disagreement is null ? "" : $"  !! {clip.Disagreement}"));
+
+            foreach (string note in read.Unmeasured) sb.AppendLine($"  ?? {note}");
         }
 
         File.WriteAllText(Path.Combine(outDir, "built-skeleton.txt"), sb.ToString());
