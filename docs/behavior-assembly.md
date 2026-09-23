@@ -379,7 +379,17 @@ The engine driven through it reaches the idle at rest and the locomotion on
 written, since the rungs blend on what the sampler writes and the sampler reads
 the request through that table.
 
-The modules of §1.1, the set data and the speed table are next.
+It also returns the **movement type the clips describe**, since the record is
+authored from them and not the other way round (§1.3): a heading's walk speed is
+that heading's walk clip's delivered speed. A heading that walks and cannot run
+runs at the speed it walks, which is what the 88 shipped records that walk and
+run at one speed are; a heading with no clip at all takes the forward one. What
+the clips cannot give -- the three rotation rates and the anim-change thresholds
+-- stays the caller's.
+
+The modules of §1.1, the set data and the speed table are next. The table is what
+closes the loop: until it exists the sampler has nothing to look a request up in,
+so an assembled creature has a compass it cannot climb.
 
 ### 4.1 Files
 

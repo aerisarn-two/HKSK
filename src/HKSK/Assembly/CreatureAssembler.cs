@@ -126,7 +126,75 @@ public static class CreatureAssembler
         // ---- the row the game reads the creature's animation out of
         HKSK.Cache.AnimationDataProject cache = CacheRow(spec, stored, clips, [project, character, behaviour, rig, ragdoll], notes);
 
-        return new AssemblyResult(Path.Combine(outputFolder, project), plan, files, cache, notes);
+        // ---- and what its movement type has to say, which the clips decide
+        HKSK.Speed.MovementType movement = Movement(spec, notes);
+
+        return new AssemblyResult(Path.Combine(outputFolder, project), plan, files, cache, movement, notes);
+    }
+
+    /// <summary>
+    /// The movement type the creature's clips describe.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The record is authored from the clips and not the other way round
+    /// (<c>docs/speed-data.md</c> §7.2): a heading's walk speed is that heading's walk
+    /// clip's delivered speed, and its run speed the run clip's. The falmer states a
+    /// forward walk of 100.44 and a forward run of 175.77, and the rungs of the ladder
+    /// its records are sampled from sit at 5, 100.442 and 175.774 -- the record is the
+    /// rungs, written down.
+    /// </para>
+    /// <para>
+    /// A heading with no clip of its own takes the forward speed, and a gait with no
+    /// clip takes the other gait's, which is what the 88 shipped records that walk and
+    /// run at one speed look like. What the clips cannot give is the record's three
+    /// rotation rates, which are gameplay constants by family, and its anim-change
+    /// thresholds, which are FLT_MAX on 88 of the 106 shipped records.
+    /// </para>
+    /// </remarks>
+    private static HKSK.Speed.MovementType Movement(CreatureSpec spec, List<string> notes)
+    {
+        float Delivered(Heading heading, params RoleKind[] gaits)
+        {
+            foreach (RoleKind gait in gaits)
+                foreach (RoledAnimation animation in spec.Animations)
+                    if (animation.Speed is { } speed && speed > 0
+                        && animation.Roles.Any(r => r.Kind == gait && r.Heading == heading))
+                        return speed;
+
+            return 0f;
+        }
+
+        float forwardWalk = Delivered(Heading.Forward, RoleKind.Walk, RoleKind.Trot);
+        float forwardRun = Delivered(Heading.Forward, RoleKind.Run, RoleKind.Sprint);
+        if (forwardRun <= 0) forwardRun = forwardWalk;
+        if (forwardWalk <= 0) forwardWalk = forwardRun;
+
+        // A heading with a clip of its own is that clip. A heading that walks and cannot
+        // run runs at the speed it walks, which is what the 88 shipped records that walk
+        // and run at one speed are. A heading with nothing at all takes the forward one.
+        float Either(Heading heading, bool run)
+        {
+            float walk = Delivered(heading, RoleKind.Walk, RoleKind.Trot);
+            float ran = Delivered(heading, RoleKind.Run, RoleKind.Sprint);
+
+            return run
+                ? ran > 0 ? ran : walk > 0 ? walk : forwardRun
+                : walk > 0 ? walk : ran > 0 ? ran : forwardWalk;
+        }
+
+        var type = new HKSK.Speed.MovementType(
+            spec.MovementTypeName,
+            forwardWalk, forwardRun,
+            Either(Heading.Back, false), Either(Heading.Back, true),
+            Either(Heading.Left, false), Either(Heading.Left, true),
+            Either(Heading.Right, false), Either(Heading.Right, true));
+
+        notes.Add(forwardWalk > 0
+            ? $"the movement type the clips describe: {type}"
+            : "no clip says how fast it carries the creature, so the movement type is all zeros");
+
+        return type;
     }
 
     /// <summary>

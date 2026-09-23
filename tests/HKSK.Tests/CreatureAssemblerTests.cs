@@ -241,6 +241,40 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.IsType<hkbClipGenerator>(compass.m_children[1].m_generator);
     }
 
+    /// <summary>
+    /// The movement type is authored from the clips and not the other way round: a
+    /// heading's walk speed is that heading's walk clip's, and the ladder's rungs are
+    /// the record, written down.
+    /// </summary>
+    [Fact]
+    public void TheMovementTypeIsTheSpeedsTheClipsDeliver()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 100f),
+                new RoledAnimation(Placeholder("Run.hkx"), [new AnimationRole(RoleKind.Run, Heading.Forward)], Speed: 175f),
+                new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)], Speed: 40f),
+            ],
+            MovementTypeName: "BonewalkerDefault"),
+            Path.Combine(_folder, "out"));
+
+        HKSK.Speed.MovementType movement = made.Movement;
+        Assert.Equal("BonewalkerDefault", movement.Name);
+        Assert.Equal(100f, movement.ForwardWalk);
+        Assert.Equal(175f, movement.ForwardRun);
+
+        // The back walk is its own; its run has no clip, so it walks at the speed it walks.
+        Assert.Equal(40f, movement.BackWalk);
+        Assert.Equal(40f, movement.BackRun);
+
+        // Nothing steps sideways, so the sides take the forward speeds.
+        Assert.Equal(100f, movement.LeftWalk);
+        Assert.Equal(175f, movement.RightRun);
+        Assert.False(movement.OneGait, "it walks at 100 and runs at 175");
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

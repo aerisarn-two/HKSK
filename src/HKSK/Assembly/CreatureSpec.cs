@@ -47,10 +47,16 @@ public sealed record CreatureSpec(
 /// numbering, and the root motion of every slot that has any. A caller merges this
 /// into the game's <c>animationdatasinglefile.txt</c>.
 /// </param>
+/// <param name="Movement">
+/// The movement type the creature's clips describe, for the <c>MOVT</c> record a caller
+/// then writes. Its eight speeds are the clips', because the record is authored from
+/// them and not the other way round.
+/// </param>
 /// <param name="Notes">What was decided along the way.</param>
 public sealed record AssemblyResult(
     string ProjectPath,
     CreaturePlan Plan,
     IReadOnlyList<string> Files,
     HKSK.Cache.AnimationDataProject Cache,
+    HKSK.Speed.MovementType Movement,
     IReadOnlyList<string> Notes);
