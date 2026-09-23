@@ -51,6 +51,41 @@ public static class SyntheticMotion
         };
     }
 
+    /// <summary>A straight line forward, going at a speed somebody chose.</summary>
+    /// <param name="seconds">How long the clip runs for.</param>
+    /// <param name="unitsPerSecond">How fast it carries the creature.</param>
+    /// <param name="heading">
+    /// Which way, in degrees clockwise from straight ahead: 0 forward, 180 back,
+    /// -90 and 90 the two sides.
+    /// </param>
+    /// <param name="cacheIndex">The slot the motion belongs to.</param>
+    /// <remarks>
+    /// An animation made for an engine that moves the actor itself carries no travel:
+    /// a skeleton bought from a marketplace walks 0.33 units over its whole walk cycle
+    /// and runs 10 over its run, which is hip sway and not locomotion. Skyrim moves an
+    /// actor from this block, so a clip without one is a creature that slides. The
+    /// travel is therefore authored the same way the turn is, and for the same reason:
+    /// it lives in the cache rather than in the animation, so it can be.
+    /// </remarks>
+    public static ClipMovement Travel(float seconds, float unitsPerSecond, float heading = 0f, int cacheIndex = 0)
+    {
+        if (seconds <= 0) throw new ArgumentOutOfRangeException(nameof(seconds), seconds, "a clip runs for some time");
+
+        float radians = heading * MathF.PI / 180f;
+        float distance = unitsPerSecond * seconds;
+
+        // The creature faces +Y, so forward is +Y and a heading turns away from it.
+        var displacement = new Vector3(distance * MathF.Sin(radians), distance * MathF.Cos(radians), 0f);
+
+        return new ClipMovement
+        {
+            CacheIndex = cacheIndex,
+            Duration = seconds,
+            Translations = [new TranslationKey(seconds, displacement)],
+            Rotations = [],
+        };
+    }
+
     /// <summary>
     /// A turn rate a creature of this size can be asked for, in degrees a second.
     /// </summary>

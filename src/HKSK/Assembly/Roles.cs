@@ -81,7 +81,22 @@ public sealed record AnimationRole(
 /// <param name="Stack">
 /// The stack meant, for an FBX that holds more than one. Null takes the file's own.
 /// </param>
-public sealed record RoledAnimation(string Path, IReadOnlyList<AnimationRole> Roles, string? Stack = null)
+/// <param name="Speed">
+/// How fast this clip should carry the creature, in units a second, where the
+/// animation does not say. Root motion lives in the cache rather than in the
+/// animation, so a clip made for an engine that moves the actor itself -- which
+/// carries no travel at all -- can still be given some here.
+/// </param>
+/// <param name="TurnDegrees">
+/// How far this clip should turn the creature, signed, where the animation does not
+/// say. Left is positive, on the same reading as the shipped clips.
+/// </param>
+public sealed record RoledAnimation(
+    string Path,
+    IReadOnlyList<AnimationRole> Roles,
+    string? Stack = null,
+    float? Speed = null,
+    float? TurnDegrees = null)
 {
     /// <summary>The name this animation is known by, which is its file's stem.</summary>
     public string Stem => Stack ?? Path.GetFileStem();

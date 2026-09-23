@@ -124,6 +124,49 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Contains("RunForward", Clips(Events.Of("moveStart"), 3f));
     }
 
+    /// <summary>
+    /// The cache row restates the graph, and holds the one thing that is nowhere else:
+    /// where each animation carries the creature.
+    /// </summary>
+    [Fact]
+    public void TheCacheRowNumbersTheClipsAndHoldsTheMotion()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                Placeholder("skeleton.hkx"),
+                [
+                    new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 90f),
+                    new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)], Speed: 40f),
+                ],
+                ClipDurations: new Dictionary<string, float> { ["Walk"] = 1f, ["Back"] = 2f }),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal("BonewalkerProject.txt", made.Cache.Name);
+        Assert.True(made.Cache.Block.HasAnimationCache);
+        Assert.Contains(@"behaviors\BonewalkerBehavior.hkx", made.Cache.Block.Files, StringComparer.OrdinalIgnoreCase);
+
+        // Every clip the graph plays is restated against the position of its animation.
+        var byName = made.Cache.Block.Clips.ToDictionary(c => c.Name, c => c.CacheIndex);
+        Assert.Equal(0, byName["Idle"]);
+        Assert.Equal(1, byName["WalkForward"]);
+
+        // The walk goes 90 units in its one second, forward, which is +Y.
+        HKSK.Cache.ClipMovement walk = made.Cache.Movements!.Movements.Single(m => m.CacheIndex == 1);
+        Assert.Equal(90f, walk.Travel, 1);
+        Assert.True(walk.Translations[^1].Value.Y > 89f, "forward is +Y");
+
+        // The back walk goes the other way, and 40 a second for two seconds is 80.
+        HKSK.Cache.ClipMovement back = made.Cache.Movements.Movements.Single(m => m.CacheIndex == 2);
+        Assert.Equal(80f, back.Travel, 1);
+        Assert.True(back.Translations[^1].Value.Y < -79f, "back is -Y");
+
+        // The idle was given no speed, so it carries the creature nowhere and has no block.
+        Assert.DoesNotContain(made.Cache.Movements.Movements, m => m.CacheIndex == 0);
+        Assert.Contains(made.Notes, n => n.Contains("the motion they are to carry", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

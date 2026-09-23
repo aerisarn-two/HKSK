@@ -113,7 +113,8 @@ public static class CreatureAssembler
         notes.Add($"{stored.Count} animations, numbered in the order they were given");
 
         // ---- the behaviour
-        var built = BuildGraph(spec, plan, stored, notes);
+        var clips = new List<HKSK.Cache.ClipGeneratorEntry>();
+        var built = BuildGraph(spec, plan, stored, notes, clips);
         Write(behaviour, built.Save);
 
         // ---- the character, which is what says where all of it is
@@ -122,7 +123,97 @@ public static class CreatureAssembler
         // ---- the project, which is what a race names
         Write(project, to => Project(character).Save(to));
 
-        return new AssemblyResult(Path.Combine(outputFolder, project), plan, files, notes);
+        // ---- the row the game reads the creature's animation out of
+        HKSK.Cache.AnimationDataProject cache = CacheRow(spec, stored, clips, [project, character, behaviour, rig, ragdoll], notes);
+
+        return new AssemblyResult(Path.Combine(outputFolder, project), plan, files, cache, notes);
+    }
+
+    /// <summary>
+    /// The creature's row in the animation cache.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The cache restates what the behaviour and the character files already say -- the
+    /// files the project is made of, and every clip generator with the position of its
+    /// animation in the character's list -- so that the game can read them without
+    /// loading a packfile. It also holds the one thing that is nowhere else: where each
+    /// animation carries the creature.
+    /// </para>
+    /// <para>
+    /// Havok has a place for root motion in the animation and Skyrim leaves it null on
+    /// every clip in the game, so the block written here is the only statement of it.
+    /// A clip that should move and has no motion is a clip the engine plays in place,
+    /// which is why the speed a caller gives is turned into travel here rather than
+    /// hoped for from the animation.
+    /// </para>
+    /// </remarks>
+    private static HKSK.Cache.AnimationDataProject CacheRow(
+        CreatureSpec spec,
+        IReadOnlyList<string> animations,
+        IReadOnlyList<HKSK.Cache.ClipGeneratorEntry> clips,
+        IReadOnlyList<string> files,
+        List<string> notes)
+    {
+        var block = new HKSK.Cache.ProjectBlock
+        {
+            HasFiles = true,
+            HasAnimationCache = true,
+            Files = [.. files.Select(f => f.Replace('/', '\\'))],
+            Clips = [.. clips],
+        };
+
+        var movements = new HKSK.Cache.ProjectDataBlock();
+        int authored = 0, measured = 0;
+
+        for (int index = 0; index < animations.Count; index++)
+        {
+            RoledAnimation? animation = spec.Animations.FirstOrDefault(a =>
+                string.Equals(Path.GetFileNameWithoutExtension(animations[index]), a.Stem, StringComparison.OrdinalIgnoreCase));
+            if (animation is null) continue;
+
+            float? seconds = spec.ClipDurations?.GetValueOrDefault(animation.Stem);
+            if (animation.Speed is not { } speed && animation.TurnDegrees is not { } _) continue;
+            if (seconds is not { } duration || duration <= 0)
+            {
+                notes.Add($"'{animation.Stem}' was given a speed and no duration, so it carries the creature nowhere");
+                continue;
+            }
+
+            HKSK.Cache.ClipMovement motion = animation.TurnDegrees is { } degrees && animation.Speed is null
+                ? SyntheticMotion.TurnInPlace(duration, degrees, index)
+                : SyntheticMotion.Travel(duration, animation.Speed ?? 0f, Bearing(animation), index);
+
+            if (animation.TurnDegrees is { } both && animation.Speed is not null)
+                motion.Rotations = SyntheticMotion.TurnInPlace(duration, both, index).Rotations;
+
+            movements.Movements.Add(motion);
+            authored++;
+        }
+
+        if (authored > 0) notes.Add($"{authored} animations were given the motion they are to carry, which no animation file holds");
+        if (measured > 0) notes.Add($"{measured} animations carried their own motion");
+
+        return new HKSK.Cache.AnimationDataProject
+        {
+            Name = spec.Name + "Project.txt",
+            Block = block,
+            Movements = movements,
+        };
+
+        static float Bearing(RoledAnimation animation) =>
+            animation.Roles.Select(r => r.Heading).FirstOrDefault(h => h != Heading.None) switch
+            {
+                Heading.Forward => 0f,
+                Heading.ForwardRight => 45f,
+                Heading.Right => 90f,
+                Heading.BackRight => 135f,
+                Heading.Back => 180f,
+                Heading.BackLeft => -135f,
+                Heading.Left => -90f,
+                Heading.ForwardLeft => -45f,
+                _ => 0f,
+            };
     }
 
     /// <summary>
@@ -194,7 +285,8 @@ public static class CreatureAssembler
     /// The graph: the names the engine speaks through, then the four layers.
     /// </summary>
     private static HavokFile BuildGraph(
-        CreatureSpec spec, CreaturePlan plan, IReadOnlyList<string> animations, List<string> notes)
+        CreatureSpec spec, CreaturePlan plan, IReadOnlyList<string> animations, List<string> notes,
+        List<HKSK.Cache.ClipGeneratorEntry> clips)
     {
         var strings = new hkbBehaviorGraphStringData
         {
@@ -249,7 +341,7 @@ public static class CreatureAssembler
         notes.Add($"{editor.Strings.m_variableNames.Count} variables and {editor.Strings.m_eventNames.Count} events declared");
 
         // ---- the fourth layer first, because the ones above it hold it
-        hkbGenerator locomotion = Locomotion(editor, spec, plan);
+        hkbGenerator locomotion = Locomotion(editor, spec, plan, animations, clips);
 
         // ---- the situation machine: what the creature is doing
         hkbStateMachine situations = editor.StateMachine(spec.Name + "SituationBehavior");
@@ -283,16 +375,26 @@ public static class CreatureAssembler
     /// The locomotion plan the animations chose: what the creature does while standing
     /// still, and what it does while moving.
     /// </summary>
-    private static hkbGenerator Locomotion(GraphEditor editor, CreatureSpec spec, CreaturePlan plan)
+    private static hkbGenerator Locomotion(
+        GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
+        IReadOnlyList<string> animations, List<HKSK.Cache.ClipGeneratorEntry> clips)
     {
+        // A clip's cache index is the position of its animation in the character's
+        // list, and the cache restates every generator by name against it.
+        hkbClipGenerator Clip(string name, RoledAnimation animation, ClipMode mode)
+        {
+            string relative = System.IO.Path.Combine("animations", animation.Stem + ".hkx");
+            int index = animations.ToList().FindIndex(a => string.Equals(a, relative, StringComparison.OrdinalIgnoreCase));
+            clips.Add(new HKSK.Cache.ClipGeneratorEntry { Name = name, CacheIndex = index });
+            return editor.Clip(name, System.IO.Path.Combine("Animations", animation.Stem + ".hkx"), mode);
+        }
+
         var byRole = spec.Animations
             .SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r)))
             .ToList();
 
-        string Path(RoledAnimation a) => System.IO.Path.Combine("Animations", a.Stem + ".hkx");
-
         RoledAnimation idle = byRole.First(r => r.Role.Kind == RoleKind.Idle).Animation;
-        hkbGenerator standing = editor.Clip("Idle", Path(idle), ClipMode.Looping);
+        hkbGenerator standing = Clip("Idle", idle, ClipMode.Looping);
 
         var forward = byRole
             .Where(r => r.Role.Kind is RoleKind.Walk or RoleKind.Run or RoleKind.Trot or RoleKind.Sprint)
@@ -303,7 +405,7 @@ public static class CreatureAssembler
         // and its rungs are the gaits in the order they carry the creature.
         var rungs = new List<(hkbGenerator Child, float Weight)>();
         foreach (var (animation, role) in forward.OrderBy(r => Rank(r.Role.Kind)))
-            rungs.Add((editor.Clip($"{role.Kind}Forward", Path(animation), ClipMode.Looping), Rank(role.Kind)));
+            rungs.Add((Clip($"{role.Kind}Forward", animation, ClipMode.Looping), Rank(role.Kind)));
 
         hkbGenerator moving = rungs.Count == 1
             ? rungs[0].Child

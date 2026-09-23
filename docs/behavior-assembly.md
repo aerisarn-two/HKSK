@@ -92,6 +92,20 @@ Measured over the 46 creatures (`docs/creature-patterns-research.md`):
 
 ### 1.3 What is not in the graph and has to be supplied
 
+- **Root motion, where the animation has none.** An animation made for an engine
+  that moves the actor in code carries no travel: a skeleton bought from a
+  marketplace goes 0.33 units over its whole walk cycle, which is hip sway. Since
+  the motion lives in the cache rather than in the animation it can simply be
+  authored, and there are two ways to arrive at the number. A caller may state the
+  speed a clip should deliver, which `SyntheticMotion.Travel` turns into a
+  displacement. Or it may be **read off the feet**: a foot on the ground does not
+  move, the world moves past it, so the planted foot slides backwards at exactly
+  the speed the creature should travel forwards (`HKFBX.Model.FootMotion`). On the
+  marketplace skeleton that reads the idle at no travel and full confidence, the
+  run at 160 units a second, the walks at 71 and 50 and the side-steps at 90
+  degrees either way. Only travel can be read this way and never turn, since one
+  planted foot cannot tell walking forward from turning about a distant centre; a
+  turn is authored (§3.1).
 - **The ladder rungs** are the movement type's walk and run speed per heading
   (`MovementType`, eight numbers), and **the movement type is authored from the
   clips, not the other way round** (`docs/speed-data.md` §7.2): walk on a heading
@@ -445,6 +459,11 @@ imported with decides what its clip can do:
 
 `Plan` reports every role in the first two rows whose animation carries no root
 track, as a warning, and the cache row is still written.
+
+**Being built.** `Assemble` returns the creature's `AnimationDataProject`: the file
+list, every clip generator against the position of its animation, and a movement
+block for each slot that carries the creature anywhere. A caller merges it into
+the game's `animationdatasinglefile.txt`.
 
 ### 4.3 The cache rows
 

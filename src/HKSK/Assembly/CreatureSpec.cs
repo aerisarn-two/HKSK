@@ -20,6 +20,11 @@ namespace HKSK.Assembly;
 /// What the creature's movement type is called, which the graph declares as
 /// <c>iState_&lt;name&gt;</c> and the speed table is keyed on.
 /// </param>
+/// <param name="ClipDurations">
+/// How long each animation runs for, by its stem, where the assembler cannot read it.
+/// A duration is what turns a speed into a travel, so a clip with a speed and no
+/// duration cannot be given root motion.
+/// </param>
 /// <param name="TurnRate">
 /// Degrees a second for a turn in place that has to be made rather than given. Null
 /// reads one off the creature's height.
@@ -30,15 +35,22 @@ public sealed record CreatureSpec(
     IReadOnlyList<RoledAnimation> Animations,
     string? RagdollPath = null,
     string MovementTypeName = "Default",
+    IReadOnlyDictionary<string, float>? ClipDurations = null,
     float? TurnRate = null);
 
 /// <summary>What was assembled.</summary>
 /// <param name="ProjectPath">The project packfile, which is what a race names.</param>
 /// <param name="Plan">What the animations were read as.</param>
 /// <param name="Files">Everything written, relative to the output folder.</param>
+/// <param name="Cache">
+/// The creature's row for the animation cache: its file list, its clips and their
+/// numbering, and the root motion of every slot that has any. A caller merges this
+/// into the game's <c>animationdatasinglefile.txt</c>.
+/// </param>
 /// <param name="Notes">What was decided along the way.</param>
 public sealed record AssemblyResult(
     string ProjectPath,
     CreaturePlan Plan,
     IReadOnlyList<string> Files,
+    HKSK.Cache.AnimationDataProject Cache,
     IReadOnlyList<string> Notes);
