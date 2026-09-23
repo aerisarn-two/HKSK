@@ -603,6 +603,49 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Empty(Clips("cannedTurnRight180").Where(c => c.StartsWith("CannedTurn", StringComparison.Ordinal)));
     }
 
+    /// <summary>
+    /// A biped strafes and a quadruped steers, so a quadruped's ladder has a rung per
+    /// gait and each rung is three clips blended on how hard it is being asked to turn.
+    /// </summary>
+    [Fact]
+    public void AQuadrupedSteersInsteadOfStrafing()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonehound", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 60f),
+                new RoledAnimation(Placeholder("WalkL.hkx"),
+                    [new AnimationRole(RoleKind.Walk, Heading.Forward, Side: Side.Left)], Speed: 60f, TurnDegrees: 75f),
+                new RoledAnimation(Placeholder("WalkR.hkx"),
+                    [new AnimationRole(RoleKind.Walk, Heading.Forward, Side: Side.Right)], Speed: 60f, TurnDegrees: -75f),
+                new RoledAnimation(Placeholder("Run.hkx"), [new AnimationRole(RoleKind.Run, Heading.Forward)], Speed: 300f),
+                new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)], Speed: 30f),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal(LocomotionPlan.Quadruped, made.Plan.Locomotion);
+
+        var editor = new GraphEditor(HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonehoundBehavior.hkx")));
+
+        // Each rung steers: bearing left, straight on, bearing right, on the damped turn.
+        hkbBlenderGenerator walk = editor.Require<hkbBlenderGenerator>("BonehoundWalkBlend");
+        Assert.Equal([75f, 0f, -75f], walk.m_children.Select(c => c.m_weight));
+        Assert.Equal("TurnDeltaDamped",
+            editor.Strings.m_variableNames[walk.m_variableBindingSet!.m_bindings.Single().m_variableIndex]);
+
+        // And the ladder is the gaits, at the speeds their clips deliver.
+        hkbBlenderGenerator ladder = editor.Require<hkbBlenderGenerator>("BonehoundForwardBlend");
+        Assert.Equal([60f, 300f], ladder.m_children.Select(c => c.m_weight));
+
+        // Backing up is a state of its own, not an arm of anything.
+        string[] backing =
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of("moveBackward"))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+        Assert.Contains("WalkBackward", backing);
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

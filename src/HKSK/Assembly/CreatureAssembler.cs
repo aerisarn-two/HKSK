@@ -153,6 +153,78 @@ public static class CreatureAssembler
     }
 
     /// <summary>
+    /// The quadruped plan: a ladder whose every rung steers.
+    /// </summary>
+    /// <remarks>
+    /// A biped strafes and a quadruped does not. So where a biped's compass has an arm
+    /// per heading, a quadruped's ladder has a rung per gait and each rung is three
+    /// clips -- bearing left, straight on, bearing right -- blended on how hard the
+    /// engine is asking it to turn. Backward is a state of its own rather than an arm,
+    /// because an animal backing up is doing something else entirely.
+    ///
+    /// The arms of a steering blend are the rates its clips actually turn at, and the
+    /// rungs are the speeds its clips actually deliver, both at the rate the generator
+    /// plays them. An arm put anywhere else is a creature that turns a fraction of what
+    /// it was asked for, or slides.
+    /// </remarks>
+    private static hkbGenerator Steering(
+        GraphEditor editor, CreatureSpec spec,
+        IReadOnlyList<(RoledAnimation Animation, AnimationRole Role)> gaits,
+        hkbGenerator standing,
+        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip,
+        string tag)
+    {
+        var forward = gaits.Where(g => g.Role.Heading == Heading.Forward).ToList();
+        var rungs = new List<(hkbGenerator Child, float Weight)>();
+
+        foreach (RoleKind gait in new[] { RoleKind.Walk, RoleKind.Trot, RoleKind.Run, RoleKind.Sprint })
+        {
+            var ofGait = forward.Where(g => g.Role.Kind == gait).ToList();
+            if (ofGait.Count == 0) continue;
+
+            (RoledAnimation Animation, AnimationRole Role) Bearing(Side side) =>
+                ofGait.FirstOrDefault(g => g.Role.Side == side, ofGait.First(g => g.Role.Side == Side.None));
+
+            var straight = ofGait.First(g => g.Role.Side == Side.None);
+            var left = Bearing(Side.Left);
+            var right = Bearing(Side.Right);
+
+            float Turn(RoledAnimation animation, float fallback) =>
+                animation.TurnDegrees ?? spec.TurnRate ?? fallback;
+
+            hkbGenerator steering = editor.Blend($"{spec.Name}{tag}{gait}Blend", "TurnDeltaDamped",
+                (Clip($"{tag}{gait}ForwardLeft", left.Animation, ClipMode.Looping), MathF.Abs(Turn(left.Animation, 90f))),
+                (Clip($"{tag}{gait}Forward", straight.Animation, ClipMode.Looping), 0f),
+                (Clip($"{tag}{gait}ForwardRight", right.Animation, ClipMode.Looping), -MathF.Abs(Turn(right.Animation, 90f))));
+
+            rungs.Add((steering, straight.Animation.Speed ?? 0f));
+        }
+
+        hkbGenerator moving = rungs.Count == 1
+            ? rungs[0].Child
+            : editor.Blend($"{spec.Name}{tag}ForwardBlend", "SpeedSampled", [.. rungs]);
+
+        hkbStateMachine machine = editor.StateMachine($"{spec.Name}{tag}LocomotionBehavior");
+        var still = editor.State(machine, $"{tag}StandingState", standing);
+        var going = editor.State(machine, $"{tag}MovingState", moving);
+
+        editor.Transition(still, "moveStart", going, editor.Effect($"{tag}MoveStart", BlendDefault));
+        editor.Transition(going, "moveStop", still, editor.Effect($"{tag}MoveStop", BlendDefault));
+
+        // Backing up is its own state, not an arm of the compass, because an animal
+        // doing it is doing something other than walking in another direction.
+        var back = gaits.FirstOrDefault(g => g.Role.Heading == Heading.Back);
+        if (back.Animation is not null)
+        {
+            var backing = editor.State(machine, $"{tag}BackwardState", Clip($"{tag}WalkBackward", back.Animation, ClipMode.Looping));
+            editor.Transition(still, "moveBackward", backing, editor.Effect($"{tag}ToBackward", BlendDefault));
+            editor.Transition(backing, "moveStop", still, editor.Effect($"{tag}FromBackward", BlendDefault));
+        }
+
+        return machine;
+    }
+
+    /// <summary>
     /// The situations beside standing about: striking, being struck, and dying.
     /// </summary>
     /// <remarks>
@@ -766,6 +838,7 @@ public static class CreatureAssembler
         RoledAnimation idle = Standing();
         hkbGenerator standing = Clip($"{tag}Idle", idle, ClipMode.Looping);
 
+
         var gaits = byRole
             .Where(r => r.Role.Kind is RoleKind.Walk or RoleKind.Run or RoleKind.Trot or RoleKind.Sprint)
             .ToList();
@@ -775,6 +848,12 @@ public static class CreatureAssembler
         // of a creep, a walk and a run.
         var headings = gaits.Select(g => g.Role.Heading).Where(h => h != Heading.None).Distinct()
             .OrderBy(Around).ToList();
+
+        // A quadruped does not walk sideways: it steers, so each rung of its ladder is
+        // three clips -- bearing left, straight on, bearing right -- blended on how hard
+        // the engine is asking it to turn. 13 of the game's creatures are built this way.
+        if (plan.Locomotion == LocomotionPlan.Quadruped)
+            return Steering(editor, spec, gaits, standing, Clip, tag);
 
         var arms = new List<(hkbGenerator Child, float Weight)>();
         foreach (Heading heading in headings)

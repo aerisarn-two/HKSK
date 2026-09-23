@@ -449,7 +449,19 @@ serves both sides from one animation, the right being the left played mirrored,
 and a side given without a mirror gets that side only. Where a creature has none
 the events fall on the floor, as the witchlight's do.
 
-The quadruped and swimmer plans are next.
+**Built.** The quadruped plan. A biped strafes and a quadruped steers, so where a
+biped's compass has an arm per heading, a quadruped's ladder has a rung per gait
+and each rung is three clips -- bearing left, straight on, bearing right --
+blended on how hard the engine is asking it to turn. Backing up is a state of its
+own rather than an arm, because an animal doing it is doing something other than
+walking in another direction. 13 of the game's creatures are built this way.
+
+The arms of a steering blend are the rates its clips turn at and the rungs are
+the speeds its clips deliver, both at the rate the generator plays them; an arm
+anywhere else is a creature that turns a fraction of what it was asked for, or
+slides (`docs/case-study-house-sabre-cat.md` §11.4).
+
+The swimmer plan is what is left.
 
 ### 4.1 Files
 
