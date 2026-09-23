@@ -287,7 +287,8 @@ Within the plan:
 - a walk with no run gives a two-rung ladder (walk at 5, walk at the walk speed);
   a run adds the third rung; a trot or sprint adds a gait state beside it;
 - turn-in-place with one clip per side gives the blend form (weights 5, 90, 135);
-  one clip with `Mirror` gives the loop form with a `[Mirrored]` clip;
+  one clip with `Mirror` gives the loop form with a `[Mirrored]` clip; **with no
+  turn clip at all one is made** -- see below;
 - canned turns at 90 and 180 per side, or with mirrors, give the canned-turn state
   and its `cannedTurn*` transitions; without them the state is omitted and the
   engine's `cannedTurn*` events fall on the floor, which is what the witchlight
@@ -310,6 +311,29 @@ Within the plan:
 
 The floor is the witchlight: idle, walk, attack, recoil, staggers -- seven
 animations. Below it the API refuses: an idle and a forward walk are the minimum.
+
+### 3.1 A turn in place can be made rather than given
+
+Root motion lives in the animation cache and nowhere else, so where the root goes
+is a property of an animation *slot* and not of the animation data, and two slots
+may hold the same animation and move differently.
+
+That makes a turn in place the one part of a creature that can be authored without
+an animator. The shipped ones already are rotation and nothing else: the sabre
+cat's `TurnLoopingL` travels zero units and turns 87 degrees over half a second,
+and the draugr's are the same shape. So a creature with no turn clip is given its
+idle in a second slot and a turn, one each way. The feet do not shuffle, which is
+the whole difference from an authored turn, and the creature turns at a rate
+somebody chose instead of not turning at all.
+
+The rate is the creature's size read against the shipped ones. Those divide the
+requested turn by the looping clip's own rate, and the rates run from the
+mammoth's 45 through the commonest 90 -- the deer, the goat, the horker, the
+skeever -- to the canines' and the sabre cat's 112.5, which is the fastest
+anything in the game turns.
+
+**Built.** `SyntheticMotion.TurnInPlace(seconds, degrees)` and
+`SyntheticMotion.ReasonableTurnRate(height)`.
 
 **Built.** `CreaturePlanner.Of(animations)` returns a `CreaturePlan`: the
 locomotion plan, the modules the animations are enough for, the attack events,

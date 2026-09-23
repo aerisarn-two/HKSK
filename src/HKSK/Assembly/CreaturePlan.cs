@@ -51,6 +51,11 @@ public sealed record Rung(string Animation, float Speed)
 /// <param name="Attacks">The attack events the graph will answer to.</param>
 /// <param name="Headings">The headings the locomotion covers.</param>
 /// <param name="Notes">What was read, and what was left out for want of an animation.</param>
+/// <param name="Synthesised">
+/// What will be made rather than taken from an animation given. A creature with no
+/// turn clip gets one from its idle and a turn nobody animated, which is a decision
+/// worth seeing before it is made.
+/// </param>
 /// <param name="Refusals">Why this cannot be built at all. Empty is buildable.</param>
 public sealed record CreaturePlan(
     LocomotionPlan Locomotion,
@@ -58,6 +63,7 @@ public sealed record CreaturePlan(
     IReadOnlyList<string> Attacks,
     IReadOnlyList<Heading> Headings,
     IReadOnlyList<string> Notes,
+    IReadOnlyList<string> Synthesised,
     IReadOnlyList<string> Refusals)
 {
     public bool CanBuild => Refusals.Count == 0;
@@ -90,6 +96,7 @@ public static class CreaturePlanner
         ArgumentNullException.ThrowIfNull(animations);
 
         var notes = new List<string>();
+        var synthesised = new List<string>();
         var refusals = new List<string>();
         var modules = new List<Module>();
 
@@ -123,7 +130,7 @@ public static class CreaturePlanner
             : headings.Count > 0 ? LocomotionPlan.ForwardOnly
             : LocomotionPlan.None;
 
-        if (refusals.Count > 0) return new CreaturePlan(plan, modules, [], headings, notes, refusals);
+        if (refusals.Count > 0) return new CreaturePlan(plan, modules, [], headings, notes, synthesised, refusals);
 
         modules.Add(Module.Locomotion);
         notes.Add(plan switch
@@ -149,12 +156,22 @@ public static class CreaturePlanner
             else notes.Add(lacked);
         }
 
+        // A turn in place is the one part of a creature that can be made rather than
+        // given. The game's own are the idle pose with a rotation and no travel -- the
+        // sabre cat's turns 87 degrees over half a second and goes nowhere -- so a
+        // creature with no turn clip is given its idle in a second slot and a turn
+        // rate. The feet do not shuffle; the creature turns.
         var turns = roles.Where(r => r.Role.Kind == RoleKind.TurnInPlace).ToList();
-        Built(Module.TurnInPlace, turns.Count > 0,
-            turns.Any(t => t.Role.Mirror) || turns.Select(t => t.Role.Side).Distinct().Count() > 1
+        modules.Add(Module.TurnInPlace);
+        if (turns.Count > 0)
+            notes.Add(turns.Any(t => t.Role.Mirror) || turns.Select(t => t.Role.Side).Distinct().Count() > 1
                 ? "turning in place, both ways"
-                : "turning in place, one way only, which will be mirrored",
-            "no turn in place: the creature will turn by walking");
+                : "turning in place, one way only, which will be mirrored");
+        else
+        {
+            notes.Add("no turn in place was given, so one is made from the idle");
+            synthesised.Add("a turn in place each way: the idle in a slot of its own, with a turn and no travel");
+        }
 
         var canned = roles.Where(r => r.Role.Kind == RoleKind.CannedTurn).ToList();
         Built(Module.CannedTurn, canned.Count > 0,
@@ -210,6 +227,6 @@ public static class CreaturePlanner
         Built(Module.PairedKillMoves, Any(RoleKind.KillMoveVictim),
             "paired kill moves, as the victim", "no paired kill moves: the creature cannot be killmoved");
 
-        return new CreaturePlan(plan, modules, attacks, headings, notes, refusals);
+        return new CreaturePlan(plan, modules, attacks, headings, notes, synthesised, refusals);
     }
 }
