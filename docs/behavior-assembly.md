@@ -387,9 +387,22 @@ run at one speed are; a heading with no clip at all takes the forward one. What
 the clips cannot give -- the three rotation rates and the anim-change thresholds
 -- stays the caller's.
 
-The modules of §1.1, the set data and the speed table are next. The table is what
-closes the loop: until it exists the sampler has nothing to look a request up in,
-so an assembled creature has a compass it cannot climb.
+**Built.** `CreatureInstaller.Install(made, meshesFolder)` puts the creature into
+the caches the game reads creatures out of, and builds its speed table. A
+creature's packfiles are not enough on their own: the game finds a project by name
+in `animationdatasinglefile.txt` and takes the first behaviour in its file list,
+so a creature whose loose files are perfect and whose row is missing reports that
+its root behaviour cannot be found.
+
+The table comes last because it is measured rather than written. It is the
+creature's own ladder sampled at every speed the engine may ask for, so it needs
+the graph, the movement type and the root motion, and all three exist only once
+the creature has been assembled and its row is in the cache. The loop closes
+there: the clips give the movement type, the movement type is the ladder's rungs,
+the ladder is sampled into the table, and the table is what the speed sampler
+looks a request up in.
+
+The modules of §1.1 and the set data are next.
 
 ### 4.1 Files
 

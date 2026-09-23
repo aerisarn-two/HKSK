@@ -2,6 +2,7 @@ using HKSK.Assembly;
 using HKSK.Behavior;
 using HKSK.Engine;
 using HKSK.Havok;
+using HKSK.Model;
 using HKX2;
 using Xunit;
 
@@ -273,6 +274,51 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Equal(100f, movement.LeftWalk);
         Assert.Equal(175f, movement.RightRun);
         Assert.False(movement.OneGait, "it walks at 100 and runs at 175");
+    }
+
+    /// <summary>
+    /// A creature's packfiles are not enough on their own: the game finds a project by
+    /// name in the animation cache and takes the first behaviour in its file list, so a
+    /// creature whose loose files are perfect and whose row is missing reports that its
+    /// root behaviour cannot be found.
+    /// </summary>
+    [Fact]
+    public void InstallingPutsTheCreatureInTheCacheTheGameReadsItFrom()
+    {
+        string meshes = Path.Combine(_folder, "Meshes");
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 100f),
+            ],
+            MovementTypeName: "BonewalkerDefault",
+            ClipDurations: new Dictionary<string, float> { ["Walk"] = 1f }),
+            Path.Combine(meshes, "actors", "bonewalker"));
+
+        InstallReport report = CreatureInstaller.Install(made, meshes);
+
+        Assert.True(report.Added);
+        Assert.True(File.Exists(Path.Combine(meshes, "animationdatasinglefile.txt")));
+
+        // And the cache opens it as an actor, which is what the game does with it.
+        SkyrimCache cache = SkyrimCache.Load(meshes);
+        Assert.Contains("BonewalkerProject", cache.ProjectNames);
+
+        ActorProject actor = Assert.IsType<ActorProject>(cache.OpenActor("BonewalkerProject"));
+        Assert.Equal(2, actor.Animations.Count);
+        Assert.Contains(actor.Clips, c => c.Name == "Idle");
+        Assert.Contains(actor.Clips, c => c.Name == "WalkForward");
+
+        // The walk carries the creature 100 units in its second, which is in no packfile.
+        Assert.Equal(100f, actor.Animations[1].Motion!.Travel, 1);
+        Assert.Contains(report.Notes, n => n.Contains("was added to the cache", StringComparison.Ordinal));
+
+        // The speed table is the last thing to be built and the only one that is
+        // measured: the creature's own ladder sampled at every speed the engine may ask
+        // for. Until it exists the sampler has nothing to look a request up in.
+        Assert.True(report.SpeedTable, string.Join("; ", report.Notes));
+        Assert.NotNull(cache.SpeedData?.Block("BonewalkerProject"));
     }
 
     [Fact]
