@@ -108,20 +108,30 @@ public sealed class CreatureAssemblerTests : IDisposable
     /// And the thing that matters: the engine, driven through the graph, reaches the
     /// idle standing still and the locomotion once it is told to move.
     /// </summary>
+    /// <remarks>
+    /// Which rung of the ladder it lands on is not asserted here, and cannot be yet: the
+    /// rungs blend on what the speed sampler writes, and the sampler reads the request
+    /// through the creature's speed table, which the assembler does not write until the
+    /// cache's third file is built. Until then it writes nothing and the ladder sits on
+    /// its floor, which is the right answer to the question actually being asked -- does
+    /// the graph move at all.
+    /// </remarks>
     [Fact]
-    public void TheEngineReachesTheIdleAtRestAndTheWalkOnMoveStart()
+    public void TheEngineReachesTheIdleAtRestAndTheLocomotionOnMoveStart()
     {
         AssemblyResult made = Walker();
 
-        string[] Clips(Events events, float speed) =>
+        string[] Clips(Events events) =>
             [.. ActiveGenerators
-                .Of(made.ProjectPath, tables => { foreach (Variables v in tables.Values) v.Set("SpeedSampled", speed); }, events)
+                .Of(made.ProjectPath, tables => { foreach (Variables v in tables.Values) v.Set("Speed", 100f); }, events)
                 .Active.Where(a => a.Generator is hkbClipGenerator)
                 .Select(a => a.Name)];
 
-        Assert.Equal(["Idle"], Clips(Events.None, 0f));
-        Assert.Contains("WalkForward", Clips(Events.Of("moveStart"), 1f));
-        Assert.Contains("RunForward", Clips(Events.Of("moveStart"), 3f));
+        Assert.Equal(["Idle"], Clips(Events.None));
+
+        string[] moving = Clips(Events.Of("moveStart"));
+        Assert.DoesNotContain("Idle", moving);
+        Assert.All(moving, name => Assert.Contains("Forward", name, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -165,6 +175,70 @@ public sealed class CreatureAssemblerTests : IDisposable
         // The idle was given no speed, so it carries the creature nowhere and has no block.
         Assert.DoesNotContain(made.Cache.Movements.Movements, m => m.CacheIndex == 0);
         Assert.Contains(made.Notes, n => n.Contains("the motion they are to carry", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A speed ladder blends on a variable that nothing but the speed sampler writes,
+    /// so a graph without one never leaves its first rung.
+    /// </summary>
+    [Fact]
+    public void TheSpeedSamplerIsWiredToTheFourThingsItReadsAndWrites()
+    {
+        AssemblyResult made = Walker();
+        var file = HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx"));
+
+        var editor = new GraphEditor(file);
+        BSSpeedSamplerModifier sampler = Assert.Single(file.All<BSSpeedSamplerModifier>());
+
+        var bound = sampler.m_variableBindingSet!.m_bindings
+            .ToDictionary(b => b.m_memberPath, b => editor.Strings.m_variableNames[b.m_variableIndex]);
+
+        Assert.Equal("iState", bound["state"]);
+        Assert.Equal("Direction", bound["direction"]);
+        Assert.Equal("Speed", bound["goalSpeed"]);
+        Assert.Equal("SpeedSampled", bound["speedOut"]);
+
+        // A field a node also binds is a slot, not a value, and the shipped ones say -1.
+        Assert.Equal(-1, sampler.m_state);
+    }
+
+    /// <summary>
+    /// A creature that walks in four directions gets a compass of ladders, which is how
+    /// the game's bipeds are built.
+    /// </summary>
+    [Fact]
+    public void FourHeadingsMakeACompassOfLadders()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                new RoledAnimation(Placeholder("Run.hkx"), [new AnimationRole(RoleKind.Run, Heading.Forward)]),
+                new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)]),
+                new RoledAnimation(Placeholder("Left.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Left)]),
+                new RoledAnimation(Placeholder("Right.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Right)]),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal(LocomotionPlan.FourArm, made.Plan.Locomotion);
+
+        var file = HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx"));
+        var editor = new GraphEditor(file);
+
+        hkbBlenderGenerator compass = editor.Require<hkbBlenderGenerator>("BonewalkerDirectionBlend");
+        Assert.Equal(4, compass.m_children.Count);
+
+        // Forward at nothing, round through the right, the back and the left.
+        Assert.Equal([0f, 0.2f, 0.5f, 0.8f], compass.m_children.Select(c => c.m_weight));
+        Assert.Equal("Direction",
+            editor.Strings.m_variableNames[compass.m_variableBindingSet!.m_bindings.Single().m_variableIndex]);
+
+        // The forward arm is a ladder of its two gaits; the others are a clip each.
+        Assert.IsType<hkbBlenderGenerator>(compass.m_children[0].m_generator);
+        Assert.IsType<hkbClipGenerator>(compass.m_children[1].m_generator);
     }
 
     [Fact]

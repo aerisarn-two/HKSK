@@ -361,12 +361,25 @@ and out of it with a note saying which animation would have put it in.
 
 **Being built.** `CreatureAssembler.Assemble(spec, folder)` writes the project, the
 character and the behaviour, copies the skeleton and the animations, and returns
-the plan beside the list of files. What the graph holds so far is the engine's
-variables and events, a root machine writing `iState`, a situation machine with
-the default situation, and inside it the standing idle and a forward speed ladder
-with a transition each way on `moveStart` and `moveStop`. The engine driven
-through it reaches the idle at rest and the ladder's rungs by speed, which is the
-test. The modules of §1.1 and the other four locomotion plans are next.
+the plan and the cache row beside the list of files. What the graph holds so far:
+
+- the engine's variables and events;
+- a root machine whose live state runs a modifier list holding the **speed
+  sampler**, bound `state<-iState`, `direction<-Direction`, `goalSpeed<-Speed`,
+  `speedOut<-SpeedSampled` as all 38 of the shipped ones are, and the expression
+  that writes `iState`;
+- a situation machine with the default situation;
+- inside it, a standing idle and the moving part: **one speed ladder per heading,
+  and a compass over the ladders** where there is more than one heading, at the
+  positions the draugr's eight arms sit at. The rungs of a ladder are the gaits in
+  the order they carry the creature.
+
+The engine driven through it reaches the idle at rest and the locomotion on
+`moveStart`. Which rung it lands on cannot be asserted until the speed table is
+written, since the rungs blend on what the sampler writes and the sampler reads
+the request through that table.
+
+The modules of §1.1, the set data and the speed table are next.
 
 ### 4.1 Files
 

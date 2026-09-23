@@ -345,8 +345,8 @@ public static class CreatureAssembler
 
         // ---- the situation machine: what the creature is doing
         hkbStateMachine situations = editor.StateMachine(spec.Name + "SituationBehavior");
-        var standing = editor.State(situations, "DefaultState", locomotion);
-        editor.Graph.m_rootGenerator = Root(editor, spec, plan, situations, standing);
+        editor.State(situations, "DefaultState", locomotion);
+        editor.Graph.m_rootGenerator = Root(editor, spec, situations);
 
         return file;
     }
@@ -355,20 +355,60 @@ public static class CreatureAssembler
     /// The root machine, which holds the creature's whole life: what it is doing, and
     /// the end of it.
     /// </summary>
-    private static hkbGenerator Root(
-        GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
-        hkbStateMachine situations, hkbStateMachineStateInfo standing)
+    private static hkbGenerator Root(GraphEditor editor, CreatureSpec spec, hkbStateMachine situations)
     {
         hkbStateMachine root = editor.StateMachine(spec.Name + "RootBehavior");
         var alive = editor.State(root, "AliveState", situations);
 
-        // iState is what the engine reads to choose the movement type, and the graph
-        // is what writes it (docs/speed-data.md §4.5).
-        alive.m_generator = editor.Modified($"{spec.Name}State_MG",
-            editor.Expressions($"{spec.Name}State_EEM", $"iState = iState_{spec.MovementTypeName}"),
+        // Everything the creature does runs under this list, which is where the speed
+        // sampler sits, and where iState is written -- the engine reads it back to
+        // choose the movement type (docs/speed-data.md §4.5).
+        alive.m_generator = editor.Modified($"{spec.Name}Root_MG",
+            editor.ModifierList($"{spec.Name}Root_ML",
+                SpeedSampler(editor),
+                editor.Expressions($"{spec.Name}State_EEM", $"iState = iState_{spec.MovementTypeName}")),
             situations);
 
         return root;
+    }
+
+    /// <summary>
+    /// The modifier that turns the speed the engine asks for into the speed the ladders
+    /// are read at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A speed ladder blends its rungs on a variable, and nothing writes that variable
+    /// but this. The engine writes <c>Speed</c>, the speed it wants; the sampler reads
+    /// the creature's movement type through <c>iState</c>, looks the request up in the
+    /// speed table, and writes back what the animations will actually deliver. A graph
+    /// whose ladders read a variable nobody writes never leaves its first rung, which is
+    /// a creature that slides along at a standstill.
+    /// </para>
+    /// <para>
+    /// All four bindings are the same in every creature that has one, 38 of the 46, and
+    /// so are the stored values: <c>state</c> is -1 in all 44 of them, because a field a
+    /// node also binds is a slot rather than a value.
+    /// </para>
+    /// </remarks>
+    private static BSSpeedSamplerModifier SpeedSampler(GraphEditor editor)
+    {
+        var sampler = new BSSpeedSamplerModifier
+        {
+            m_name = "BSSpeedSamplerModifier",
+            m_enable = true,
+            m_state = -1,
+            m_direction = 0f,
+            m_goalSpeed = 0f,
+            m_speedOut = 0f,
+        };
+
+        editor.Bind(sampler, "state", "iState");
+        editor.Bind(sampler, "direction", "Direction");
+        editor.Bind(sampler, "goalSpeed", "Speed");
+        editor.Bind(sampler, "speedOut", "SpeedSampled");
+
+        return sampler;
     }
 
     /// <summary>
@@ -396,20 +436,32 @@ public static class CreatureAssembler
         RoledAnimation idle = byRole.First(r => r.Role.Kind == RoleKind.Idle).Animation;
         hkbGenerator standing = Clip("Idle", idle, ClipMode.Looping);
 
-        var forward = byRole
+        var gaits = byRole
             .Where(r => r.Role.Kind is RoleKind.Walk or RoleKind.Run or RoleKind.Trot or RoleKind.Sprint)
-            .Where(r => r.Role.Heading == Heading.Forward)
             .ToList();
 
-        // The ladder's floor is the walk at a creep, which is one clip at a low rate,
-        // and its rungs are the gaits in the order they carry the creature.
-        var rungs = new List<(hkbGenerator Child, float Weight)>();
-        foreach (var (animation, role) in forward.OrderBy(r => Rank(r.Role.Kind)))
-            rungs.Add((Clip($"{role.Kind}Forward", animation, ClipMode.Looping), Rank(role.Kind)));
+        // One ladder per heading, then a compass over the ladders, which is how the
+        // game's bipeds are built: the draugr's eight arms each hold a three-rung ladder
+        // of a creep, a walk and a run.
+        var headings = gaits.Select(g => g.Role.Heading).Where(h => h != Heading.None).Distinct()
+            .OrderBy(Around).ToList();
 
-        hkbGenerator moving = rungs.Count == 1
-            ? rungs[0].Child
-            : editor.Blend($"{spec.Name}ForwardBlend", "SpeedSampled", [.. rungs]);
+        var arms = new List<(hkbGenerator Child, float Weight)>();
+        foreach (Heading heading in headings)
+        {
+            var rungs = gaits.Where(g => g.Role.Heading == heading)
+                .OrderBy(g => Rank(g.Role.Kind))
+                .Select(g => ((hkbGenerator)Clip($"{g.Role.Kind}{heading}", g.Animation, ClipMode.Looping), Rank(g.Role.Kind)))
+                .ToList();
+
+            arms.Add((rungs.Count == 1
+                ? rungs[0].Item1
+                : editor.Blend($"{spec.Name}{heading}Blend", "SpeedSampled", [.. rungs]), Around(heading)));
+        }
+
+        hkbGenerator moving = arms.Count == 1
+            ? arms[0].Child
+            : editor.Blend($"{spec.Name}DirectionBlend", "Direction", [.. arms]);
 
         hkbStateMachine machine = editor.StateMachine(spec.Name + "LocomotionBehavior");
         var still = editor.State(machine, "StandingState", standing);
@@ -419,6 +471,22 @@ public static class CreatureAssembler
         editor.Transition(going, "moveStop", still, editor.Effect("MoveStop", BlendDefault));
 
         return machine;
+
+        // Where a heading sits on the compass the engine writes, which runs from nothing
+        // at straight ahead once round to one. The draugr's eight arms are at 0, 0.1,
+        // 0.2, 0.4, 0.5, 0.6, 0.8 and 0.9, so the quarters are the tenths they surround.
+        static float Around(Heading heading) => heading switch
+        {
+            Heading.Forward => 0f,
+            Heading.ForwardRight => 0.1f,
+            Heading.Right => 0.2f,
+            Heading.BackRight => 0.4f,
+            Heading.Back => 0.5f,
+            Heading.BackLeft => 0.6f,
+            Heading.Left => 0.8f,
+            Heading.ForwardLeft => 0.9f,
+            _ => 0f,
+        };
 
         static float Rank(RoleKind kind) => kind switch
         {
