@@ -12,3 +12,7 @@ TestResults/
 # Working notes, not part of the project.
 CLAUDE.md
 __pycache__/
+
+# A dump of the game's own speed table, made by a probe. Derived from Skyrim's
+# files and referenced by nothing here, so it stays out of the repository.
+speeddata.json
