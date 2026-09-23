@@ -203,6 +203,10 @@ public static class RagdollRetarget
         foreach (hkaSkeletonMapper mapper in file.All<hkaSkeletonMapper>())
             Remap(mapper, rig, fitted, ourBone, order);
 
+        foreach (hkMemoryResourceContainer resources in
+                 file.Root.m_namedVariants.Select(v => v?.m_variant).OfType<hkMemoryResourceContainer>())
+            Retree(resources, rig, fitted, bodies);
+
         return new RetargetedRagdoll(file, bodies.Count, dropped, scale);
     }
 
@@ -251,6 +255,69 @@ public static class RagdollRetarget
     }
 
     private static bool IsRig(hkaSkeleton? candidate, hkaSkeleton fitted) => !ReferenceEquals(candidate, fitted);
+
+    /// <summary>
+    /// Rebuilds the resource tree, which mirrors both hierarchies by name.
+    /// </summary>
+    /// <remarks>
+    /// The tree is how the file describes itself to the tools that read it: the rig's bones
+    /// appear as bare nested containers under a container called <c>_</c>, and the ragdoll's
+    /// appear again, each carrying a handle to its rigid body and to that body's shape. Left
+    /// alone it would go on naming the prototype's bones, and a creature's own file would
+    /// describe somebody else.
+    ///
+    /// The handles are the prototype's own, found by the container name they were under. A
+    /// body with no container to be found -- anything the prototype carried that is not part
+    /// of a ragdoll, such as a bumper capsule -- is not ours and does not appear.
+    /// </remarks>
+    private static void Retree(
+        hkMemoryResourceContainer root,
+        hkaSkeleton rig,
+        hkaSkeleton ragdoll,
+        List<hkpRigidBody> bodies)
+    {
+        var handles = new Dictionary<string, IList<hkMemoryResourceHandle>>(StringComparer.OrdinalIgnoreCase);
+        Collect(root);
+
+        void Collect(hkMemoryResourceContainer at)
+        {
+            if (at.m_resourceHandles.Count > 0 && at.m_name.Length > 0) handles.TryAdd(at.m_name, at.m_resourceHandles);
+            foreach (hkMemoryResourceContainer kid in at.m_children) Collect(kid);
+        }
+
+        var rigTree = new hkMemoryResourceContainer { m_name = "_", m_children = Mirror(rig, _ => []) };
+        var ragdollTree = Mirror(ragdoll, name => handles.TryGetValue(name, out var found) ? found : []);
+
+        root.m_name = "";
+        root.m_resourceHandles = [];
+        root.m_children = [rigTree, .. ragdollTree];
+    }
+
+    /// <summary>A skeleton's shape, as the nested containers the resource tree keeps it in.</summary>
+    private static List<hkMemoryResourceContainer> Mirror(
+        hkaSkeleton skeleton,
+        Func<string, IList<hkMemoryResourceHandle>> handles)
+    {
+        var made = new hkMemoryResourceContainer[skeleton.m_bones.Count];
+        var roots = new List<hkMemoryResourceContainer>();
+
+        for (int i = 0; i < skeleton.m_bones.Count; i++)
+            made[i] = new hkMemoryResourceContainer
+            {
+                m_name = skeleton.m_bones[i].m_name,
+                m_resourceHandles = handles(skeleton.m_bones[i].m_name),
+                m_children = [],
+            };
+
+        for (int i = 0; i < skeleton.m_bones.Count; i++)
+        {
+            short parent = i < skeleton.m_parentIndices.Count ? skeleton.m_parentIndices[i] : (short)-1;
+            if (parent < 0 || parent >= made.Length) roots.Add(made[i]);
+            else made[parent].m_children = [.. made[parent].m_children, made[i]];
+        }
+
+        return roots;
+    }
 
     /// <summary>The animation bone a ragdoll bone stands for: its own name, less the trimmings.</summary>
     /// <remarks>

@@ -104,6 +104,19 @@ public sealed class ZzRagdollFit
             sb.AppendLine();
         }
 
+        sb.AppendLine("--- resource tree");
+        void Tree(hkMemoryResourceContainer c, string indent)
+        {
+            sb.AppendLine($"{indent}container '{c.m_name}' handles={c.m_resourceHandles.Count} children={c.m_children.Count}");
+            foreach (var h in c.m_resourceHandles.Take(4))
+                sb.AppendLine($"{indent}  handle '{h.m_name}' variant={h.m_variant?.GetType().Name} refs={h.m_references.Count}");
+            if (c.m_resourceHandles.Count > 4) sb.AppendLine($"{indent}  ... {c.m_resourceHandles.Count - 4} more");
+            foreach (var kid in c.m_children) Tree(kid, indent + "  ");
+        }
+        foreach (var c in file.Root.m_namedVariants.Select(v => v?.m_variant).OfType<hkMemoryResourceContainer>())
+            Tree(c, "  ");
+        sb.AppendLine();
+
         string outPath = Path.Combine(outDir, "ragdollfit.txt");
         File.WriteAllText(outPath, sb.ToString());
     }
