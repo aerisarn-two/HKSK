@@ -31,6 +31,14 @@ public sealed class HavokFile
     /// <summary>Every object reachable from the root, root first.</summary>
     public IReadOnlyList<IHavokObject> Objects => _objects;
 
+    /// <summary>Wraps a container built in memory, for a file about to be written.</summary>
+    /// <remarks>
+    /// The assembly route makes its packfiles rather than reading them, and everything
+    /// that walks a file -- the editor, the validation, the engine -- takes one of
+    /// these. So a graph being built is the same kind of thing as a graph being read.
+    /// </remarks>
+    public static HavokFile Of(hkRootLevelContainer root, string path = "") => new(path, root);
+
     public static HavokFile Load(string path)
     {
         if (Util.ReadHKX(path) is not hkRootLevelContainer root)

@@ -345,6 +345,15 @@ and out of it with a note saying which animation would have put it in.
 
 ## 4. What is built
 
+**Being built.** `CreatureAssembler.Assemble(spec, folder)` writes the project, the
+character and the behaviour, copies the skeleton and the animations, and returns
+the plan beside the list of files. What the graph holds so far is the engine's
+variables and events, a root machine writing `iState`, a situation machine with
+the default situation, and inside it the standing idle and a forward speed ladder
+with a transition each way on `moveStart` and `moveStop`. The engine driven
+through it reaches the idle at rest and the ladder's rungs by speed, which is the
+test. The modules of §1.1 and the other four locomotion plans are next.
+
 ### 4.1 Files
 
     <project>/<name>project.hkx                    hkbProjectData naming the character file

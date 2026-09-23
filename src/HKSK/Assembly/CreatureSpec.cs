@@ -1,0 +1,44 @@
+namespace HKSK.Assembly;
+
+/// <summary>What a creature is to be assembled from.</summary>
+/// <param name="Name">
+/// The project's stem: <c>MyBeast</c> gives <c>MyBeastProject.hkx</c>,
+/// <c>characters\MyBeast.hkx</c> and <c>behaviors\MyBeastBehavior.hkx</c>.
+/// </param>
+/// <param name="SkeletonPath">
+/// The rig packfile every animation was authored against, copied into the project.
+/// </param>
+/// <param name="Animations">
+/// The animations with their roles, <b>in the order they are to be numbered</b>. That
+/// order is every clip's cache index, so it is appended to and never inserted into.
+/// </param>
+/// <param name="RagdollPath">
+/// The ragdoll packfile, where there is one. Null names the skeleton for both, which
+/// is what the game does for the creatures whose rig carries its own ragdoll.
+/// </param>
+/// <param name="MovementTypeName">
+/// What the creature's movement type is called, which the graph declares as
+/// <c>iState_&lt;name&gt;</c> and the speed table is keyed on.
+/// </param>
+/// <param name="TurnRate">
+/// Degrees a second for a turn in place that has to be made rather than given. Null
+/// reads one off the creature's height.
+/// </param>
+public sealed record CreatureSpec(
+    string Name,
+    string SkeletonPath,
+    IReadOnlyList<RoledAnimation> Animations,
+    string? RagdollPath = null,
+    string MovementTypeName = "Default",
+    float? TurnRate = null);
+
+/// <summary>What was assembled.</summary>
+/// <param name="ProjectPath">The project packfile, which is what a race names.</param>
+/// <param name="Plan">What the animations were read as.</param>
+/// <param name="Files">Everything written, relative to the output folder.</param>
+/// <param name="Notes">What was decided along the way.</param>
+public sealed record AssemblyResult(
+    string ProjectPath,
+    CreaturePlan Plan,
+    IReadOnlyList<string> Files,
+    IReadOnlyList<string> Notes);
