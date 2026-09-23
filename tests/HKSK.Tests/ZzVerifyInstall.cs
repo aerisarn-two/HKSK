@@ -15,7 +15,10 @@ public sealed class ZzVerifyInstall
         string mod = Environment.GetEnvironmentVariable("HKSK_MOD") ?? "";
         if (!File.Exists(Path.Combine(mod, SkyrimCache.AnimationDataFileName))) return;
 
-        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT") ?? Path.GetTempPath();
+        // Never the bare temp root: a skeleton.hkx or a skeleton.nif left there makes every
+        // folder-scanning route read the whole of it as a creature.
+        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT")
+            ?? Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "hksk-creature-dump")).FullName;
         var sb = new StringBuilder();
 
         SkyrimCache cache = SkyrimCache.Load(mod);

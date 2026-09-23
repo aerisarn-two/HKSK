@@ -16,7 +16,10 @@ public sealed class ZzRecut
         string table = Environment.GetEnvironmentVariable("HKSK_CUTS") ?? "";
         if (!File.Exists(source) || !File.Exists(table)) return;
 
-        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT") ?? Path.GetTempPath();
+        // Never the bare temp root: a skeleton.hkx or a skeleton.nif left there makes every
+        // folder-scanning route read the whole of it as a creature.
+        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT")
+            ?? Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "hksk-creature-dump")).FullName;
 
         var cuts = File.ReadAllLines(table)
             .Select(line => line.Split('\t'))

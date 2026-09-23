@@ -18,7 +18,10 @@ public sealed class ZzBuildSkeleton
         string asset = Environment.GetEnvironmentVariable("HKSK_ASSET") ?? "";
         if (corpus.Length == 0 || !File.Exists(asset)) return;
 
-        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT") ?? Path.GetTempPath();
+        // Never the bare temp root: a skeleton.hkx or a skeleton.nif left there makes every
+        // folder-scanning route read the whole of it as a creature.
+        string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT")
+            ?? Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "hksk-creature-dump")).FullName;
         string built = Path.Combine(outDir, "skeleton.hkx");
         var sb = new StringBuilder();
 
