@@ -69,7 +69,18 @@ public static class UncompressedAnimation
 
         container.m_animations = [interleaved];
         foreach (hkaAnimationBinding binding in container.m_bindings)
-            if (ReferenceEquals(binding.m_animation, old)) binding.m_animation = interleaved;
+        {
+            if (!ReferenceEquals(binding.m_animation, old)) continue;
+            binding.m_animation = interleaved;
+
+            // Which bone a track drives is the binding's business, and the template's binding
+            // is for the template's rig. A clip that arrived over a bare rig and is being
+            // written over one that has since been given a root and a lift drives bones two
+            // along from where it thinks, and without this it would drive the wrong ones --
+            // silently, since every index is valid.
+            if (animation.TrackToBone.Count > 0)
+                binding.m_transformTrackToBoneIndices = [.. animation.TrackToBone];
+        }
 
         string? folder = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);

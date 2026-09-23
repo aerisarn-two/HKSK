@@ -25,7 +25,8 @@ public sealed class ZzBuildSkeleton
         AssembledSkeleton made = CreatureSkeleton.Build(
             asset,
             Path.Combine(corpus, "actors", "draugr", "character assets", "skeletons.hkx"),
-            built);
+            built,
+            feet: [("Bip01_L_Foot", "Bip01_L_Toe0"), ("Bip01_R_Foot", "Bip01_R_Toe0")]);
 
         sb.AppendLine(made.ToString());
         sb.AppendLine();
@@ -69,6 +70,25 @@ public sealed class ZzBuildSkeleton
                 var s => s?.GetType().Name ?? "none",
             };
             sb.AppendLine($"  body '{body.m_name}' at z={body.m_motion.m_motionState.m_transform.Translation.Z:0.##} {shape}");
+        }
+
+        // The clips, over the rig the skeleton file now holds.
+        string clips = Environment.GetEnvironmentVariable("HKSK_CLIPS") ?? "";
+        string template = Path.Combine(corpus, "actors", "draugr", "animations", "mt_idle.hkx");
+        if (!File.Exists(template))
+            template = Directory.GetFiles(Path.Combine(corpus, "actors", "draugr", "animations"), "*.hkx").First();
+
+        if (File.Exists(clips))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"--- clips from {Path.GetFileName(clips)}, template {Path.GetFileName(template)}");
+
+            WrittenClips done = CreatureClips.Write(
+                clips, template, Path.Combine(outDir, "animations"), made.Renamed.Rig, made.Names,
+                turnDegrees: made.Grounded?.Turn ?? 0f);
+
+            sb.AppendLine(done.ToString());
+            foreach (WrittenClip clip in done.Clips) sb.AppendLine($"  {clip}");
         }
 
         File.WriteAllText(Path.Combine(outDir, "built-skeleton.txt"), sb.ToString());

@@ -11,11 +11,17 @@ namespace HKSK.Assembly;
 /// <param name="Grounded">What standing the rig on the floor took, or null if it was not asked for.</param>
 /// <param name="Renamed">What putting it under the game's names changed, and what it left alone.</param>
 /// <param name="Ragdoll">What fitting the prototype's ragdoll to it produced.</param>
+/// <param name="Names">
+/// The naming this rig was actually put under, which the clips have to be put under too. It
+/// is handed back rather than worked out twice: read off a rig it depends on that rig, and
+/// the clips' and the creature's need not be identical.
+/// </param>
 public sealed record AssembledSkeleton(
     string Path,
     GroundedSkeleton? Grounded,
     RenamedSkeleton Renamed,
-    RetargetedRagdoll Ragdoll)
+    RetargetedRagdoll Ragdoll,
+    IReadOnlyDictionary<string, string> Names)
 {
     public override string ToString() =>
         $"{Renamed.Rig.Count} bones, {Ragdoll}" +
@@ -70,14 +76,22 @@ public static class CreatureSkeleton
     /// What to call the rig's bones, or null to read the 3ds Max biped naming off the rig.
     /// </param>
     /// <param name="ground">
-    /// Whether to stand the rig on the floor first. False for a rig already authored there.
+    /// Whether to stand the rig where the game expects it: on the origin, over it, and facing
+    /// the way Skyrim's creatures face. False for a rig already authored there.
+    /// </param>
+    /// <param name="feet">
+    /// An ankle and a toe of the same foot, under the names the FBX uses, a pair per foot,
+    /// from which the way the creature currently faces is read. Give both feet, or the splay
+    /// of the one is read as the facing of the creature. Empty leaves the facing alone, which
+    /// is right for a rig already built facing +Y.
     /// </param>
     public static AssembledSkeleton Build(
         string fbxPath,
         string prototypePath,
         string outputPath,
         IReadOnlyDictionary<string, string>? names = null,
-        bool ground = true)
+        bool ground = true,
+        params (string Ankle, string Toe)[] feet)
     {
         ArgumentException.ThrowIfNullOrEmpty(fbxPath);
         ArgumentException.ThrowIfNullOrEmpty(prototypePath);
@@ -85,17 +99,23 @@ public static class CreatureSkeleton
 
         Skeleton rig = FbxAnimationReader.ReadSkeleton(FbxDocument.Load(fbxPath));
 
-        GroundedSkeleton? grounded = ground ? SkeletonGrounding.Ground(rig) : null;
+        float turn = ground && feet.Length > 0 ? SkeletonGrounding.TurnToFaceForward(rig, feet) : 0f;
+
+        GroundedSkeleton? grounded = ground
+            ? SkeletonGrounding.Ground(rig, centre: true, turnDegrees: turn)
+            : null;
+
         if (grounded is not null) rig = grounded.Rig;
 
-        RenamedSkeleton renamed = SkeletonNaming.Rename(rig, names ?? SkeletonNaming.BipedMap(rig));
+        IReadOnlyDictionary<string, string> naming = names ?? SkeletonNaming.BipedMap(rig);
+        RenamedSkeleton renamed = SkeletonNaming.Rename(rig, naming);
         RetargetedRagdoll fitted = RagdollRetarget.Fit(prototypePath, Havok(renamed.Rig), RigName);
 
         string? folder = Path.GetDirectoryName(outputPath);
         if (folder is { Length: > 0 }) Directory.CreateDirectory(folder);
         fitted.File.Save(outputPath);
 
-        return new AssembledSkeleton(outputPath, grounded, renamed, fitted);
+        return new AssembledSkeleton(outputPath, grounded, renamed, fitted, naming);
     }
 
     /// <summary>The same rig, as Havok keeps one.</summary>
