@@ -100,6 +100,41 @@ public sealed class ZzBuildSkeleton
                               (clip.Disagreement is null ? "" : $"  !! {clip.Disagreement}"));
 
             foreach (string note in read.Unmeasured) sb.AppendLine($"  ?? {note}");
+
+            // And the whole creature, from the clips that read as something.
+            sb.AppendLine();
+            sb.AppendLine("--- assembled");
+
+            var usable = read.Clips
+                .Where(c => c.Animation.Roles.Count > 0)
+                .Select(c => c.Animation)
+                .ToList();
+
+            sb.AppendLine($"{usable.Count} of {read.Clips.Count} clips have a role to fill");
+
+            var spec = new CreatureSpec(
+                "BoneSkeleton",
+                built,
+                usable,
+                MovementTypeName: "BoneSkeletonDefault",
+                ClipDurations: read.Durations);
+
+            try
+            {
+                AssemblyResult made2 = CreatureAssembler.Assemble(spec, Path.Combine(outDir, "creature"));
+                sb.AppendLine($"project: {made2.ProjectPath}");
+                sb.AppendLine($"plan: {made2.Plan.Locomotion}, modules {string.Join(", ", made2.Plan.Modules)}");
+                sb.AppendLine($"movement: {made2.Movement}");
+                sb.AppendLine($"files ({made2.Files.Count}):");
+                foreach (string f in made2.Files) sb.AppendLine($"  {f}");
+                sb.AppendLine("notes:");
+                foreach (string n in made2.Notes) sb.AppendLine($"  {n}");
+                sb.AppendLine($"cache: {made2.Cache.Name}, {made2.Cache.Movements?.Movements.Count ?? 0} movement rows");
+            }
+            catch (Exception e)
+            {
+                sb.AppendLine($"!! {e.GetType().Name}: {e.Message}");
+            }
         }
 
         File.WriteAllText(Path.Combine(outDir, "built-skeleton.txt"), sb.ToString());

@@ -711,4 +711,61 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Contains("forward walk", thrown.Message, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(_folder, "out")));
     }
+
+    /// <summary>
+    /// A heading with no clip of its own takes the forward speed, which the record has to
+    /// state somehow -- but that is a guess, and a creature that backs away as fast as it
+    /// charges is wrong in a way nothing downstream would notice. So it is said out loud.
+    /// </summary>
+    [Fact]
+    public void AHeadingThatBorrowedItsSpeedSaysSo()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                Placeholder("skeleton.hkx"),
+                [
+                    new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 90f),
+
+                    // A backward walk with no speed on it, which is what a clip measured
+                    // off feet that are mostly in the air comes back as.
+                    new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)]),
+                ],
+                ClipDurations: new Dictionary<string, float> { ["Walk"] = 1f, ["Back"] = 2f }),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal(90f, made.Movement.BackWalk);
+
+        string said = Assert.Single(made.Notes, n => n.Contains("guess and not a measurement", StringComparison.Ordinal));
+        Assert.Contains("Back", said, StringComparison.Ordinal);
+
+        // The headings that did have a clip are not complained about.
+        Assert.DoesNotContain("Forward", said, StringComparison.Ordinal);
+    }
+
+    /// <summary>A creature whose every heading is measured borrows nothing and says nothing.</summary>
+    [Fact]
+    public void AHeadingWithItsOwnSpeedBorrowsNothing()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                Placeholder("skeleton.hkx"),
+                [
+                    new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 90f),
+                    new RoledAnimation(Placeholder("Back.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Back)], Speed: 40f),
+                    new RoledAnimation(Placeholder("Left.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Left)], Speed: 30f),
+                    new RoledAnimation(Placeholder("Right.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Right)], Speed: 30f),
+                ],
+                ClipDurations: new Dictionary<string, float>
+                {
+                    ["Walk"] = 1f, ["Back"] = 2f, ["Left"] = 1f, ["Right"] = 1f,
+                }),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal(40f, made.Movement.BackWalk);
+        Assert.DoesNotContain(made.Notes, n => n.Contains("guess and not a measurement", StringComparison.Ordinal));
+    }
 }

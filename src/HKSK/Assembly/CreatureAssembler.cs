@@ -496,11 +496,17 @@ public static class CreatureAssembler
 
         // A heading with a clip of its own is that clip. A heading that walks and cannot
         // run runs at the speed it walks, which is what the 88 shipped records that walk
-        // and run at one speed are. A heading with nothing at all takes the forward one.
+        // and run at one speed are. A heading with nothing at all takes the forward one --
+        // which is a guess, and is said out loud, because a creature that backs away as
+        // fast as it charges is wrong in a way nothing downstream will notice.
+        var borrowed = new List<Heading>();
+
         float Either(Heading heading, bool run)
         {
             float walk = Delivered(heading, RoleKind.Walk, RoleKind.Trot, RoleKind.Swim);
             float ran = Delivered(heading, RoleKind.Run, RoleKind.Sprint);
+
+            if (walk <= 0 && ran <= 0 && !borrowed.Contains(heading)) borrowed.Add(heading);
 
             return run
                 ? ran > 0 ? ran : walk > 0 ? walk : forwardRun
@@ -517,6 +523,11 @@ public static class CreatureAssembler
         notes.Add(forwardWalk > 0
             ? $"the movement type the clips describe: {type}"
             : "no clip says how fast it carries the creature, so the movement type is all zeros");
+
+        if (borrowed.Count > 0 && forwardWalk > 0)
+            notes.Add(
+                $"{string.Join(" and ", borrowed)} had no clip with a speed on it, so {(borrowed.Count == 1 ? "it carries" : "they carry")} " +
+                "the forward one: the creature moves that way as fast as it moves ahead, which is a guess and not a measurement");
 
         return type;
     }
