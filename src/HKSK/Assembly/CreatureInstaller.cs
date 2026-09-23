@@ -11,8 +11,13 @@ namespace HKSK.Assembly;
 /// Whether a speed block was written for it, which needs a sampler in its graph and a
 /// movement type with somewhere to go.
 /// </param>
+/// <param name="SetData">
+/// Whether an attack block was written for it. Without one the engine does not know
+/// which attacks the project can play, whatever its graph says.
+/// </param>
 /// <param name="Notes">What was decided.</param>
-public sealed record InstallReport(string MeshesFolder, bool Added, bool SpeedTable, IReadOnlyList<string> Notes);
+public sealed record InstallReport(
+    string MeshesFolder, bool Added, bool SpeedTable, bool SetData, IReadOnlyList<string> Notes);
 
 /// <summary>
 /// Puts an assembled creature into the caches the game reads creatures out of.
@@ -69,6 +74,29 @@ public static class CreatureInstaller
         cache.Save(meshesFolder);
         cache = SkyrimCache.Load(meshesFolder);
 
+        // ---- the set data, which is how the engine knows what the project can play
+        bool sets = false;
+        try
+        {
+            var events = new HKSK.SetData.GameEvents(
+                Idle: made.Plan.Modules.Count > 0
+                    ? new HashSet<string>(CoreIdleEvents, StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                Equip: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                Attacks: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [stem] = new HashSet<string>(made.Plan.Attacks, StringComparer.OrdinalIgnoreCase),
+                });
+
+            HKSK.Model.Amendment amendment = HKSK.SetData.SetDataGenerator.Amend(cache, stem, events);
+            sets = amendment != HKSK.Model.Amendment.Unchanged;
+            notes.Add($"the set data: {amendment}, with {made.Plan.Attacks.Count} attacks");
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+        {
+            notes.Add($"no set data: {e.Message}");
+        }
+
         bool table = false;
         try
         {
@@ -87,8 +115,18 @@ public static class CreatureInstaller
         }
 
         cache.Save(meshesFolder);
-        return new InstallReport(meshesFolder, added, table, notes);
+        return new InstallReport(meshesFolder, added, table, sets, notes);
     }
+
+    /// <summary>
+    /// The events the idle records send a creature, which is what the set data is keyed
+    /// on: a lookup finds the first set matching an event and loads its files.
+    /// </summary>
+    private static readonly string[] CoreIdleEvents =
+    [
+        "moveStart", "moveStop", "turnLeft", "turnRight", "turnStop",
+        "staggerStart", "recoilStart", "DeathAnimation", "IdleStop", "returnToDefault",
+    ];
 
     private static SkyrimCache? Existing(string meshesFolder) =>
         File.Exists(Path.Combine(meshesFolder, SkyrimCache.AnimationDataFileName))

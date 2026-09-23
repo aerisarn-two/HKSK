@@ -410,7 +410,13 @@ engine sends, raising the flag that says what the engine may do meanwhile, and
 left when the clip itself says it is finished. The clip raises that event at its
 own end, so a creature is never left mid-attack waiting to be told to stop.
 
-The rest of the modules of §1.1, the set data, and the get-up shell are next.
+**Built.** The set data too, from the same install. Without an attack block the
+engine does not know which attacks a project can play, whatever its graph says,
+and the block is derived from the states the graph has, entered by the names the
+race's attack data gives them. So all three cache files are written from one call
+and agree with the graph by construction.
+
+The rest of the modules of §1.1 and the get-up shell are next.
 
 ### 4.1 Files
 

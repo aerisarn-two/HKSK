@@ -383,6 +383,38 @@ public sealed class CreatureAssemblerTests : IDisposable
             Assert.Equal((sbyte)ClipMode.SinglePlay, editor.Require<hkbClipGenerator>(once).m_mode);
     }
 
+    /// <summary>
+    /// Without an attack block the engine does not know which attacks the project can
+    /// play, whatever its graph says. The block is derived from the states the graph
+    /// has, entered by the names the race's attack data gives them.
+    /// </summary>
+    [Fact]
+    public void TheSetDataNamesTheAttacksTheGraphCanPlay()
+    {
+        string meshes = Path.Combine(_folder, "Meshes");
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 100f),
+                new RoledAnimation(Placeholder("Swing.hkx"), [new AnimationRole(RoleKind.Attack, Name: "attackStart_Attack1")]),
+                new RoledAnimation(Placeholder("Heavy.hkx"), [new AnimationRole(RoleKind.PowerAttack, Name: "attackStart_ForwardPower")]),
+            ],
+            ClipDurations: new Dictionary<string, float> { ["Walk"] = 1f }),
+            Path.Combine(meshes, "actors", "bonewalker"));
+
+        InstallReport report = CreatureInstaller.Install(made, meshes);
+        Assert.True(report.SetData, string.Join("; ", report.Notes));
+
+        SkyrimCache cache = SkyrimCache.Load(meshes);
+        var sets = cache.SetData.Project("BonewalkerProject");
+        Assert.NotNull(sets);
+
+        var named = sets.Sets.Sets.SelectMany(s => s.Attacks.Attacks).Select(a => a.EventName).ToList();
+        Assert.Contains("attackStart_Attack1", named);
+        Assert.Contains("attackStart_ForwardPower", named);
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {
