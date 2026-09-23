@@ -163,7 +163,8 @@ public static class CreatureAssembler
     /// creature never has to be told to stop attacking -- the animation says so.
     /// </remarks>
     private static void Situations(
-        GraphEditor editor, CreatureSpec spec, hkbStateMachine situations, hkbStateMachineStateInfo idle,
+        GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
+        hkbStateMachine situations, hkbStateMachineStateInfo idle,
         Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip, List<string> notes)
     {
         var byRole = spec.Animations.SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r))).ToList();
@@ -198,6 +199,25 @@ public static class CreatureAssembler
 
         foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Stagger).Take(1))
             Once("Stagger", animation, "staggerStart", "staggerStop", "IsStaggering");
+
+        // ---- the combat stance: everything the creature does standing and moving, over
+        // again with its weapon out. 41 of the game's creatures have one, and it is
+        // entered when the engine says the weapon is drawn.
+        if (byRole.Any(r => r.Role.Kind == RoleKind.CombatIdle || r.Role.Stance == Stance.Combat))
+        {
+            var readied = editor.State(situations, "CombatReadyState", Locomotion(editor, spec, plan, Clip, Stance.Combat));
+            editor.Wildcard(situations, "combatStanceStart", readied, editor.Effect("ToCombat", BlendDefault));
+            editor.Transition(readied, "combatStanceStop", idle, editor.Effect("FromCombat", BlendDefault));
+            notes.Add("a combat stance, entered on combatStanceStart");
+        }
+
+        // ---- drawing and putting away. The clip raises the event that says it is done,
+        // which is what the engine waits for before it lets the creature attack.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Equip).Take(1))
+            Once("Equip", animation, "weaponDraw", "weapEquipOut", null);
+
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Unequip).Take(1))
+            Once("Unequip", animation, "weaponSheathe", "weapUnequipOut", null);
 
         // ---- turning on the spot, which the engine asks for by name and leaves the
         // same way. A creature without it turns by walking, which reads as a slide.
@@ -618,7 +638,7 @@ public static class CreatureAssembler
         // ---- the situation machine: what the creature is doing
         hkbStateMachine situations = editor.StateMachine(spec.Name + "SituationBehavior");
         var idling = editor.State(situations, "DefaultState", locomotion);
-        Situations(editor, spec, situations, idling, Clip, notes);
+        Situations(editor, spec, plan, situations, idling, Clip, notes);
         editor.Graph.m_rootGenerator = Root(editor, spec, situations);
 
         return file;
@@ -690,15 +710,29 @@ public static class CreatureAssembler
     /// </summary>
     private static hkbGenerator Locomotion(
         GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
-        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip)
+        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip,
+        Stance stance = Stance.Default)
     {
 
-        var byRole = spec.Animations
-            .SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r)))
-            .ToList();
+        // A stance is the standing and moving parts over again with the clips for it,
+        // and a clip with none of its own is shared rather than copied.
+        var all = spec.Animations.SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r))).ToList();
+        var mine = all.Where(r => r.Role.Stance == stance).ToList();
+        var byRole = mine.Count > 0 ? mine : all;
+        string tag = stance == Stance.Default ? "" : stance.ToString();
 
-        RoledAnimation idle = byRole.First(r => r.Role.Kind == RoleKind.Idle).Animation;
-        hkbGenerator standing = Clip("Idle", idle, ClipMode.Looping);
+        RoledAnimation Standing()
+        {
+            if (stance == Stance.Combat)
+                foreach (var candidate in byRole.Where(r => r.Role.Kind == RoleKind.CombatIdle))
+                    return candidate.Animation;
+
+            foreach (var candidate in byRole.Where(r => r.Role.Kind == RoleKind.Idle)) return candidate.Animation;
+            return all.First(r => r.Role.Kind == RoleKind.Idle).Animation;
+        }
+
+        RoledAnimation idle = Standing();
+        hkbGenerator standing = Clip($"{tag}Idle", idle, ClipMode.Looping);
 
         var gaits = byRole
             .Where(r => r.Role.Kind is RoleKind.Walk or RoleKind.Run or RoleKind.Trot or RoleKind.Sprint)
@@ -715,24 +749,24 @@ public static class CreatureAssembler
         {
             var rungs = gaits.Where(g => g.Role.Heading == heading)
                 .OrderBy(g => Rank(g.Role.Kind))
-                .Select(g => ((hkbGenerator)Clip($"{g.Role.Kind}{heading}", g.Animation, ClipMode.Looping), Rank(g.Role.Kind)))
+                .Select(g => ((hkbGenerator)Clip($"{tag}{g.Role.Kind}{heading}", g.Animation, ClipMode.Looping), Rank(g.Role.Kind)))
                 .ToList();
 
             arms.Add((rungs.Count == 1
                 ? rungs[0].Item1
-                : editor.Blend($"{spec.Name}{heading}Blend", "SpeedSampled", [.. rungs]), Around(heading)));
+                : editor.Blend($"{spec.Name}{tag}{heading}Blend", "SpeedSampled", [.. rungs]), Around(heading)));
         }
 
         hkbGenerator moving = arms.Count == 1
             ? arms[0].Child
-            : editor.Blend($"{spec.Name}DirectionBlend", "Direction", [.. arms]);
+            : editor.Blend($"{spec.Name}{tag}DirectionBlend", "Direction", [.. arms]);
 
-        hkbStateMachine machine = editor.StateMachine(spec.Name + "LocomotionBehavior");
-        var still = editor.State(machine, "StandingState", standing);
-        var going = editor.State(machine, "MovingState", moving);
+        hkbStateMachine machine = editor.StateMachine($"{spec.Name}{tag}LocomotionBehavior");
+        var still = editor.State(machine, $"{tag}StandingState", standing);
+        var going = editor.State(machine, $"{tag}MovingState", moving);
 
-        editor.Transition(still, "moveStart", going, editor.Effect("MoveStart", BlendDefault));
-        editor.Transition(going, "moveStop", still, editor.Effect("MoveStop", BlendDefault));
+        editor.Transition(still, "moveStart", going, editor.Effect($"{tag}MoveStart", BlendDefault));
+        editor.Transition(going, "moveStop", still, editor.Effect($"{tag}MoveStop", BlendDefault));
 
         return machine;
 

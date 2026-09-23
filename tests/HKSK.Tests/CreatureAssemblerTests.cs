@@ -515,6 +515,50 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.True(left.Rotations[^1].Value.Z * right.Rotations[^1].Value.Z < 0, "they turn opposite ways");
     }
 
+    /// <summary>
+    /// A stance is the standing and moving parts over again with the weapon out, and a
+    /// creature is let into it when the engine says the weapon is drawn.
+    /// </summary>
+    [Fact]
+    public void ACombatStanceIsTheWholeCreatureOverAgainWithItsWeaponOut()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                new RoledAnimation(Placeholder("Ready.hkx"), [new AnimationRole(RoleKind.CombatIdle, Stance: Stance.Combat)]),
+                new RoledAnimation(Placeholder("WalkArmed.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward, Stance: Stance.Combat)]),
+                new RoledAnimation(Placeholder("Draw.hkx"), [new AnimationRole(RoleKind.Equip)]),
+                new RoledAnimation(Placeholder("Sheathe.hkx"), [new AnimationRole(RoleKind.Unequip)]),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Contains(Module.CombatStance, made.Plan.Modules);
+        Assert.Contains(Module.EquipTransitions, made.Plan.Modules);
+
+        string[] Clips(params string[] events) =>
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of(events))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+
+        // At ease it stands as itself; ready, it stands as the armed one.
+        Assert.Equal(["Idle"], Clips());
+        Assert.Equal(["CombatIdle"], Clips("combatStanceStart"));
+
+        // And moving while ready plays the armed walk, not the other one.
+        Assert.Contains("CombatWalkForward", Clips("combatStanceStart", "moveStart"));
+
+        // Drawing and putting away are one-shots that say when they are done, which is
+        // what the engine waits for before it lets the creature attack.
+        Assert.Contains("Equip", Clips("weaponDraw"));
+        Assert.Contains("Unequip", Clips("weaponSheathe"));
+
+        var editor = new GraphEditor(HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx")));
+        Assert.Equal("weapEquipOut",
+            editor.EventName(editor.Require<hkbClipGenerator>("Equip").m_triggers!.m_triggers[0].m_event.m_id));
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

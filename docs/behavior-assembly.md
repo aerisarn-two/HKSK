@@ -433,8 +433,17 @@ at the chosen rate one way and the other, and builds a state for each entered by
 `turnLeft` and `turnRight` and left on `turnStop`. Those two slots are appended
 after the animations the caller gave, since the order is the numbering.
 
-The rest of the modules of §1.1 are next: the combat stance and its equip
-transitions, and the canned turns.
+**Built.** The combat stance, which is the standing and moving parts over again
+with the clips for it: a creature is let into it on `combatStanceStart` and out
+on `combatStanceStop`, and while it is in there the armed walk plays rather than
+the other one. A clip with no armed version of its own is shared rather than
+copied, which is what a creature with a combat idle and nothing else gets.
+
+**Built.** Drawing and putting away, where the clips are given: one-shot states on
+`weaponDraw` and `weaponSheathe` raising `weapEquipOut` and `weapUnequipOut`,
+which is what the engine waits for before it lets the creature attack.
+
+The canned turns are next, and then the quadruped and swimmer plans.
 
 ### 4.1 Files
 
