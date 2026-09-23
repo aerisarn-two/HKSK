@@ -415,6 +415,58 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Contains("attackStart_ForwardPower", named);
     }
 
+    /// <summary>
+    /// A knocked-down creature lies in whatever pose its ragdoll settled in, so which
+    /// get-up plays is not a choice a variable can make: a pose matcher compares the
+    /// ragdoll against each clip's first frame and plays the nearest.
+    /// </summary>
+    [Fact]
+    public void GettingUpMatchesThePoseTheCreatureIsLyingIn()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                new RoledAnimation(Placeholder("Up1.hkx"), [new AnimationRole(RoleKind.GetUp)]),
+                new RoledAnimation(Placeholder("Up2.hkx"), [new AnimationRole(RoleKind.GetUp)]),
+                new RoledAnimation(Placeholder("Raise.hkx"), [new AnimationRole(RoleKind.Reanimate)]),
+            ],
+            PoseMatchBones: (3, 4)),
+            Path.Combine(_folder, "out"));
+
+        var file = HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx"));
+        var editor = new GraphEditor(file);
+
+        hkbPoseMatchingGenerator up = editor.Require<hkbPoseMatchingGenerator>("GetUp");
+        Assert.Equal(2, up.m_children.Count);
+
+        // It starts playing when told to get up and starts matching on the event that
+        // put the creature on the floor.
+        Assert.Equal("GetUpStart", editor.EventName(up.m_startPlayingEventId));
+        Assert.Equal("Ragdoll", editor.EventName(up.m_startMatchingEventId));
+
+        // The root and the pelvis are bone 0 in all 97 of the shipped ones; the other
+        // two are a choice, and the caller's choice is kept.
+        Assert.Equal(0, up.m_rootBoneIndex);
+        Assert.Equal(0, up.m_pelvisIndex);
+        Assert.Equal(3, up.m_otherBoneIndex);
+        Assert.Equal(4, up.m_anotherBoneIndex);
+
+        // Two ways up, and the engine says which by iGetUpType.
+        var selector = editor.Require<hkbManualSelectorGenerator>("GetUpSelector");
+        Assert.Equal(2, selector.m_generators.Count);
+        Assert.Equal("iGetUpType",
+            editor.Strings.m_variableNames[selector.m_variableBindingSet!.m_bindings.Single().m_variableIndex]);
+
+        // A creature that gets up has to be given back to the engine to walk about with.
+        var raised = editor.Require<hkbClipGenerator>("GetUp1").m_triggers!.m_triggers
+            .Select(t => editor.EventName(t.m_event.m_id)).ToList();
+        Assert.Contains("GetUpEnd", raised);
+        Assert.Contains("AddCharacterControllerToWorld", raised);
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

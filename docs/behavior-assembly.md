@@ -416,7 +416,18 @@ and the block is derived from the states the graph has, entered by the names the
 race's attack data gives them. So all three cache files are written from one call
 and agree with the graph by construction.
 
-The rest of the modules of §1.1 and the get-up shell are next.
+**Built.** Getting up, which is the one situation whose choice a variable cannot
+make: a knocked-down creature lies in whatever pose its ragdoll settled in, so a
+pose matcher compares that pose against each get-up clip's first frame and plays
+the nearest. It starts playing on `GetUpStart` and starts matching on `Ragdoll`,
+the event that put the creature on the floor. The root and the pelvis are bone 0
+as in all 97 of the shipped ones; the other two bones are a choice, since the
+shipped ones are leftovers of whatever template each creature was copied from.
+Two ways up, chosen by `iGetUpType`: getting up from a knock-down and being
+reanimated by a spell, and where a creature has only one the one answers for both.
+
+The rest of the modules of §1.1 are next: the combat stance and its equip
+transitions, the turn-in-place state, and the canned turns.
 
 ### 4.1 Files
 

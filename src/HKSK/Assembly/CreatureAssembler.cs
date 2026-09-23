@@ -179,6 +179,56 @@ public static class CreatureAssembler
         foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Stagger).Take(1))
             Once("Stagger", animation, "staggerStart", "staggerStop", "IsStaggering");
 
+        // ---- getting back up. A knocked-down creature is lying in whatever pose its
+        // ragdoll settled in, and the get-up clips each start from a different one, so
+        // the choice between them is not made by a variable: a pose matcher compares the
+        // ragdoll's pose against each clip's first frame and plays the nearest. All 97
+        // of the shipped ones are set alike, and so is this.
+        var getUps = byRole.Where(r => r.Role.Kind == RoleKind.GetUp).ToList();
+        var reanimates = byRole.Where(r => r.Role.Kind == RoleKind.Reanimate).ToList();
+
+        if (getUps.Count > 0 || reanimates.Count > 0)
+        {
+            hkbGenerator GetUp(string name, IReadOnlyList<(RoledAnimation Animation, AnimationRole Role)> from)
+            {
+                var poses = from
+                    .Select((r, i) => Clip($"{name}{i + 1}", r.Animation, ClipMode.SinglePlay))
+                    .ToList();
+
+                foreach (hkbClipGenerator pose in poses)
+                {
+                    editor.AddTrigger(pose, "GetUpEnd");
+                    editor.AddTrigger(pose, "AddCharacterControllerToWorld");
+                }
+
+                return Matching(editor, name, poses, spec);
+            }
+
+            // Two ways up, and the engine says which by iGetUpType: a creature that was
+            // knocked down gets up, and one that was raised by a spell is reanimated.
+            hkbGenerator up = getUps.Count > 0 ? GetUp("GetUp", getUps)
+                : GetUp("GetUp", reanimates);
+            hkbGenerator back = reanimates.Count > 0 ? GetUp("Reanimate", reanimates) : up;
+
+            var selector = new hkbManualSelectorGenerator
+            {
+                m_name = "GetUpSelector",
+                m_generators = [up, back],
+                m_selectedGeneratorIndex = 0,
+                m_currentGeneratorIndex = 0,
+            };
+
+            editor.Bind(selector, "selectedGeneratorIndex", "iGetUpType");
+
+            var state = editor.State(situations, "GetUpState", selector);
+            editor.Wildcard(situations, "GetUpStart", state, editor.Effect("ToGetUp", BlendFast));
+            editor.Transition(state, "GetUpEnd", idle, editor.Effect("FromGetUp", BlendDefault));
+
+            notes.Add(getUps.Count > 0
+                ? $"getting up, from {getUps.Count} {(getUps.Count == 1 ? "pose" : "poses")} matched against the ragdoll's"
+                : "no get-up of its own, so the reanimate answers for both");
+        }
+
         // ---- dying. The clip plays once and hands the creature to its ragdoll, which
         // is what 36 of the game's creatures do; the nine without a death clip go
         // straight to the ragdoll and this state is simply absent.
@@ -193,6 +243,50 @@ public static class CreatureAssembler
 
         static string Bare(string attack) =>
             attack.StartsWith("attackStart_", StringComparison.OrdinalIgnoreCase) ? attack["attackStart_".Length..] : attack;
+    }
+
+    /// <summary>
+    /// A generator that plays whichever of its clips starts nearest the pose the
+    /// creature is already in.
+    /// </summary>
+    /// <remarks>
+    /// All 97 of the shipped ones are set the same way, and the settings are not
+    /// interesting: what matters is which bones it compares. The root and the pelvis are
+    /// bone 0 in every one of them, and the other two are whatever the template it was
+    /// copied from happened to name -- a canine's shoulder blades on one creature, an
+    /// atronach's fingers on another -- so they are a choice rather than a requirement.
+    /// It starts playing on <c>GetUpStart</c> and starts matching on <c>Ragdoll</c>,
+    /// which is the event that put the creature on the floor in the first place.
+    /// </remarks>
+    private static hkbPoseMatchingGenerator Matching(
+        GraphEditor editor, string name, IReadOnlyList<hkbClipGenerator> poses, CreatureSpec spec)
+    {
+        (short other, short another) = spec.PoseMatchBones;
+
+        return new hkbPoseMatchingGenerator
+        {
+            m_name = name,
+            m_children = [.. poses.Select(p => new hkbBlenderGeneratorChild
+            {
+                m_generator = p,
+                m_weight = 1f,
+                m_worldFromModelWeight = 1f,
+            })],
+            m_worldFromModelRotation = System.Numerics.Quaternion.Identity,
+            m_blendSpeed = 1f,
+            m_minSpeedToSwitch = 0.2f,
+            m_minSwitchTimeNoError = 0.2f,
+            m_minSwitchTimeFullError = 0f,
+            m_startPlayingEventId = editor.Event("GetUpStart"),
+            m_startMatchingEventId = editor.Event("Ragdoll"),
+            m_rootBoneIndex = 0,
+            m_pelvisIndex = 0,
+            m_otherBoneIndex = other,
+            m_anotherBoneIndex = another,
+            m_mode = 0,
+            m_flags = 0,
+            m_indexOfSyncMasterChild = -1,
+        };
     }
 
     /// <summary>

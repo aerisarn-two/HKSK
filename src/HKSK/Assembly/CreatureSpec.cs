@@ -25,6 +25,11 @@ namespace HKSK.Assembly;
 /// A duration is what turns a speed into a travel, so a clip with a speed and no
 /// duration cannot be given root motion.
 /// </param>
+/// <param name="PoseMatchBones">
+/// The two bones the get-up compares, beside the root and the pelvis which are always
+/// bone 0. Any two will do -- the shipped ones are leftovers of whatever template the
+/// creature was copied from -- so this is a choice and not a requirement.
+/// </param>
 /// <param name="TurnRate">
 /// Degrees a second for a turn in place that has to be made rather than given. Null
 /// reads one off the creature's height.
@@ -36,6 +41,7 @@ public sealed record CreatureSpec(
     string? RagdollPath = null,
     string MovementTypeName = "Default",
     IReadOnlyDictionary<string, float>? ClipDurations = null,
+    (short Other, short Another) PoseMatchBones = default,
     float? TurnRate = null);
 
 /// <summary>What was assembled.</summary>
