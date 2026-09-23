@@ -768,4 +768,47 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Equal(40f, made.Movement.BackWalk);
         Assert.DoesNotContain(made.Notes, n => n.Contains("guess and not a measurement", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// The cache row's file list is in the shape the game's own are: the behaviour first,
+    /// because the engine takes the first behaviour in the list as the creature's root; no
+    /// project file, which not one of the 429 shipped rows names; and nothing twice, which a
+    /// creature whose rig doubles as its ragdoll would otherwise do.
+    /// </summary>
+    [Fact]
+    public void TheCacheRowNamesItsFilesTheWayTheGamesOwnRowsDo()
+    {
+        AssemblyResult made = Walker();
+        var files = made.Cache.Block.Files;
+
+        Assert.StartsWith(@"behaviors\", files[0], StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(files, f => f.EndsWith("Project.hkx", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(files.Count, files.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        // With no ragdoll of its own the rig answers for both, and is named once.
+        Assert.Single(files, f => f.EndsWith("skeleton.hkx", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(3, files.Count);
+    }
+
+    /// <summary>A creature with a ragdoll of its own names both, still without repeating.</summary>
+    [Fact]
+    public void ARagdollOfItsOwnIsNamedBesideTheRig()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec(
+                "Bonewalker",
+                Placeholder("skeleton.hkx"),
+                [
+                    new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                    new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+                ],
+                RagdollPath: Placeholder("ragdoll.hkx")),
+            Path.Combine(_folder, "out"));
+
+        var files = made.Cache.Block.Files;
+
+        Assert.Equal(4, files.Count);
+        Assert.Equal(files.Count, files.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.StartsWith(@"behaviors\", files[0], StringComparison.OrdinalIgnoreCase);
+    }
 }

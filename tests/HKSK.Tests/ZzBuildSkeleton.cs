@@ -112,6 +112,10 @@ public sealed class ZzBuildSkeleton
 
             sb.AppendLine($"{usable.Count} of {read.Clips.Count} clips have a role to fill");
 
+            // Into a mod's own Meshes folder, beside copies of the game's three caches, which
+            // is the shape a creature actually ships in.
+            string mod = Environment.GetEnvironmentVariable("HKSK_MOD") ?? Path.Combine(outDir, "mod", "meshes");
+
             var spec = new CreatureSpec(
                 "BoneSkeleton",
                 built,
@@ -121,7 +125,8 @@ public sealed class ZzBuildSkeleton
 
             try
             {
-                AssemblyResult made2 = CreatureAssembler.Assemble(spec, Path.Combine(outDir, "creature"));
+                AssemblyResult made2 = CreatureAssembler.Assemble(
+                    spec, Path.Combine(mod, "actors", "boneskeleton"));
                 sb.AppendLine($"project: {made2.ProjectPath}");
                 sb.AppendLine($"plan: {made2.Plan.Locomotion}, modules {string.Join(", ", made2.Plan.Modules)}");
                 sb.AppendLine($"movement: {made2.Movement}");
@@ -130,6 +135,13 @@ public sealed class ZzBuildSkeleton
                 sb.AppendLine("notes:");
                 foreach (string n in made2.Notes) sb.AppendLine($"  {n}");
                 sb.AppendLine($"cache: {made2.Cache.Name}, {made2.Cache.Movements?.Movements.Count ?? 0} movement rows");
+
+                sb.AppendLine();
+                sb.AppendLine("--- installed");
+                InstallReport put = CreatureInstaller.Install(made2, mod);
+                sb.AppendLine($"into {put.MeshesFolder}");
+                sb.AppendLine($"added={put.Added} speedTable={put.SpeedTable} setData={put.SetData}");
+                foreach (string n in put.Notes) sb.AppendLine($"  {n}");
             }
             catch (Exception e)
             {

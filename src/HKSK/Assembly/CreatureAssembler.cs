@@ -144,7 +144,12 @@ public static class CreatureAssembler
         Write(project, to => Project(character).Save(to));
 
         // ---- the row the game reads the creature's animation out of
-        HKSK.Cache.AnimationDataProject cache = CacheRow(spec, stored, clips, [project, character, behaviour, rig, ragdoll], notes);
+        // The file list, in the shape the game's own 429 rows are in: the behaviour first,
+        // then the character, then the rig. Not one shipped row names its own project file,
+        // and not one names any file twice -- so a creature whose rig answers for its ragdoll
+        // as well lists that file once, not once for each job it does.
+        HKSK.Cache.AnimationDataProject cache =
+            CacheRow(spec, stored, clips, Listed(behaviour, character, rig, ragdoll), notes);
 
         // ---- and what its movement type has to say, which the clips decide
         HKSK.Speed.MovementType movement = Movement(spec, notes);
@@ -551,6 +556,28 @@ public static class CreatureAssembler
     /// hoped for from the animation.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The files a project's cache row names, in the order and the shape the game's own
+    /// rows use.
+    /// </summary>
+    /// <remarks>
+    /// Read off all 429 shipped rows rather than reasoned about. Every one of them begins
+    /// with a behaviour -- 371 from <c>Behaviors</c> and the rest from a folder named for
+    /// the kind of behaviour it is -- and the engine takes the first behaviour in the list
+    /// as the creature's root. Not one names its own <c>*Project.hkx</c>, and not one names
+    /// any file twice, which a creature whose rig doubles as its ragdoll otherwise would.
+    /// </remarks>
+    private static List<string> Listed(params string[] files)
+    {
+        var listed = new List<string>(files.Length);
+
+        foreach (string file in files)
+            if (file is { Length: > 0 } && !listed.Contains(file, StringComparer.OrdinalIgnoreCase))
+                listed.Add(file);
+
+        return listed;
+    }
+
     private static HKSK.Cache.AnimationDataProject CacheRow(
         CreatureSpec spec,
         IReadOnlyList<string> animations,
