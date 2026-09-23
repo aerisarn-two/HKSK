@@ -472,6 +472,27 @@ swim is a posture with locomotion in it rather than a clip.
 
 All five locomotion plans of §1.1 are now built.
 
+### 2.1.1 Reading a guess out of the names
+
+Roles are asked for rather than read because the names cannot be trusted. But a
+person handed a folder of 200 clips should not have to type 200 roles either, so
+`RoleReader.Of(name)` guesses and says which part of the name it read, for a front
+end to show and a person to correct.
+
+It is deliberately shy: a name it does not recognise gets no role rather than a
+wrong one, because an animation in the wrong role is worse than one in none. A
+walk filed as an attack is a creature that lunges when it is asked to move; a
+missing walk is a refusal with a reason.
+
+The order of its readings is the whole of the rule, and it is neither alphabetical
+nor by length: a canned turn is read before a turn in place, an unequip before an
+equip, a paired kill move before anything, because each is a special case of what
+follows it.
+
+Measured against the game's own 6,914 animation names it reads **73%**. What it
+does not know is mostly what the route does not model: jumping, summoning, a
+saddle's offset, the player's shouts.
+
 ### 4.1 Files
 
     <project>/<name>project.hkx                    hkbProjectData naming the character file
