@@ -1,7 +1,9 @@
 # Assembling a behaviour from animations, a skeleton and a ragdoll
 
-    Status:   DESIGN -- the facts are measured (the documents cited); the API is
-              proposed and not yet built
+    Status:   DESIGN, being built. The facts are measured (the documents cited).
+              §3, reading a set of roles and saying what can be made of them, is
+              built and tested as `HKSK.Assembly.CreaturePlanner`; the rest of the
+              API is proposed and not yet built.
     Inputs:   docs/creature-patterns-research.md (what every creature is made of),
               docs/animation-variables.md and docs/animation-events.md (the engine
               contract), docs/speed-data.md, docs/animation-set-data.md,
@@ -308,6 +310,14 @@ Within the plan:
 
 The floor is the witchlight: idle, walk, attack, recoil, staggers -- seven
 animations. Below it the API refuses: an idle and a forward walk are the minimum.
+
+**Built.** `CreaturePlanner.Of(animations)` returns a `CreaturePlan`: the
+locomotion plan, the modules the animations are enough for, the attack events,
+the headings, a note per reading, and a refusal per thing missing. It is pure and
+writes nothing, so a front end can show it before a byte is committed, and the
+answer to "why has my creature no combat stance" is a note in it rather than a
+silence in the graph. A module is in the plan exactly when its animations are,
+and out of it with a note saying which animation would have put it in.
 
 ## 4. What is built
 
