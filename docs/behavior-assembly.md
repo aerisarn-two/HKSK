@@ -461,7 +461,16 @@ the speeds its clips deliver, both at the rate the generator plays them; an arm
 anywhere else is a creature that turns a fraction of what it was asked for, or
 slides (`docs/case-study-house-sabre-cat.md` §11.4).
 
-The swimmer plan is what is left.
+**Built.** Swimming, in both of its shapes. A creature with no walk swims for a
+living and its swim *is* its locomotion, which is what the slaughterfish is; its
+movement type is read off its swim clips, there being no walk to read. A creature
+that walks and also swims gets a swim beside its walk: a state entered on
+`swimStart` and left on `swimStop`, holding the whole locomotion over again with
+the swim clips. That is the right shape because the graph hears about water
+through one event and nothing else -- no depth, no surface, no submersion -- so a
+swim is a posture with locomotion in it rather than a clip.
+
+All five locomotion plans of §1.1 are now built.
 
 ### 4.1 Files
 

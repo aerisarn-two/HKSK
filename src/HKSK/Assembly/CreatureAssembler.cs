@@ -304,6 +304,19 @@ public static class CreatureAssembler
             editor.Transition(state, "turnStop", idle, editor.Effect($"FromTurn{which}", BlendDefault));
         }
 
+        // ---- swimming, for a creature that also walks. The graph hears about water
+        // through one event and nothing else: no depth, no surface, no submersion. A
+        // swim is a posture with locomotion in it, which is why it is the whole
+        // locomotion over again rather than a clip.
+        if (plan.Locomotion != LocomotionPlan.Swimmer && byRole.Any(r => r.Role.Kind == RoleKind.Swim))
+        {
+            hkbGenerator swim = Locomotion(editor, spec, plan, Clip, Stance.Default, LocomotionPlan.ForwardOnly);
+            var state = editor.State(situations, "SwimState", swim);
+            editor.Wildcard(situations, "swimStart", state, editor.Effect("ToSwim", BlendDefault));
+            editor.Transition(state, "swimStop", idle, editor.Effect("FromSwim", BlendDefault));
+            notes.Add("swimming, entered on swimStart and left on swimStop");
+        }
+
         // ---- the canned turns, which are a manoeuvre the AI asks for by name rather
         // than a rate it asks for: turn ninety degrees left, turn about. Where a
         // creature has none the events fall on the floor, as the witchlight's do.
@@ -474,7 +487,9 @@ public static class CreatureAssembler
             return 0f;
         }
 
-        float forwardWalk = Delivered(Heading.Forward, RoleKind.Walk, RoleKind.Trot);
+        // A creature that swims for a living has no walk to read, so its swim is the
+        // speed its movement type states, which is what the slaughterfish's does.
+        float forwardWalk = Delivered(Heading.Forward, RoleKind.Walk, RoleKind.Trot, RoleKind.Swim);
         float forwardRun = Delivered(Heading.Forward, RoleKind.Run, RoleKind.Sprint);
         if (forwardRun <= 0) forwardRun = forwardWalk;
         if (forwardWalk <= 0) forwardWalk = forwardRun;
@@ -484,7 +499,7 @@ public static class CreatureAssembler
         // and run at one speed are. A heading with nothing at all takes the forward one.
         float Either(Heading heading, bool run)
         {
-            float walk = Delivered(heading, RoleKind.Walk, RoleKind.Trot);
+            float walk = Delivered(heading, RoleKind.Walk, RoleKind.Trot, RoleKind.Swim);
             float ran = Delivered(heading, RoleKind.Run, RoleKind.Sprint);
 
             return run
@@ -813,17 +828,24 @@ public static class CreatureAssembler
     /// still, and what it does while moving.
     /// </summary>
     private static hkbGenerator Locomotion(
-        GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
+        GraphEditor editor, CreatureSpec spec, CreaturePlan creaturePlan,
         Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip,
-        Stance stance = Stance.Default)
+        Stance stance = Stance.Default,
+        LocomotionPlan? forPlan = null)
     {
+        LocomotionPlan plan = forPlan ?? creaturePlan.Locomotion;
+
+        // The swim is built with the swim clips whether it is the creature's whole
+        // locomotion or a state it enters when it gets wet.
+        bool swimming = plan == LocomotionPlan.Swimmer || forPlan is not null;
 
         // A stance is the standing and moving parts over again with the clips for it,
         // and a clip with none of its own is shared rather than copied.
         var all = spec.Animations.SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r))).ToList();
         var mine = all.Where(r => r.Role.Stance == stance).ToList();
         var byRole = mine.Count > 0 ? mine : all;
-        string tag = stance == Stance.Default ? "" : stance.ToString();
+        string tag = swimming && plan != LocomotionPlan.Swimmer ? "Swim"
+            : stance == Stance.Default ? "" : stance.ToString();
 
         RoledAnimation Standing()
         {
@@ -839,9 +861,13 @@ public static class CreatureAssembler
         hkbGenerator standing = Clip($"{tag}Idle", idle, ClipMode.Looping);
 
 
-        var gaits = byRole
-            .Where(r => r.Role.Kind is RoleKind.Walk or RoleKind.Run or RoleKind.Trot or RoleKind.Sprint)
-            .ToList();
+        // A creature with no walk at all swims for a living, and its swim is its
+        // locomotion rather than a state beside it, which is what the slaughterfish is.
+        RoleKind[] kinds = swimming
+            ? [RoleKind.Swim]
+            : [RoleKind.Walk, RoleKind.Run, RoleKind.Trot, RoleKind.Sprint];
+
+        var gaits = byRole.Where(r => kinds.Contains(r.Role.Kind)).ToList();
 
         // One ladder per heading, then a compass over the ladders, which is how the
         // game's bipeds are built: the draugr's eight arms each hold a three-rung ladder
@@ -852,7 +878,7 @@ public static class CreatureAssembler
         // A quadruped does not walk sideways: it steers, so each rung of its ladder is
         // three clips -- bearing left, straight on, bearing right -- blended on how hard
         // the engine is asking it to turn. 13 of the game's creatures are built this way.
-        if (plan.Locomotion == LocomotionPlan.Quadruped)
+        if (plan == LocomotionPlan.Quadruped)
             return Steering(editor, spec, gaits, standing, Clip, tag);
 
         var arms = new List<(hkbGenerator Child, float Weight)>();

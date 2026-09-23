@@ -646,6 +646,62 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.Contains("WalkBackward", backing);
     }
 
+    /// <summary>
+    /// A creature with no walk swims for a living, and its swim is its locomotion
+    /// rather than a state beside it, which is what the slaughterfish is.
+    /// </summary>
+    [Fact]
+    public void ACreatureWithNoWalkSwimsForALiving()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonefish", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Float.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Swim.hkx"), [new AnimationRole(RoleKind.Swim, Heading.Forward)], Speed: 200f),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Equal(LocomotionPlan.Swimmer, made.Plan.Locomotion);
+
+        string[] moving =
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of("moveStart"))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+
+        Assert.Contains("SwimForward", moving);
+        Assert.Equal(200f, made.Movement.ForwardWalk);
+    }
+
+    /// <summary>
+    /// A creature that walks and also swims gets a swim beside its walk. The graph
+    /// hears about water through one event and nothing else -- no depth, no surface,
+    /// no submersion -- so a swim is a posture with locomotion in it.
+    /// </summary>
+    [Fact]
+    public void AWalkerThatSwimsGetsAPostureForIt()
+    {
+        AssemblyResult made = CreatureAssembler.Assemble(
+            new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+            [
+                new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+                new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)], Speed: 90f),
+                new RoledAnimation(Placeholder("Paddle.hkx"), [new AnimationRole(RoleKind.Swim, Heading.Forward)], Speed: 60f),
+            ]),
+            Path.Combine(_folder, "out"));
+
+        Assert.Contains(Module.Swimming, made.Plan.Modules);
+
+        string[] Clips(params string[] events) =>
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of(events))
+                .Active.Where(a => a.Generator is hkbClipGenerator).Select(a => a.Name)];
+
+        // On dry land it walks; in the water it paddles. Leaving the water is not
+        // asserted here: the evaluator is given a set of events rather than a sequence,
+        // so swimStart and swimStop together are not one then the other.
+        Assert.Contains("WalkForward", Clips("moveStart"));
+        Assert.Contains("SwimSwimForward", Clips("swimStart", "moveStart"));
+        Assert.DoesNotContain("WalkForward", Clips("swimStart", "moveStart"));
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {
