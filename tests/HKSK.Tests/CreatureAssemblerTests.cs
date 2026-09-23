@@ -321,6 +321,68 @@ public sealed class CreatureAssemblerTests : IDisposable
         Assert.NotNull(cache.SpeedData?.Block("BonewalkerProject"));
     }
 
+    /// <summary>A creature that fights, flinches, stumbles and dies.</summary>
+    private AssemblyResult Fighter() => CreatureAssembler.Assemble(
+        new CreatureSpec("Bonewalker", Placeholder("skeleton.hkx"),
+        [
+            new RoledAnimation(Placeholder("Idle.hkx"), [new AnimationRole(RoleKind.Idle)]),
+            new RoledAnimation(Placeholder("Walk.hkx"), [new AnimationRole(RoleKind.Walk, Heading.Forward)]),
+            new RoledAnimation(Placeholder("Swing.hkx"), [new AnimationRole(RoleKind.Attack, Name: "attackStart_Attack1")]),
+            new RoledAnimation(Placeholder("Heavy.hkx"), [new AnimationRole(RoleKind.PowerAttack, Name: "attackStart_ForwardPower")]),
+            new RoledAnimation(Placeholder("Hit.hkx"), [new AnimationRole(RoleKind.Recoil)]),
+            new RoledAnimation(Placeholder("Stumble.hkx"), [new AnimationRole(RoleKind.Stagger)]),
+            new RoledAnimation(Placeholder("Die.hkx"), [new AnimationRole(RoleKind.Death)]),
+        ]),
+        Path.Combine(_folder, "out"));
+
+    /// <summary>
+    /// The engine sends an attack by the name the race's attack data gives it, and the
+    /// graph is what answers. Each situation is left when its own clip says so.
+    /// </summary>
+    [Fact]
+    public void TheEngineReachesEachSituationByTheEventThatStartsIt()
+    {
+        AssemblyResult made = Fighter();
+
+        string[] Clips(params string[] events) =>
+            [.. ActiveGenerators.Of(made.ProjectPath, _ => { }, Events.Of(events))
+                .Active.Where(a => a.Generator is hkbClipGenerator)
+                .Select(a => a.Name)];
+
+        Assert.Contains("Attack_Attack1", Clips("attackStart_Attack1"));
+        Assert.Contains("Attack_ForwardPower", Clips("attackStart_ForwardPower"));
+        Assert.Contains("Recoil", Clips("recoilStart"));
+        Assert.Contains("Stagger", Clips("staggerStart"));
+        Assert.Contains("Death", Clips("DeathAnimation"));
+
+        // And none of them is where the creature stands when nothing has happened.
+        Assert.Equal(["Idle"], Clips());
+    }
+
+    /// <summary>
+    /// A one-shot clip raises its own ending, so a creature is never left mid-attack
+    /// waiting to be told to stop, and the death clip hands it to its ragdoll.
+    /// </summary>
+    [Fact]
+    public void EachSituationsClipRaisesTheEventThatEndsIt()
+    {
+        AssemblyResult made = Fighter();
+        var editor = new GraphEditor(HavokFile.Load(Path.Combine(
+            Path.GetDirectoryName(made.ProjectPath)!, "behaviors", "BonewalkerBehavior.hkx")));
+
+        string Raised(string clip) =>
+            editor.EventName(editor.Require<hkbClipGenerator>(clip).m_triggers!.m_triggers[0].m_event.m_id)!;
+
+        Assert.Equal("attackStop", Raised("Attack_Attack1"));
+        Assert.Equal("recoilStop", Raised("Recoil"));
+        Assert.Equal("staggerStop", Raised("Stagger"));
+        Assert.Equal("Ragdoll", Raised("Death"));
+
+        // Played once, never looped: a creature that loops its death never finishes it.
+        foreach (string once in new[] { "Attack_Attack1", "Recoil", "Stagger", "Death" })
+            Assert.Equal((sbyte)ClipMode.SinglePlay, editor.Require<hkbClipGenerator>(once).m_mode);
+    }
+
     [Fact]
     public void AnimationsThatDoNotMakeACreatureAreRefusedBeforeAnythingIsWritten()
     {

@@ -133,6 +133,69 @@ public static class CreatureAssembler
     }
 
     /// <summary>
+    /// The situations beside standing about: striking, being struck, and dying.
+    /// </summary>
+    /// <remarks>
+    /// Every one of them is the same shape in the game's 46 creatures, and it is the
+    /// shape built here: a clip played once, entered by the event the engine sends,
+    /// raising the flag that says what the engine may do meanwhile, and left when the
+    /// clip itself says it is finished. The clip raises that event at its own end, so a
+    /// creature never has to be told to stop attacking -- the animation says so.
+    /// </remarks>
+    private static void Situations(
+        GraphEditor editor, CreatureSpec spec, hkbStateMachine situations, hkbStateMachineStateInfo idle,
+        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip, List<string> notes)
+    {
+        var byRole = spec.Animations.SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r))).ToList();
+
+        hkbStateMachineStateInfo Once(string name, RoledAnimation animation, string enter, string leaves, string? raises)
+        {
+            hkbClipGenerator clip = Clip(name, animation, ClipMode.SinglePlay);
+            editor.AddTrigger(clip, leaves);
+
+            hkbGenerator generator = clip;
+            if (raises is { Length: > 0 })
+                generator = editor.Modified($"{name}_MG", editor.Expressions($"{name}_EEM", $"{raises} = 1"), clip);
+
+            var state = editor.State(situations, name, generator);
+            editor.Wildcard(situations, enter, state, editor.Effect($"To{name}", BlendFast));
+            editor.Transition(state, leaves, idle, editor.Effect($"From{name}", BlendDefault));
+            return state;
+        }
+
+        // ---- striking. Each attack is entered by the name the race's attack data
+        // gives it, which is also the name the set data derives the attack from.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind is RoleKind.Attack or RoleKind.PowerAttack))
+        {
+            string attack = role.Name ?? animation.Stem;
+            Once($"Attack_{Bare(attack)}", animation, attack, "attackStop", "IsAttacking");
+        }
+
+        // ---- being struck. A recoil is a flinch and a stagger is a stumble, and the
+        // engine tells them apart by which event it sends.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Recoil).Take(1))
+            Once("Recoil", animation, "recoilStart", "recoilStop", "IsRecoiling");
+
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Stagger).Take(1))
+            Once("Stagger", animation, "staggerStart", "staggerStop", "IsStaggering");
+
+        // ---- dying. The clip plays once and hands the creature to its ragdoll, which
+        // is what 36 of the game's creatures do; the nine without a death clip go
+        // straight to the ragdoll and this state is simply absent.
+        foreach (var (animation, role) in byRole.Where(r => r.Role.Kind == RoleKind.Death).Take(1))
+        {
+            hkbClipGenerator clip = Clip("Death", animation, ClipMode.SinglePlay);
+            editor.AddTrigger(clip, "Ragdoll");
+            var state = editor.State(situations, "Death", clip);
+            editor.Wildcard(situations, "DeathAnimation", state, editor.Effect("ToDeath", BlendFast));
+            notes.Add("a death animation, so the creature animates to its ragdoll");
+        }
+
+        static string Bare(string attack) =>
+            attack.StartsWith("attackStart_", StringComparison.OrdinalIgnoreCase) ? attack["attackStart_".Length..] : attack;
+    }
+
+    /// <summary>
     /// The movement type the creature's clips describe.
     /// </summary>
     /// <remarks>
@@ -408,12 +471,23 @@ public static class CreatureAssembler
 
         notes.Add($"{editor.Strings.m_variableNames.Count} variables and {editor.Strings.m_eventNames.Count} events declared");
 
+        // A clip's cache index is the position of its animation in the character's list,
+        // and the cache restates every generator by name against it.
+        hkbClipGenerator Clip(string name, RoledAnimation animation, ClipMode mode)
+        {
+            string relative = System.IO.Path.Combine("animations", animation.Stem + ".hkx");
+            int index = animations.ToList().FindIndex(a => string.Equals(a, relative, StringComparison.OrdinalIgnoreCase));
+            clips.Add(new HKSK.Cache.ClipGeneratorEntry { Name = name, CacheIndex = index });
+            return editor.Clip(name, System.IO.Path.Combine("Animations", animation.Stem + ".hkx"), mode);
+        }
+
         // ---- the fourth layer first, because the ones above it hold it
-        hkbGenerator locomotion = Locomotion(editor, spec, plan, animations, clips);
+        hkbGenerator locomotion = Locomotion(editor, spec, plan, Clip);
 
         // ---- the situation machine: what the creature is doing
         hkbStateMachine situations = editor.StateMachine(spec.Name + "SituationBehavior");
-        editor.State(situations, "DefaultState", locomotion);
+        var idling = editor.State(situations, "DefaultState", locomotion);
+        Situations(editor, spec, situations, idling, Clip, notes);
         editor.Graph.m_rootGenerator = Root(editor, spec, situations);
 
         return file;
@@ -485,17 +559,8 @@ public static class CreatureAssembler
     /// </summary>
     private static hkbGenerator Locomotion(
         GraphEditor editor, CreatureSpec spec, CreaturePlan plan,
-        IReadOnlyList<string> animations, List<HKSK.Cache.ClipGeneratorEntry> clips)
+        Func<string, RoledAnimation, ClipMode, hkbClipGenerator> Clip)
     {
-        // A clip's cache index is the position of its animation in the character's
-        // list, and the cache restates every generator by name against it.
-        hkbClipGenerator Clip(string name, RoledAnimation animation, ClipMode mode)
-        {
-            string relative = System.IO.Path.Combine("animations", animation.Stem + ".hkx");
-            int index = animations.ToList().FindIndex(a => string.Equals(a, relative, StringComparison.OrdinalIgnoreCase));
-            clips.Add(new HKSK.Cache.ClipGeneratorEntry { Name = name, CacheIndex = index });
-            return editor.Clip(name, System.IO.Path.Combine("Animations", animation.Stem + ".hkx"), mode);
-        }
 
         var byRole = spec.Animations
             .SelectMany(a => a.Roles.Select(r => (Animation: a, Role: r)))

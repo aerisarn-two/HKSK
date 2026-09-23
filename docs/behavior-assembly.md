@@ -402,7 +402,15 @@ there: the clips give the movement type, the movement type is the ladder's rungs
 the ladder is sampled into the table, and the table is what the speed sampler
 looks a request up in.
 
-The modules of §1.1 and the set data are next.
+**Built.** The situations beside standing about: an attack state per attack entered
+by the name the race's attack data gives it, a recoil, a stagger, and a death that
+hands the creature to its ragdoll. Every one is the same shape, which is the shape
+all 46 of the game's creatures use: a clip played once, entered by the event the
+engine sends, raising the flag that says what the engine may do meanwhile, and
+left when the clip itself says it is finished. The clip raises that event at its
+own end, so a creature is never left mid-attack waiting to be told to stop.
+
+The rest of the modules of §1.1, the set data, and the get-up shell are next.
 
 ### 4.1 Files
 
