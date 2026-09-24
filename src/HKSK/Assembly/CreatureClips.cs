@@ -146,11 +146,27 @@ public static class CreatureClips
             // rest pose on every frame, which looks like an animation that stands still.
             SampledAnimation clip = FbxAnimationReader.ReadAnimation(document, exported, takeName: take);
 
+            // Measured over the renamed rig, which is the same rig in the same order and is
+            // the one whose feet are called what the caller asked for. It comes before the
+            // writing because what the feet did is part of what the clip announces.
+            IReadOnlyList<string> standsOn = Named(theirs, feet ?? Feet);
+            InferredMotion? measured = FootMotion.Infer(clip, theirs, standsOn);
+
+            // What the clip announces: its footsteps where its feet actually landed, and its
+            // attack events where the game puts its own. Read here rather than taken from the
+            // file it is written into, which announces whatever that creature announced.
+            var says = ClipAnnotations.Of(
+                RoleReader.Of(take).Roles,
+                clip.Duration,
+                measured,
+                [.. standsOn.Where(Leftward)]);
+
             // A track whose bone the creature has not got is left pointing at the root, which
             // every rig has and no clip drives: dropping the track instead would renumber the
             // rest, and every index is valid so nothing would report it.
             SampledAnimation bound = clip with
             {
+                Annotations = says,
                 TrackToBone =
                 [
                     .. Enumerable.Range(0, clip.TrackCount).Select(t =>
@@ -162,11 +178,10 @@ public static class CreatureClips
             };
 
             string path = Path.Combine(outputFolder, take + ".hkx");
-            UncompressedAnimation.Write(templatePath, bound, path);
+            // Not the template's events: it is a shipped animation picked for the shape of the
+            // file and it announces another creature's business at another creature's times.
+            UncompressedAnimation.Write(templatePath, bound, path, keepTemplateAnnotations: false);
 
-            // Measured over the renamed rig, which is the same rig in the same order and is
-            // the one whose feet are called what the caller asked for.
-            InferredMotion? measured = FootMotion.Infer(clip, theirs, Named(theirs, feet ?? Feet));
             InferredMotion? travel = measured is null || turnDegrees == 0f
                 ? measured
                 : measured with { Heading = Wrap(measured.Heading + turnDegrees) };
@@ -185,6 +200,22 @@ public static class CreatureClips
         if (at < -180f) at += 360f;
         return at;
     }
+
+    /// <summary>
+    /// Whether a bone is on the creature's left, which is how a footfall is told which foot
+    /// it was.
+    /// </summary>
+    /// <remarks>
+    /// By the name, because that is all there is: the game's bones say which side they are on
+    /// and say it the same way on every creature -- <c>NPC L Toe0 [LToe]</c>. A rig whose feet
+    /// say nothing has every footfall called a right one, which is wrong half the time and
+    /// still better than none at all.
+    /// </remarks>
+    private static bool Leftward(string bone) =>
+        bone.Contains(" L ", StringComparison.OrdinalIgnoreCase)
+        || bone.StartsWith("L ", StringComparison.OrdinalIgnoreCase)
+        || bone.Contains("_L_", StringComparison.OrdinalIgnoreCase)
+        || bone.Contains("Left", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The feet a rig actually has, since a name it has not got reads as nothing.</summary>
     private static IReadOnlyList<string> Named(Skeleton rig, IReadOnlyList<string> wanted)

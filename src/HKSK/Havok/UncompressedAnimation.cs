@@ -44,7 +44,29 @@ public enum AnimationCompression
 public static class UncompressedAnimation
 {
     /// <summary>Writes <paramref name="animation"/> uncompressed into a copy of <paramref name="template"/>.</summary>
-    public static void Write(string template, HkFbx.SampledAnimation animation, string output)
+    /// <param name="keepTemplateAnnotations">
+    /// What to announce when the animation itself announces nothing.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// The two callers of this want opposite things and the difference is what the template
+    /// is to them. Replacing one clip of a creature's own project writes into that clip's own
+    /// file, so keeping what it announced is the point: the curves change and the footsteps
+    /// stay where the animator put them.
+    /// </para>
+    /// <para>
+    /// Writing a bought clip into whichever shipped animation happened to be handy is another
+    /// matter entirely. There the template announces another creature's business at another
+    /// creature's times, and inheriting it is how twenty-six clips of a skeleton all came to
+    /// announce the same weapon draw at nought seconds -- its death included -- while not one
+    /// of its attacks announced the blow landing.
+    /// </para>
+    /// </remarks>
+    public static void Write(
+        string template,
+        HkFbx.SampledAnimation animation,
+        string output,
+        bool keepTemplateAnnotations = true)
     {
         ArgumentNullException.ThrowIfNull(animation);
 
@@ -62,7 +84,7 @@ public static class UncompressedAnimation
             m_numberOfTransformTracks = animation.TrackCount,
             m_numberOfFloatTracks = floatTracks,
             m_extractedMotion = null,
-            m_annotationTracks = AnnotationTracksFor(old, animation.TrackCount),
+            m_annotationTracks = AnnotationTracksFor(old, animation, keepTemplateAnnotations),
             m_transforms = [.. animation.Transforms.Select(ToQs)],
             m_floats = [.. animation.Floats],
         };
@@ -90,27 +112,55 @@ public static class UncompressedAnimation
     }
 
     /// <summary>
-    /// The template's annotation tracks, one per transform track as the game's
-    /// files keep them, cut or padded to the track count being written.
+    /// The animation's own annotation tracks, one per transform track as the game's files
+    /// keep them, with whatever it announces on the first.
     /// </summary>
     /// <remarks>
-    /// The game writes an annotation track per bone and puts the events on the
-    /// first; a template bound to another rig has another count. The first
-    /// track's events go with it whatever the count, since that is where
-    /// <c>WriteAnnotations</c> writes them back.
+    /// A clip that announces nothing gets empty tracks, which is what silence looks like and
+    /// is honest: of the draugr's 213 animations, 30 announce nothing at all. It gets the
+    /// template's instead only where the caller says the template is the clip's own file.
     /// </remarks>
-    private static IList<hkaAnnotationTrack> AnnotationTracksFor(hkaAnimation old, int tracks)
+    private static IList<hkaAnnotationTrack> AnnotationTracksFor(
+        hkaAnimation old, HkFbx.SampledAnimation animation, bool keepTemplateAnnotations)
     {
-        if (old.m_annotationTracks.Count == tracks || old.m_annotationTracks.Count != old.m_numberOfTransformTracks)
-            return old.m_annotationTracks;
+        // Nothing of its own to say, and a template whose saying it is entitled to: this is a
+        // clip being replaced in the file it already lives in.
+        if (keepTemplateAnnotations && animation.Annotations.All(t => t.Events.Count == 0))
+        {
+            if (old.m_annotationTracks.Count == animation.TrackCount
+                || old.m_annotationTracks.Count != old.m_numberOfTransformTracks)
+                return old.m_annotationTracks;
 
-        var kept = new List<hkaAnnotationTrack>(tracks);
-        for (int i = 0; i < tracks; i++)
-            kept.Add(i < old.m_annotationTracks.Count
-                ? old.m_annotationTracks[i]
-                : new hkaAnnotationTrack { m_trackName = "", m_annotations = [] });
+            var kept = new List<hkaAnnotationTrack>(animation.TrackCount);
+            for (int i = 0; i < animation.TrackCount; i++)
+                kept.Add(i < old.m_annotationTracks.Count
+                    ? old.m_annotationTracks[i]
+                    : new hkaAnnotationTrack { m_trackName = "", m_annotations = [] });
 
-        return kept;
+            return kept;
+        }
+
+        var tracks = new List<hkaAnnotationTrack>(animation.TrackCount);
+
+        for (int i = 0; i < animation.TrackCount; i++)
+            tracks.Add(new hkaAnnotationTrack
+            {
+                m_trackName = i < old.m_annotationTracks.Count ? old.m_annotationTracks[i].m_trackName : "",
+                m_annotations = [],
+            });
+
+        // The game puts every event on the first track, whatever the bone it is named after.
+        if (tracks.Count == 0) return tracks;
+
+        tracks[0].m_annotations =
+        [
+            .. animation.Annotations
+                .SelectMany(track => track.Events)
+                .OrderBy(e => e.Time)
+                .Select(e => new hkaAnnotationTrackAnnotation { m_time = e.Time, m_text = e.Text }),
+        ];
+
+        return tracks;
     }
 
     /// <summary>

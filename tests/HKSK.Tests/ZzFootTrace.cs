@@ -33,6 +33,28 @@ public sealed class ZzFootTrace
         var sb = new StringBuilder();
         sb.AppendLine($"left toe = bone {left}, right toe = bone {right}");
 
+        sb.AppendLine("--- how far each foot rises, per clip, against the creature's height");
+        foreach (string take in FbxAnimationReader.ReadTakeNames(document))
+        {
+            SampledAnimation c = FbxAnimationReader.ReadAnimation(document, rig, takeName: take);
+            if (c.FrameCount < 2) continue;
+
+            var w = new Matrix4x4[c.FrameCount][];
+            for (int f = 0; f < c.FrameCount; f++) w[f] = Pose(c, rig, f);
+
+            float tall = Enumerable.Range(0, c.FrameCount)
+                .SelectMany(f => w[f].Select(m => m.Translation.Z)).Max()
+                - Enumerable.Range(0, c.FrameCount).SelectMany(f => w[f].Select(m => m.Translation.Z)).Min();
+
+            float RiseOf(int b) => Enumerable.Range(0, c.FrameCount).Max(f => w[f][b].Translation.Z)
+                                 - Enumerable.Range(0, c.FrameCount).Min(f => w[f][b].Translation.Z);
+
+            float l = RiseOf(left), r = RiseOf(right);
+            sb.AppendLine($"  {take,-16} height {tall,6:0.#}  left rises {l,6:0.##} ({l / tall,6:P1})  " +
+                          $"right {r,6:0.##} ({r / tall,6:P1})");
+        }
+        sb.AppendLine();
+
         foreach (string take in new[] { "Walk01", "WalkBack", "WalkLeft" })
         {
             SampledAnimation clip = FbxAnimationReader.ReadAnimation(document, rig, takeName: take);
