@@ -33,6 +33,21 @@ public sealed class ClipGeneratorEntry
     public string Name { get; set; } = "";
 
     /// <summary>Position of this clip's animation in the character's animation list.</summary>
+    /// <remarks>
+    /// <para>
+    /// What the engine actually does with it is narrower than that, and worth knowing before
+    /// writing one (<c>docs/animation-data.md</c> §4.2.1). At load it is used to pair this
+    /// entry with the movement block carrying the same number, and is then overwritten by
+    /// that block's position in a dense array; nothing ever compares it with the character's
+    /// animation list. So it only has to agree with a movement block -- which is how
+    /// <c>HorseProject</c>, numbered to 88 against a 51-animation character, still plays.
+    /// </para>
+    /// <para>
+    /// It is a <b>signed 16-bit</b> field in the engine, so a usable index is 0 to 32,767. A
+    /// clip whose number no movement block carries is given -1 and simply has no root motion,
+    /// which is not an error and is not reported.
+    /// </para>
+    /// </remarks>
     public int CacheIndex { get; set; }
 
     /// <summary>

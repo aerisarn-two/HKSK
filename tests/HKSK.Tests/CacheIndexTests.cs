@@ -152,4 +152,80 @@ public class CacheIndexTests
         Assert.Equal(animation, found.Slot!.StoredName);
         Assert.Equal(animation, found.BehaviorAnimation);
     }
+
+    /// <summary>
+    /// The movement blocks, not the clips, are what show the numbering is the animation's
+    /// slot: there is one block per animation and every clip that plays that animation shares
+    /// it. The chicken lists 20 animations, writes 36 clips over them, and carries 20 blocks.
+    /// </summary>
+    /// <remarks>
+    /// Read out of the engine rather than inferred: the loader parses the blocks into a dense
+    /// array and rewrites each clip's index to a position in it, so the file's number is a
+    /// join key between the two blocks and nothing more
+    /// (<c>docs/animation-data.md</c> §4.2.1).
+    /// </remarks>
+    [CorpusFact]
+    public void ThereIsOneMovementBlockPerAnimation()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        int matched = 0, cached = 0;
+        var apart = new List<string>();
+
+        foreach (ActorProject project in cache.Actors())
+        {
+            var movements = project.Data.Movements?.Movements ?? [];
+            if (movements.Count == 0 || project.Character is not { } character) continue;
+            cached++;
+
+            // The blocks run from zero to one short of the animation count, which is what
+            // "one per animation" looks like when some of them are never played.
+            int highest = movements.Max(m => m.CacheIndex);
+            if (highest + 1 == character.AnimationNames.Count) matched++;
+            else apart.Add($"{project.Name} ({highest + 1} against {character.AnimationNames.Count})");
+        }
+
+        Assert.Equal(49, cached);
+
+        // The two that do not are the two the rule has always drifted on, and they drift the
+        // same way: a character list shortened after the cache was built.
+        Assert.Equal(
+            new[] { "HorseProject (89 against 51)", "WerewolfBeastProject (104 against 99)" },
+            apart.OrderBy(a => a, StringComparer.Ordinal).ToArray());
+
+        Assert.Equal(47, matched);
+    }
+
+    /// <summary>
+    /// The engine keeps the index in a signed 16-bit field, so 32,767 is the ceiling and a
+    /// negative number means "no movement". Nothing in the game comes near it, which is why
+    /// the limit is invisible in the data and has to be read out of the code.
+    /// </summary>
+    [CorpusFact]
+    public void NoIndexNeedsMoreThanSixteenSignedBits()
+    {
+        SkyrimCache cache = SkyrimCache.Load(Corpus.Root!);
+
+        int highest = 0, lowest = 0;
+        foreach (ActorProject project in cache.Actors())
+        {
+            foreach (ClipGeneratorEntry clip in project.Data.Block.Clips)
+            {
+                highest = Math.Max(highest, clip.CacheIndex);
+                lowest = Math.Min(lowest, clip.CacheIndex);
+            }
+
+            foreach (ClipMovement movement in project.Data.Movements?.Movements ?? [])
+            {
+                highest = Math.Max(highest, movement.CacheIndex);
+                lowest = Math.Min(lowest, movement.CacheIndex);
+            }
+        }
+
+        Assert.True(highest <= short.MaxValue, $"the highest index in the game is {highest}");
+        Assert.Equal(0, lowest);
+
+        // The player's own project is the largest and still has most of the range spare.
+        Assert.Equal(1655, highest);
+    }
 }

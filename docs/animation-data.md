@@ -146,10 +146,67 @@ stale.
 `+0x30` is 0) calls the clip loader's slot 1 (`0x140bcbb90`), which maps the clip's
 `animationBindingIndex` (`+0x70`) to a file id through the character's animation
 list and demands the file from `AnimationFileManagerSingleton` through the copy of
-its pointer the behaviour runtime holds at `0x1431b2820`. The cache index in this
-file is that binding: the clip plays what the **character** lists at the index,
-which is why the female body plays female files from a graph whose clips say
-`Animations\male\...`.
+its pointer the behaviour runtime holds at `0x1431b2820`. That is why the female
+body plays female files from a graph whose clips say `Animations\male\...`.
+
+**This is not this file's number.** `0x140bcbb90` is not among the fourteen readers
+of the animation data manager (`0x143138d50`), and nothing outside the cache module
+ever reads the index the cache carries. The binding index is Havok's, resolved from
+the clip's own `animationName` against the character's list; the cache index is a
+separate number that happens to mean the same thing. They agree on 10,318 of the
+game's 10,556 clips and nothing checks that they do -- see §4.2.1.
+
+### 4.2.1 What the cache index is, and what the engine does with it
+
+The number is the slot in the character's animation list, and the measurement that
+says so is not the clips but the **movement blocks**: in 42 of the 49 cached
+projects they are numbered `0..n-1` with no gaps and *n* is exactly the character's
+animation count. The chicken lists 20 animations, writes 36 clips over them, and
+carries 20 movement blocks; the wolf 72, 110 and 72; the dog 66, 106 and 66. One
+block per animation, shared by every clip that plays it.
+
+The engine does not keep that numbering. At load, `0x1405398d0` parses the movement
+blocks into a dense array at `project+0x38` and returns, beside it, a list of the
+indices those blocks stated. `0x140538a50` then walks the project's clip map and
+**rewrites each clip's index** to the position of its movement block in that dense
+array, or to -1 where no block carries its number:
+
+      movzwl 0x4(%rbx),%edi       the index as the file stated it
+      cmp    %di,(%rcx,%rdx,2)    searched for in the parsed blocks' own indices
+      cmovne %r12d,%r8d           -1 when no block claims it
+      mov    %r8w,0x4(%rbx)       the position written back in its place
+
+So the stated index is a **join key between the two blocks of this file and nothing
+else**. At run time `0x140537d50` finds a clip by *name* in the project's hash map,
+reads the remapped index, bounds-checks it against the block count at
+`project+0x48`, and returns the 40-byte movement record at `project+0x38 + i*40`;
+`0x140442a80` is the caller that copies a translation out of it.
+
+Three consequences, none of them obvious from the file:
+
+- **the index is a signed 16-bit field.** It is stored as one (`mov %si,0x4(%rax)`),
+  read as one, and a negative value means "no movement" (`test %di,%di; js`). No
+  shipped project indexes above 32,767, so nothing in the game shows the ceiling,
+  but a generated one must stay inside it and must not go negative;
+- **the engine never compares it with the animation list.** It only has to match
+  between a clip entry and a movement block. This is why `HorseProject`, numbered
+  to 88 against a 51-animation character, and `WerewolfBeastProject`, 200 clips out
+  of step, play correctly: Bethesda shortened the lists and left the cache, and
+  nothing in the engine minds;
+- **a clip whose number no movement block carries simply has no root motion.** It
+  is not an error and nothing reports it. The chaurus has two such positions, 27 and
+  29, and no clip plays them.
+
+The runtime clip record is eight bytes and then its events, which says what the
+engine keeps of each entry:
+
+      +0x00  float  playback speed
+      +0x04  int16  the index, remapped to a movement position
+      +0x06  int16  event count
+      +0x08         events, 16 bytes each
+
+`CropStartTime` and `CropEndTime` are in the file, are parsed, and have nowhere to
+go: the allocation is `(events << 4) + 8`. The engine reads them and drops them.
 
 ### 4.3 What reads the root motion and the events
 
